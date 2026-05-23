@@ -1,0 +1,198 @@
+use anyhow::Result;
+use futures_util::StreamExt;
+use tokio::sync::mpsc;
+use zbus::{Connection, proxy};
+
+#[derive(Debug, Clone)]
+pub enum SessionEvent {
+    SessionStarted { uid: u32, session_id: String },
+    SessionEnded { uid: u32, session_id: String },
+    IdleChanged { uid: u32, session_id: String, idle: bool },
+    PrepareForSleep { suspend: bool },
+}
+
+#[proxy(
+    interface = "org.freedesktop.login1.Manager",
+    default_service = "org.freedesktop.login1",
+    default_path = "/org/freedesktop/login1"
+)]
+trait Login1Manager {
+    #[zbus(signal)]
+    fn session_new(&self, session_id: String, object_path: zbus::zvariant::OwnedObjectPath) -> Result<()>;
+
+    #[zbus(signal)]
+    fn session_removed(&self, session_id: String, object_path: zbus::zvariant::OwnedObjectPath) -> Result<()>;
+
+    #[zbus(signal)]
+    fn prepare_for_sleep(&self, start: bool) -> Result<()>;
+
+    fn list_sessions(
+        &self,
+    ) -> zbus::Result<Vec<(String, u32, String, String, zbus::zvariant::OwnedObjectPath)>>;
+}
+
+#[proxy(
+    interface = "org.freedesktop.login1.Session",
+    default_service = "org.freedesktop.login1"
+)]
+trait Login1Session {
+    #[zbus(property)]
+    fn user(&self) -> zbus::Result<(u32, zbus::zvariant::OwnedObjectPath)>;
+
+    #[zbus(property)]
+    fn idle_hint(&self) -> zbus::Result<bool>;
+
+    fn lock(&self) -> zbus::Result<()>;
+
+    fn terminate(&self) -> zbus::Result<()>;
+}
+
+pub struct DbusMonitor {
+    conn: Connection,
+    tx: mpsc::Sender<SessionEvent>,
+}
+
+impl DbusMonitor {
+    pub async fn new(tx: mpsc::Sender<SessionEvent>) -> Result<Self> {
+        let conn = Connection::system().await?;
+        Ok(Self { conn, tx })
+    }
+
+    pub async fn run(self) -> Result<()> {
+        let manager = Login1ManagerProxy::new(&self.conn).await?;
+
+        // Emit events for sessions already active at startup.
+        if let Ok(sessions) = manager.list_sessions().await {
+            for (session_id, uid, _user, _seat, _path) in sessions {
+                let _ = self.tx.send(SessionEvent::SessionStarted { uid, session_id }).await;
+            }
+        }
+
+        let mut new_stream = manager.receive_session_new().await?;
+        let mut removed_stream = manager.receive_session_removed().await?;
+        let mut sleep_stream = manager.receive_prepare_for_sleep().await?;
+
+        loop {
+            tokio::select! {
+                Some(signal) = new_stream.next() => {
+                    let args = signal.args()?;
+                    let session_id = args.session_id.to_string();
+                    let path = args.object_path.clone();
+                    let uid = self.get_session_uid(&path).await.unwrap_or(0);
+                    if uid > 0 {
+                        let idle = self.get_session_idle(&path).await.unwrap_or(false);
+                        let _ = self.tx.send(SessionEvent::SessionStarted {
+                            uid,
+                            session_id: session_id.clone(),
+                        }).await;
+                        let tx = self.tx.clone();
+                        let conn = self.conn.clone();
+                        let sid = session_id.clone();
+                        let p = path.clone();
+                        tokio::spawn(async move {
+                            let _ = watch_idle(conn, p, uid, sid, tx).await;
+                        });
+                        let _ = self.tx.send(SessionEvent::IdleChanged {
+                            uid,
+                            session_id,
+                            idle,
+                        }).await;
+                    }
+                }
+                Some(signal) = removed_stream.next() => {
+                    let args = signal.args()?;
+                    let session_id = args.session_id.to_string();
+                    let path = args.object_path.clone();
+                    let uid = self.get_session_uid(&path).await.unwrap_or(0);
+                    let _ = self.tx.send(SessionEvent::SessionEnded { uid, session_id }).await;
+                }
+                Some(signal) = sleep_stream.next() => {
+                    let args = signal.args()?;
+                    let _ = self.tx.send(SessionEvent::PrepareForSleep {
+                        suspend: args.start,
+                    }).await;
+                }
+            }
+        }
+    }
+
+    async fn get_session_uid(&self, path: &zbus::zvariant::OwnedObjectPath) -> Result<u32> {
+        let session = Login1SessionProxy::builder(&self.conn)
+            .path(path.as_ref())?
+            .build()
+            .await?;
+        let (uid, _) = session.user().await?;
+        Ok(uid)
+    }
+
+    async fn get_session_idle(&self, path: &zbus::zvariant::OwnedObjectPath) -> Result<bool> {
+        let session = Login1SessionProxy::builder(&self.conn)
+            .path(path.as_ref())?
+            .build()
+            .await?;
+        Ok(session.idle_hint().await?)
+    }
+}
+
+async fn watch_idle(
+    conn: Connection,
+    path: zbus::zvariant::OwnedObjectPath,
+    uid: u32,
+    session_id: String,
+    tx: mpsc::Sender<SessionEvent>,
+) -> Result<()> {
+    let session = Login1SessionProxy::builder(&conn)
+        .path(path.as_ref())?
+        .build()
+        .await?;
+
+    let mut stream = session.receive_idle_hint_changed().await;
+    while let Some(change) = stream.next().await {
+        if let Ok(idle) = change.get().await {
+            let _ = tx.send(SessionEvent::IdleChanged {
+                uid,
+                session_id: session_id.clone(),
+                idle,
+            }).await;
+        }
+    }
+    Ok(())
+}
+
+/// Lock all sessions in the given list via DBus.
+pub async fn lock_sessions(session_ids: &[String]) -> Result<()> {
+    let conn = Connection::system().await?;
+    let manager = Login1ManagerProxy::new(&conn).await?;
+    let sessions = manager.list_sessions().await?;
+
+    for (sid, _uid, _user, _seat, path) in &sessions {
+        if session_ids.contains(sid)
+            && let Ok(session) = Login1SessionProxy::builder(&conn)
+                .path(path.as_ref())?
+                .build()
+                .await
+            {
+                let _ = session.lock().await;
+            }
+    }
+    Ok(())
+}
+
+/// Terminate all sessions in the given list via DBus.
+pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
+    let conn = Connection::system().await?;
+    let manager = Login1ManagerProxy::new(&conn).await?;
+    let sessions = manager.list_sessions().await?;
+
+    for (sid, _uid, _user, _seat, path) in &sessions {
+        if session_ids.contains(sid)
+            && let Ok(session) = Login1SessionProxy::builder(&conn)
+                .path(path.as_ref())?
+                .build()
+                .await
+            {
+                let _ = session.terminate().await;
+            }
+    }
+    Ok(())
+}

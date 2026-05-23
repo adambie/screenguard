@@ -1,0 +1,45 @@
+[package]
+name = "agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+
+# async runtime
+tokio = { version = "1", features = ["full"] }
+
+# websocket
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+
+# sqlite
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# dbus
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+# systemd watchdog/notify
+libsystemd = "0.7"
+
+# mdns discovery
+mdns-sd = "0.11"
+
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# config file
+toml = "0.8"
+
+# error handling
+anyhow = "1"
+
+# logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# random (pairing code)
+rand = "0.8"
