@@ -112,6 +112,14 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
         return Ok(());
     }
 
+    // Final warning before the screen locks.
+    let _ = crate::dbus::send_desktop_notification(
+        uid,
+        "Screen time ended",
+        "Your screen will be locked in 4 seconds.",
+    ).await;
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+
     tracing::info!("Locking sessions for uid={uid}: {:?}", session_ids);
     crate::dbus::lock_sessions(&session_ids).await?;
 

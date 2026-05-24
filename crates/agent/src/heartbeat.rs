@@ -5,7 +5,7 @@ use common::messages::{
     MSG_AGENT_HELLO, MSG_HEARTBEAT, MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
 };
 use common::models::{EnforceAction, LocalUser, UsageEntry};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
@@ -27,6 +27,9 @@ pub struct HeartbeatLoop {
     min_uid: u32,
     agent_version: String,
     cache_ttl_hours: u64,
+    /// Tracks which warning thresholds have already fired per uid today.
+    /// Cleared at midnight and when remaining goes back above a threshold.
+    notified_thresholds: HashMap<u32, HashSet<i32>>,
 }
 
 impl HeartbeatLoop {
@@ -53,6 +56,7 @@ impl HeartbeatLoop {
             min_uid,
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             cache_ttl_hours,
+            notified_thresholds: HashMap::new(),
         }
     }
 
@@ -88,6 +92,7 @@ impl HeartbeatLoop {
                     if today != last_date {
                         handle_midnight(&self.db).await?;
                         last_date = today;
+                        self.notified_thresholds.clear();
                     }
 
                     let online = {
@@ -169,7 +174,7 @@ impl HeartbeatLoop {
         }
     }
 
-    async fn handle_server_message(&self, msg: ServerMessage) -> Result<()> {
+    async fn handle_server_message(&mut self, msg: ServerMessage) -> Result<()> {
         match msg {
             ServerMessage::NotifyUser(n) => {
                 tracing::info!("Received notify_user for uid={}: {}", n.local_uid, n.summary);
@@ -215,15 +220,12 @@ impl HeartbeatLoop {
                         });
                     } else if entry.enforce == EnforceAction::Warn {
                         let uid = entry.local_uid;
-                        let mins = entry.remaining_minutes;
-                        tracing::warn!("uid={uid} has {mins} minutes remaining");
-                        tokio::spawn(async move {
-                            let summary = "Screen time warning";
-                            let body = format!("{mins} minutes of screen time remaining today.");
-                            if let Err(e) = crate::dbus::send_desktop_notification(uid, summary, &body).await {
-                                tracing::warn!("Warn notification failed for uid={uid}: {e}");
-                            }
-                        });
+                        let remaining = entry.remaining_minutes;
+                        tracing::warn!("uid={uid} has {remaining} minutes remaining");
+                        self.fire_threshold_notifications(uid, remaining).await;
+                    } else {
+                        // Allow — clear notified set so thresholds re-arm if time is added later.
+                        self.notified_thresholds.remove(&entry.local_uid);
                     }
                 }
             }
@@ -247,6 +249,40 @@ impl HeartbeatLoop {
             ServerMessage::PairingAccepted(_) => {}
         }
         Ok(())
+    }
+
+    async fn fire_threshold_notifications(&mut self, uid: u32, remaining: i32) {
+        let thresholds = {
+            let db = self.db.lock().await;
+            db.get_cached_enforcement(uid)
+                .map(|e| e.warning_thresholds)
+                .unwrap_or_default()
+        };
+
+        let notified = self.notified_thresholds.entry(uid).or_default();
+
+        // Fire for each threshold we've crossed but haven't notified yet.
+        let mut to_notify: Vec<i32> = thresholds
+            .iter()
+            .map(|&t| t as i32)
+            .filter(|&t| remaining <= t && !notified.contains(&t))
+            .collect();
+        to_notify.sort_unstable_by(|a, b| b.cmp(a)); // highest first
+
+        for t in to_notify {
+            notified.insert(t);
+            let body = format!("{remaining} minutes of screen time remaining today.");
+            tokio::spawn(async move {
+                if let Err(e) = crate::dbus::send_desktop_notification(
+                    uid, "Screen time warning", &body,
+                ).await {
+                    tracing::warn!("Warn notification failed for uid={uid}: {e}");
+                }
+            });
+        }
+
+        // If remaining went back up past a threshold, un-arm it so it can fire again.
+        notified.retain(|&t| remaining <= t);
     }
 
     async fn send_heartbeat(
