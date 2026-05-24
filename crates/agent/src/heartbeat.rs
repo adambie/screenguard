@@ -312,21 +312,16 @@ impl HeartbeatLoop {
     }
 
     async fn send_agent_hello(&self) -> Result<()> {
-        let (config_version, agent_id) = {
+        let config_version = {
             let db = self.db.lock().await;
-            let version = db.get_config_version()?;
-            let agent_id = db
-                .get_server_connection()?
-                .map(|c| c.agent_id)
-                .unwrap_or_default();
-            (version, agent_id)
+            db.get_config_version()?
         };
 
         ws_client::send(
             &self.outbound_tx,
             MSG_AGENT_HELLO,
             &AgentHello {
-                machine_id: agent_id,
+                machine_id: read_machine_id(),
                 hostname: gethostname(),
                 timezone: local_timezone(),
                 agent_version: self.agent_version.clone(),
@@ -418,6 +413,13 @@ fn gethostname() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
+}
+
+fn read_machine_id() -> String {
+    std::fs::read_to_string("/etc/machine-id")
+        .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
 }
 
 fn local_timezone() -> String {

@@ -26,7 +26,7 @@ pub async fn discover_server() -> Result<Option<String>> {
                     .next()
                     .map(|a| a.to_string())
                     .unwrap_or_else(|| info.get_hostname().trim_end_matches('.').to_string());
-                let url = format!("ws://{}:{}", host, port);
+                let url = format!("ws://{}:{}/ws", host, port);
                 let _ = tx.send(url);
                 break;
             }
@@ -53,11 +53,21 @@ pub async fn discover_server() -> Result<Option<String>> {
 }
 
 /// Resolve the server URL: use configured URL if present, otherwise run mDNS discovery.
+/// Ensures the URL ends with /ws (the server's WebSocket endpoint path).
 pub async fn resolve_server_url(configured_url: Option<&str>) -> Result<Option<String>> {
     if let Some(url) = configured_url {
+        let url = ensure_ws_path(url);
         tracing::info!("Using configured server URL: {url}");
-        return Ok(Some(url.to_string()));
+        return Ok(Some(url));
     }
     tracing::info!("No server URL configured, starting mDNS discovery...");
     discover_server().await
+}
+
+fn ensure_ws_path(url: &str) -> String {
+    if url.ends_with("/ws") {
+        url.to_string()
+    } else {
+        format!("{}/ws", url.trim_end_matches('/'))
+    }
 }
