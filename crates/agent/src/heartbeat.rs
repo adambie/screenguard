@@ -290,14 +290,20 @@ impl HeartbeatLoop {
             ws_client::send(&self.outbound_tx, MSG_HEARTBEAT, &Heartbeat { users: hb_users })
                 .await?;
         } else {
-            for uid in &managed_uids {
-                let action = evaluate_enforcement(*uid, &self.db, false).await?;
-                if action == EnforceAction::Lock {
-                    let db = self.db.clone();
-                    let uid = *uid;
-                    tokio::spawn(async move {
-                        let _ = execute_lock(uid, &db).await;
-                    });
+            for hb_user in &hb_users {
+                let uid = hb_user.local_uid;
+                let action = evaluate_enforcement(uid, &self.db, false).await?;
+                match action {
+                    EnforceAction::Lock => {
+                        let db = self.db.clone();
+                        tokio::spawn(async move {
+                            let _ = execute_lock(uid, &db).await;
+                        });
+                    }
+                    EnforceAction::Warn => {
+                        tracing::warn!("uid={uid} is approaching their limit (offline mode)");
+                    }
+                    EnforceAction::Allow => {}
                 }
             }
         }

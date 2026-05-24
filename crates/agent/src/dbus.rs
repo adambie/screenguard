@@ -61,10 +61,24 @@ impl DbusMonitor {
     pub async fn run(self) -> Result<()> {
         let manager = Login1ManagerProxy::new(&self.conn).await?;
 
-        // Emit events for sessions already active at startup.
+        // Emit events for sessions already active at startup, and start idle watchers.
         if let Ok(sessions) = manager.list_sessions().await {
-            for (session_id, uid, _user, _seat, _path) in sessions {
-                let _ = self.tx.send(SessionEvent::SessionStarted { uid, session_id }).await;
+            for (session_id, uid, _user, _seat, path) in sessions {
+                let idle = self.get_session_idle(&path).await.unwrap_or(false);
+                let _ = self.tx.send(SessionEvent::SessionStarted {
+                    uid,
+                    session_id: session_id.clone(),
+                }).await;
+                let _ = self.tx.send(SessionEvent::IdleChanged {
+                    uid,
+                    session_id: session_id.clone(),
+                    idle,
+                }).await;
+                let tx = self.tx.clone();
+                let conn = self.conn.clone();
+                tokio::spawn(async move {
+                    let _ = watch_idle(conn, path, uid, session_id, tx).await;
+                });
             }
         }
 

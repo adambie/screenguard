@@ -80,10 +80,9 @@ fn offline_evaluate(uid: u32, db: &Db) -> Result<EnforceAction> {
         return Ok(EnforceAction::Lock);
     }
 
-    // 4. Warning thresholds.
+    // 4. Warning thresholds — warn if remaining is at or below any configured threshold.
     let enforcement = db.get_cached_enforcement(uid)?;
-    let min_threshold = enforcement.warning_thresholds.iter().copied().min().unwrap_or(1) as i32;
-    if remaining <= min_threshold {
+    if enforcement.warning_thresholds.iter().any(|&t| remaining <= t as i32) {
         return Ok(EnforceAction::Warn);
     }
 
@@ -133,18 +132,33 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
 }
 
 /// Midnight handler: called when the calendar date changes.
-/// Resets daily usage and re-evaluates enforcement for all managed users.
+/// Resets daily usage and locks any sessions that fall outside the new day's schedule.
 pub async fn handle_midnight(db: &Arc<Mutex<Db>>) -> Result<()> {
     let yesterday = (Local::now() - chrono::Duration::days(1)).date_naive();
     let uids = {
         let db = db.lock().await;
         db.get_managed_uids()?
     };
-    for uid in uids {
+
+    for uid in &uids {
         let db_guard = db.lock().await;
-        // Mark yesterday's usage as needing sync on reconnect.
-        let _ = db_guard.reset_usage_for_date(uid, &yesterday);
+        let _ = db_guard.reset_usage_for_date(*uid, &yesterday);
     }
-    tracing::info!("Midnight: reset daily usage counters");
+    tracing::info!("Midnight: reset daily usage counters for {} users", uids.len());
+
+    // Lock any sessions that fall outside the new day's allowed schedule window.
+    for uid in uids {
+        let action = evaluate_enforcement(uid, db, false).await?;
+        if action == EnforceAction::Lock {
+            tracing::info!("Midnight: locking uid={uid} (outside schedule for new day)");
+            let db = db.clone();
+            tokio::spawn(async move {
+                if let Err(e) = execute_lock(uid, &db).await {
+                    tracing::error!("Midnight lock failed for uid={uid}: {e}");
+                }
+            });
+        }
+    }
+
     Ok(())
 }

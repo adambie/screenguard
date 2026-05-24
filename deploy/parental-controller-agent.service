@@ -1,0 +1,23 @@
+[Unit]
+Description=Parental Controller Enforcement Agent
+After=network-online.target dbus.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/parental-controller-agent
+Restart=always
+RestartSec=5
+WatchdogSec=60
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/var/lib/parental-controller
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectKernelModules=true
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=multi-user.target
