@@ -149,10 +149,9 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             .collect();
 
         let enforcement = db::get_enforcement_settings(pool, profile_id)?;
-        let today_adj = {
-            let today = Local::now().date_naive().to_string();
-            db::sum_adjustments_for_date(pool, profile_id, &today)?
-        };
+        let today = Local::now().date_naive().to_string();
+        let today_adj = db::sum_adjustments_for_date(pool, profile_id, &today)?;
+        let adjustment_message = db::latest_adjustment_reason_for_date(pool, profile_id, &today)?;
 
         user_configs.push(UserConfig {
             local_uid: au.local_uid as u32,
@@ -161,6 +160,7 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             schedules,
             daily_limits,
             adjustments_today: today_adj,
+            adjustment_message,
             lockout_grace_minutes: enforcement.lockout_grace_minutes as u32,
             warning_thresholds_minutes: enforcement.warning_thresholds.iter().map(|&t| t as u32).collect(),
         });

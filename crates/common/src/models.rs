@@ -23,6 +23,7 @@ pub struct UserConfig {
     pub schedules: Vec<Schedule>,
     pub daily_limits: Vec<DailyLimit>,
     pub adjustments_today: i32,
+    pub adjustment_message: Option<String>,
     pub lockout_grace_minutes: u32,
     pub warning_thresholds_minutes: Vec<u32>,
 }

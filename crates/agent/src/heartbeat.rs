@@ -250,12 +250,16 @@ impl HeartbeatLoop {
                             (db.get_usage_seconds(uid, &today).unwrap_or(0) / 60) as i32
                         };
                         let remaining = (limit + new_adj - used_min).max(0);
+                        let reason = u.adjustment_message.clone();
 
                         if adj_delta > 0 {
                             tokio::spawn(async move {
-                                let body = format!(
+                                let mut body = format!(
                                     "+{adj_delta} minutes granted. {remaining} minutes remaining today."
                                 );
+                                if let Some(r) = reason {
+                                    body = format!("{body}\n\"{r}\"");
+                                }
                                 let _ = crate::dbus::send_desktop_notification(
                                     uid, "Screen time added", &body,
                                 ).await;
@@ -263,9 +267,12 @@ impl HeartbeatLoop {
                         } else {
                             let removed = -adj_delta;
                             tokio::spawn(async move {
-                                let body = format!(
+                                let mut body = format!(
                                     "-{removed} minutes taken. {remaining} minutes remaining today."
                                 );
+                                if let Some(r) = reason {
+                                    body = format!("{body}\n\"{r}\"");
+                                }
                                 let _ = crate::dbus::send_desktop_notification(
                                     uid, "Screen time reduced", &body,
                                 ).await;

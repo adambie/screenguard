@@ -648,6 +648,17 @@ pub fn get_adjustments(pool: &DbPool, profile_id: Uuid, from: Option<&str>, to: 
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
 }
 
+pub fn latest_adjustment_reason_for_date(pool: &DbPool, profile_id: Uuid, date: &str) -> Result<Option<String>> {
+    let conn = pool.get()?;
+    let reason: Option<String> = conn.query_row(
+        "SELECT reason FROM time_adjustments WHERE profile_id=?1 AND target_date=?2
+         ORDER BY created_at DESC LIMIT 1",
+        params![profile_id.to_string(), date],
+        |r| r.get(0),
+    ).optional()?;
+    Ok(reason)
+}
+
 pub fn sum_adjustments_for_date(pool: &DbPool, profile_id: Uuid, date: &str) -> Result<i32> {
     let conn = pool.get()?;
     Ok(conn.query_row(

@@ -310,6 +310,7 @@ async fn send_config_push(
                 allowed_minutes: 120,
             }).collect(),
             adjustments_today: 0,
+            adjustment_message: None,
             lockout_grace_minutes: 5,
             warning_thresholds_minutes: vec![15, 5, 1],
         })
