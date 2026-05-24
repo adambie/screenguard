@@ -252,10 +252,14 @@ impl HeartbeatLoop {
                         let remaining = (limit + new_adj - used_min).max(0);
                         let reason = u.adjustment_message.clone();
 
+                        let mins = |n: i32| if n == 1 { "minute".to_string() } else { "minutes".to_string() };
+
                         if adj_delta > 0 {
+                            let m = mins(adj_delta);
+                            let rm = mins(remaining);
                             tokio::spawn(async move {
                                 let mut body = format!(
-                                    "+{adj_delta} minutes granted. {remaining} minutes remaining today."
+                                    "+{adj_delta} {m} granted. {remaining} {rm} remaining today."
                                 );
                                 if let Some(r) = reason {
                                     body = format!("{body}\n\"{r}\"");
@@ -266,9 +270,11 @@ impl HeartbeatLoop {
                             });
                         } else {
                             let removed = -adj_delta;
+                            let m = mins(removed);
+                            let rm = mins(remaining);
                             tokio::spawn(async move {
                                 let mut body = format!(
-                                    "-{removed} minutes taken. {remaining} minutes remaining today."
+                                    "-{removed} {m} taken. {remaining} {rm} remaining today."
                                 );
                                 if let Some(r) = reason {
                                     body = format!("{body}\n\"{r}\"");
@@ -359,7 +365,8 @@ impl HeartbeatLoop {
 
         for t in to_notify {
             notified.insert(t);
-            let body = format!("{remaining} minutes of screen time remaining today.");
+            let m = if remaining == 1 { "minute" } else { "minutes" };
+            let body = format!("{remaining} {m} of screen time remaining today.");
             tokio::spawn(async move {
                 if let Err(e) = crate::dbus::send_desktop_notification(
                     uid, "Screen time warning", &body,
