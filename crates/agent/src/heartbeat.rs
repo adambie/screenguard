@@ -171,6 +171,17 @@ impl HeartbeatLoop {
 
     async fn handle_server_message(&self, msg: ServerMessage) -> Result<()> {
         match msg {
+            ServerMessage::NotifyUser(n) => {
+                tracing::info!("Received notify_user for uid={}: {}", n.local_uid, n.summary);
+                let uid = n.local_uid;
+                let summary = n.summary.clone();
+                let body = n.body.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = crate::dbus::send_desktop_notification(uid, &summary, &body).await {
+                        tracing::warn!("Desktop notification failed for uid={uid}: {e}");
+                    }
+                });
+            }
             ServerMessage::ConfigPush(push) => {
                 tracing::info!("Received config_push v{}", push.config_version);
                 let db = self.db.lock().await;
@@ -203,11 +214,16 @@ impl HeartbeatLoop {
                             }
                         });
                     } else if entry.enforce == EnforceAction::Warn {
-                        tracing::warn!(
-                            "uid={} has {} minutes remaining",
-                            entry.local_uid,
-                            entry.remaining_minutes
-                        );
+                        let uid = entry.local_uid;
+                        let mins = entry.remaining_minutes;
+                        tracing::warn!("uid={uid} has {mins} minutes remaining");
+                        tokio::spawn(async move {
+                            let summary = "Screen time warning";
+                            let body = format!("{mins} minutes of screen time remaining today.");
+                            if let Err(e) = crate::dbus::send_desktop_notification(uid, summary, &body).await {
+                                tracing::warn!("Warn notification failed for uid={uid}: {e}");
+                            }
+                        });
                     }
                 }
             }

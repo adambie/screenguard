@@ -1,5 +1,6 @@
 use anyhow::Result;
 use futures_util::StreamExt;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 use zbus::{Connection, proxy};
 
@@ -209,4 +210,63 @@ pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
             }
     }
     Ok(())
+}
+
+/// Send a desktop notification to a user by connecting to their session D-Bus.
+/// Silently does nothing if the user has no active session bus (e.g. not logged in).
+pub async fn send_desktop_notification(uid: u32, summary: &str, body: &str) -> Result<()> {
+    let socket = format!("/run/user/{uid}/bus");
+    if !std::path::Path::new(&socket).exists() {
+        tracing::debug!("No session bus for uid={uid}, skipping notification");
+        return Ok(());
+    }
+
+    let address = format!("unix:path={socket}");
+    let conn = match zbus::connection::Builder::address(address.as_str())?
+        .build()
+        .await
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Cannot connect to session bus for uid={uid}: {e}");
+            return Ok(());
+        }
+    };
+
+    let proxy = NotificationsProxy::new(&conn).await?;
+    let hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
+    let _ = proxy
+        .notify(
+            "Parental Controller",
+            0,
+            "dialog-information",
+            summary,
+            body,
+            &[],
+            hints,
+            5000,
+        )
+        .await;
+
+    Ok(())
+}
+
+#[proxy(
+    interface = "org.freedesktop.Notifications",
+    default_service = "org.freedesktop.Notifications",
+    default_path = "/org/freedesktop/Notifications"
+)]
+trait Notifications {
+    #[allow(clippy::too_many_arguments)]
+    fn notify(
+        &self,
+        app_name: &str,
+        replaces_id: u32,
+        app_icon: &str,
+        summary: &str,
+        body: &str,
+        actions: &[&str],
+        hints: HashMap<&str, zbus::zvariant::Value<'_>>,
+        expire_timeout: i32,
+    ) -> zbus::Result<u32>;
 }

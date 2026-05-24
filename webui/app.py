@@ -310,11 +310,28 @@ def add_adjustment(profile_id):
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 
+@app.route("/profiles/<profile_id>/notify", methods=["POST"])
+@require_login
+def notify_profile(profile_id):
+    message = request.form.get("message", "").strip()
+    if not message:
+        flash("Message cannot be empty.", "warning")
+        return redirect(url_for("profile_detail", profile_id=profile_id))
+    r = api("POST", f"/profiles/{profile_id}/notify",
+            json={"body": message})
+    if r and r.ok:
+        data = r.json()
+        flash(f"Message sent: {data.get('message', 'ok')}", "success")
+    else:
+        flash("Failed to send message.", "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id))
+
+
 @app.route("/profiles/<profile_id>/lock-now", methods=["POST"])
 @require_login
 def lock_now(profile_id):
     r = api("POST", f"/profiles/{profile_id}/lock-now")
-    flash("Lock command sent." if (r and r.ok) else "Failed to send lock.", "success" if (r and r.ok) else "danger")
+    flash("Today's allowance zeroed out." if (r and r.ok) else "Failed.", "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 

@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use common::messages::{
-    ConfigPush, ConfigReload, LockNow, PairingAccepted, RemainingUpdate, ServerMessage,
-    MSG_CONFIG_PUSH, MSG_CONFIG_RELOAD, MSG_LOCK_NOW, MSG_PAIRING_ACCEPTED, MSG_REMAINING_UPDATE,
+    ConfigPush, ConfigReload, LockNow, NotifyUser, PairingAccepted, RemainingUpdate, ServerMessage,
+    MSG_CONFIG_PUSH, MSG_CONFIG_RELOAD, MSG_LOCK_NOW, MSG_NOTIFY_USER, MSG_PAIRING_ACCEPTED,
+    MSG_REMAINING_UPDATE,
 };
 use common::protocol::WssMessage;
 use futures_util::{SinkExt, StreamExt};
@@ -123,6 +124,7 @@ fn parse_server_message(text: &str) -> Result<ServerMessage> {
             ServerMessage::PairingAccepted(envelope.parse_payload::<PairingAccepted>()?)
         }
         MSG_LOCK_NOW => ServerMessage::LockNow(envelope.parse_payload::<LockNow>()?),
+        MSG_NOTIFY_USER => ServerMessage::NotifyUser(envelope.parse_payload::<NotifyUser>()?),
         MSG_CONFIG_RELOAD => {
             let _ = envelope.parse_payload::<ConfigReload>();
             ServerMessage::ConfigReload

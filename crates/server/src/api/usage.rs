@@ -80,7 +80,9 @@ pub async fn get_status(
     let adj = db::sum_adjustments_for_date(&state.db, id, &today_str).map_err(internal)?;
     let limit_min = limits.iter().find(|l| l.day_of_week == dow).map(|l| l.allowed_minutes);
     let used_min = (used_secs / 60) as i32;
-    let remaining = limit_min.map(|l| (l + adj - used_min).max(0));
+    // Use 1440 as the base when no explicit limit is set — matches enforcement logic.
+    let effective_limit = limit_min.unwrap_or(1440);
+    let remaining = (effective_limit + adj - used_min).max(0);
 
     // Per-agent breakdown.
     let agent_users = db::get_agent_users_for_profile(&state.db, id).map_err(internal)?;
@@ -105,8 +107,7 @@ pub async fn get_status(
         }));
     }
 
-    // Determine enforce action using remaining logic.
-    let enforce = if remaining.map(|r| r <= 0).unwrap_or(false) { "lock" } else { "allow" };
+    let enforce = if remaining <= 0 { "lock" } else { "allow" };
 
     Ok(Json(serde_json::json!({
         "profile": {

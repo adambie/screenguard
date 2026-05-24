@@ -4,7 +4,7 @@ use axum::{
     Json,
 };
 use chrono::Local;
-use common::messages::{MSG_CONFIG_PUSH, MSG_REMAINING_UPDATE, RemainingUpdate};
+use common::messages::{MSG_CONFIG_PUSH, MSG_NOTIFY_USER, MSG_REMAINING_UPDATE, NotifyUser, RemainingUpdate};
 use common::protocol::WssMessage;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -223,7 +223,46 @@ pub async fn lock_now(
     }
 
     let _ = agent_ids;
-    Ok(Json(serde_json::json!({ "message": "Lock command sent", "adjustment_id": adj_id })))
+    Ok(Json(serde_json::json!({ "message": "Today's allowance zeroed out", "adjustment_id": adj_id })))
+}
+
+// ── notify ────────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct NotifyBody {
+    pub summary: Option<String>,
+    pub body: String,
+}
+
+pub async fn notify_profile(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<NotifyBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let agent_users = db::get_agent_users_for_profile(&state.db, id).map_err(internal)?;
+
+    let summary = body.summary.as_deref().unwrap_or("Message from administrator");
+    let mut sent = 0usize;
+
+    for au in &agent_users {
+        if !state.is_online(au.agent_id).await {
+            continue;
+        }
+        let msg = WssMessage::new(MSG_NOTIFY_USER, &NotifyUser {
+            local_uid: au.local_uid as u32,
+            summary: summary.to_string(),
+            body: body.body.clone(),
+        }).map_err(internal)?;
+        state.send_to_agent_id(au.agent_id, msg).await;
+        sent += 1;
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": format!("Notification sent to {sent}/{} online agent(s)", agent_users.len()),
+        "sent": sent,
+        "total": agent_users.len(),
+    })))
 }
 
 // ── agent-users ───────────────────────────────────────────────────────────────
