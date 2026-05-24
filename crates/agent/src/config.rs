@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::Path;
 
-const DEFAULT_CONFIG_PATH: &str = "/etc/parental-controller/agent.toml";
-const CONFIG_PATH_ENV: &str = "PARENTAL_AGENT_CONFIG";
+const DEFAULT_CONFIG_PATH: &str = "/etc/screenguard/agent.toml";
+const CONFIG_PATH_ENV: &str = "SCREENGUARD_AGENT_CONFIG";
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]

@@ -3,7 +3,7 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, params};
 use std::path::Path;
 
-const DB_PATH: &str = "/var/lib/parental-controller/agent.db";
+const DB_PATH: &str = "/var/lib/screenguard/agent.db";
 const DB_PATH_ENV: &str = "PARENTAL_AGENT_DB";
 
 pub struct Db {

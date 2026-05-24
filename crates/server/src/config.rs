@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::Path;
 
-const DEFAULT_CONFIG_PATH: &str = "/etc/parental-controller/server.toml";
-const CONFIG_PATH_ENV: &str = "PARENTAL_SERVER_CONFIG";
-const DEFAULT_DB_PATH: &str = "/var/lib/parental-controller/server.db";
-const DB_PATH_ENV: &str = "PARENTAL_SERVER_DB";
+const DEFAULT_CONFIG_PATH: &str = "/etc/screenguard/server.toml";
+const CONFIG_PATH_ENV: &str = "SCREENGUARD_SERVER_CONFIG";
+const DEFAULT_DB_PATH: &str = "/var/lib/screenguard/server.db";
+const DB_PATH_ENV: &str = "SCREENGUARD_SERVER_DB";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
