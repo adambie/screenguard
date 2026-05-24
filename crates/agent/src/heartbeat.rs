@@ -189,9 +189,70 @@ impl HeartbeatLoop {
             }
             ServerMessage::ConfigPush(push) => {
                 tracing::info!("Received config_push v{}", push.config_version);
-                let db = self.db.lock().await;
-                db.apply_config_push(&push.users)?;
-                db.save_config_version(push.config_version)?;
+                let today = chrono::Local::now().date_naive().to_string();
+
+                // Snapshot state before applying so we can detect what changed.
+                let snapshots: Vec<(u32, Vec<_>, i32)> = {
+                    let db = self.db.lock().await;
+                    push.users.iter().map(|u| {
+                        let schedules = db.get_cached_schedules(u.local_uid).unwrap_or_default();
+                        let adj = db.get_cached_adjustment(u.local_uid, &today).unwrap_or(0);
+                        (u.local_uid, schedules, adj)
+                    }).collect()
+                };
+
+                {
+                    let db = self.db.lock().await;
+                    db.apply_config_push(&push.users)?;
+                    db.save_config_version(push.config_version)?;
+                }
+
+                // Notify users about what changed.
+                for (u, (uid, old_schedules, old_adj)) in push.users.iter().zip(snapshots) {
+                    let new_adj = u.adjustments_today;
+
+                    // Normalise schedules to a comparable form.
+                    let mut old_sig: Vec<_> = old_schedules.iter()
+                        .map(|s| (s.day_of_week, s.start_time.clone(), s.end_time.clone()))
+                        .collect();
+                    let mut new_sig: Vec<_> = u.schedules.iter()
+                        .map(|s| (s.day_of_week,
+                                  s.start_time.format("%H:%M").to_string(),
+                                  s.end_time.format("%H:%M").to_string()))
+                        .collect();
+                    old_sig.sort_unstable();
+                    new_sig.sort_unstable();
+
+                    let schedule_changed = old_sig != new_sig;
+                    let adj_delta = new_adj - old_adj;
+
+                    if schedule_changed {
+                        tokio::spawn(async move {
+                            let _ = crate::dbus::send_desktop_notification(
+                                uid,
+                                "Schedule updated",
+                                "Your allowed screen time schedule has been changed.",
+                            ).await;
+                        });
+                    }
+
+                    if adj_delta > 0 {
+                        tokio::spawn(async move {
+                            let body = format!("{adj_delta} minutes of extra screen time granted today.");
+                            let _ = crate::dbus::send_desktop_notification(
+                                uid, "Screen time added", &body,
+                            ).await;
+                        });
+                    } else if adj_delta < 0 {
+                        let removed = -adj_delta;
+                        tokio::spawn(async move {
+                            let body = format!("{removed} minutes of screen time removed today.");
+                            let _ = crate::dbus::send_desktop_notification(
+                                uid, "Screen time reduced", &body,
+                            ).await;
+                        });
+                    }
+                }
             }
             ServerMessage::RemainingUpdate(update) => {
                 let db = self.db.lock().await;
