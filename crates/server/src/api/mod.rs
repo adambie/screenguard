@@ -18,6 +18,7 @@ pub mod usage;
 
 pub fn router(state: Arc<AppState>) -> Router {
     let public = Router::new()
+        .route("/auth/status", get(auth::status))
         .route("/auth/setup", post(auth::setup))
         .route("/auth/login", post(auth::login));
 

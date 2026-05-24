@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Parental Controller{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Dashboard</h3>
+  {% if data.pending_agents %}
+    <a href="{{ url_for('agents') }}" class="btn btn-warning btn-sm">
+      {{ data.pending_agents }} agent(s) pending approval
+    </a>
+  {% endif %}
+</div>
+
+{% if data.profiles %}
+<div class="row g-3">
+  {% for p in data.profiles %}
+  <div class="col-md-4">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">
+          <a href="{{ url_for('profile_detail', profile_id=p.id) }}" class="text-decoration-none">
+            {{ p.display_name }}
+          </a>
+        </h5>
+        <div class="small text-muted mb-2">
+          Agents: {{ p.agents_online }}/{{ p.agents_total }} online
+        </div>
+        <div class="small text-muted">
+          Used today:
+          <strong>{{ p.used_minutes }}m</strong>
+          {% if p.limit_minutes is not none %}
+            / {{ p.limit_minutes }}m
+            ({{ p.remaining_minutes }}m left)
+          {% else %}
+            (no limit)
+          {% endif %}
+        </div>
+        {% if p.limit_minutes is not none %}
+          {% set pct = [(p.used_minutes / p.limit_minutes * 100) | int, 100] | min %}
+          <div class="progress mt-2" style="height:6px">
+            <div class="progress-bar {% if pct >= 90 %}bg-danger{% elif pct >= 70 %}bg-warning{% else %}bg-success{% endif %}"
+                 style="width:{{ pct }}%"></div>
+          </div>
+        {% endif %}
+        <div class="mt-2">
+          {% if p.enforce == 'lock' %}
+            <span class="badge bg-danger">locked</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card-footer bg-transparent">
+        <a href="{{ url_for('profile_detail', profile_id=p.id) }}" class="btn btn-sm btn-outline-primary">Manage</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+  No profiles yet. <a href="{{ url_for('profiles') }}">Create one</a> to get started.
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Profiles – Parental Controller{% endblock %}
+
+{% block content %}
+<h3 class="mb-3">Profiles</h3>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header">Create new profile</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('create_profile') }}" class="d-flex gap-2">
+      <input name="display_name" class="form-control" placeholder="Profile name (e.g. Alice)" required>
+      <button class="btn btn-primary text-nowrap">Create</button>
+    </form>
+  </div>
+</div>
+
+{% if profiles %}
+<table class="table table-hover align-middle bg-white shadow-sm rounded">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in profiles %}
+    <tr>
+      <td>
+        <a href="{{ url_for('profile_detail', profile_id=p.id) }}" class="text-decoration-none fw-semibold">
+          {{ p.display_name }}
+        </a>
+      </td>
+      <td><small class="text-muted">{{ p.created_at }}</small></td>
+      <td class="text-end">
+        <a href="{{ url_for('profile_detail', profile_id=p.id) }}" class="btn btn-sm btn-outline-primary">Manage</a>
+        <form method="post" action="{{ url_for('delete_profile', profile_id=p.id) }}" class="d-inline"
+              onsubmit="return confirm('Delete profile {{ p.display_name }}?')">
+          <button class="btn btn-sm btn-outline-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="alert alert-info">No profiles yet.</div>
+{% endif %}
+{% endblock %}

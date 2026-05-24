@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Agent: {{ agent.display_name or agent.hostname }} – Parental Controller{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('agents') }}">Agents</a></li>
+    <li class="breadcrumb-item active">{{ agent.display_name or agent.hostname }}</li>
+  </ol>
+</nav>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-header">Agent info</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-5">Hostname</dt><dd class="col-7">{{ agent.hostname }}</dd>
+          <dt class="col-5">Status</dt>
+          <dd class="col-7">
+            {% if agent.status == 'paired' %}<span class="badge bg-success">paired</span>
+            {% elif agent.status == 'pending' %}<span class="badge bg-warning text-dark">pending</span>
+            {% else %}<span class="badge bg-secondary">{{ agent.status }}</span>{% endif %}
+          </dd>
+          <dt class="col-5">Version</dt><dd class="col-7">{{ agent.agent_version or '—' }}</dd>
+          <dt class="col-5">Timezone</dt><dd class="col-7">{{ agent.timezone or '—' }}</dd>
+          <dt class="col-5">Last seen</dt><dd class="col-7">{{ agent.last_seen_at or '—' }}</dd>
+          <dt class="col-5">Machine ID</dt>
+          <dd class="col-7"><small class="text-muted font-monospace">{{ agent.machine_id }}</small></dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-header">Rename agent</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('rename_agent', agent_id=agent.id) }}"
+              class="d-flex gap-2">
+          <input name="display_name" class="form-control" placeholder="Display name"
+                 value="{{ agent.display_name or '' }}">
+          <button class="btn btn-primary text-nowrap">Save</button>
+        </form>
+      </div>
+    </div>
+
+    {% if agent.status == 'pending' %}
+    <div class="card shadow-sm mt-3">
+      <div class="card-header">Pairing</div>
+      <div class="card-body">
+        <p class="mb-2">Pairing code: <code class="fs-5">{{ agent.pairing_code }}</code></p>
+        <form method="post" action="{{ url_for('accept_agent', agent_id=agent.id) }}">
+          <button class="btn btn-success">Accept agent</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header">Managed users</div>
+  <div class="card-body p-0">
+    {% if users %}
+    <table class="table mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>UID</th>
+          <th>Status</th>
+          <th>Link to profile</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.local_username }}</td>
+          <td><small class="text-muted">{{ u.local_uid }}</small></td>
+          <td>
+            {% if u.status == 'managed' %}
+              <span class="badge bg-primary">managed</span>
+            {% else %}
+              <span class="badge bg-secondary">unmanaged</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('link_agent_user', user_id=u.id) }}"
+                  class="d-flex gap-2">
+              <input type="hidden" name="agent_id" value="{{ agent.id }}">
+              <select name="profile_id" class="form-select form-select-sm">
+                <option value="">— unmanaged —</option>
+                {% for p in profiles %}
+                  <option value="{{ p.id }}"
+                    {% if u.profile_id == p.id %}selected{% endif %}>
+                    {{ p.display_name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-sm btn-primary text-nowrap">Link</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="p-3 text-muted mb-0">
+      No users discovered yet. The agent reports users on first connection.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -25,6 +25,13 @@ pub struct Claims {
     pub exp: usize,
 }
 
+pub async fn status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let count = db::admin_count(&state.db).map_err(internal)?;
+    Ok(Json(serde_json::json!({ "setup_needed": count == 0 })))
+}
+
 pub async fn setup(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AuthRequest>,
@@ -34,6 +41,12 @@ pub async fn setup(
         return Err((
             StatusCode::CONFLICT,
             Json(serde_json::json!({ "error": "Admin account already exists" })),
+        ));
+    }
+    if body.username.is_empty() || body.password.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Username and password are required" })),
         ));
     }
 

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{% if setup_needed %}Setup{% else %}Login{% endif %} – Parental Controller{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        {% if setup_needed %}
+          <h4 class="card-title mb-1">First-time setup</h4>
+          <p class="text-muted small mb-3">Create the administrator account.</p>
+          <form method="post">
+            <input type="hidden" name="action" value="setup">
+            <div class="mb-3">
+              <label class="form-label">Username</label>
+              <input name="username" class="form-control" required autofocus>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input name="password" type="password" class="form-control" required>
+            </div>
+            <button class="btn btn-primary w-100">Create admin account</button>
+          </form>
+        {% else %}
+          <h4 class="card-title mb-3">Login</h4>
+          <form method="post">
+            <input type="hidden" name="action" value="login">
+            <div class="mb-3">
+              <label class="form-label">Username</label>
+              <input name="username" class="form-control" required autofocus>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input name="password" type="password" class="form-control" required>
+            </div>
+            <button class="btn btn-primary w-100">Login</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

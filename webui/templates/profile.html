@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.display_name }} – Parental Controller{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('profiles') }}">Profiles</a></li>
+    <li class="breadcrumb-item active">{{ profile.display_name }}</li>
+  </ol>
+</nav>
+
+<!-- ── header row ─────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Profile: {{ profile.display_name }}</span>
+        <form method="post" action="{{ url_for('delete_profile', profile_id=profile.id) }}" class="mb-0"
+              onsubmit="return confirm('Delete this profile?')">
+          <button class="btn btn-sm btn-outline-danger">Delete</button>
+        </form>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('rename_profile', profile_id=profile.id) }}" class="d-flex gap-2 mb-3">
+          <input name="display_name" class="form-control" value="{{ profile.display_name }}" required>
+          <button class="btn btn-primary text-nowrap">Rename</button>
+        </form>
+
+        <h6 class="text-muted">Linked users</h6>
+        {% if agent_users %}
+          <ul class="list-group list-group-flush">
+            {% for u in agent_users %}
+              <li class="list-group-item px-0">
+                <strong>{{ u.local_username }}</strong>
+                <small class="text-muted ms-2">uid {{ u.local_uid }}</small>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-muted small">No users linked to this profile yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header">Today's status</div>
+      <div class="card-body">
+        {% if status and status.today is defined %}
+          {% set today_s = status.today %}
+          <dl class="row mb-0">
+            <dt class="col-6">Used today</dt>
+            <dd class="col-6">{{ today_s.used_minutes }}m</dd>
+            <dt class="col-6">Allowed today</dt>
+            <dd class="col-6">
+              {% if today_s.limit_minutes is not none %}
+                {{ today_s.limit_minutes }}m ({{ today_s.remaining_minutes }}m left)
+              {% else %}
+                no limit
+              {% endif %}
+            </dd>
+            <dt class="col-6">Adjustments</dt>
+            <dd class="col-6">{{ today_s.adjustments_minutes }}m</dd>
+            <dt class="col-6">Enforce action</dt>
+            <dd class="col-6">
+              {% if today_s.enforce == 'lock' %}
+                <span class="badge bg-danger">lock</span>
+              {% elif today_s.enforce == 'warn' %}
+                <span class="badge bg-warning text-dark">warn</span>
+              {% else %}
+                <span class="badge bg-success">allow</span>
+              {% endif %}
+            </dd>
+          </dl>
+        {% else %}
+          <p class="text-muted">Status not available.</p>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('lock_now', profile_id=profile.id) }}" class="mt-3">
+          <button class="btn btn-danger"
+                  onclick="return confirm('Send lock-now to all agents for this profile?')">
+            Lock now
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── schedules ──────────────────────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Allowed time windows (schedule)</span>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="addScheduleRow">+ Add row</button>
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('update_schedules', profile_id=profile.id) }}">
+      <table class="table table-sm align-middle" id="scheduleTable">
+        <thead>
+          <tr><th>Day</th><th>From</th><th>To</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for s in schedules %}
+          <tr>
+            <td>
+              <select name="dow_{{ loop.index0 }}" class="form-select form-select-sm">
+                {% for d in days() %}
+                  <option value="{{ loop.index0 }}" {% if s.day_of_week == loop.index0 %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input type="time" name="start_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ s.start_time }}" required></td>
+            <td><input type="time" name="end_{{ loop.index0 }}"   class="form-control form-control-sm" value="{{ s.end_time }}"   required></td>
+            <td><button type="button" class="btn btn-sm btn-outline-danger remove-row">&#x2715;</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button class="btn btn-primary">Save schedules</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── daily limits ───────────────────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header">Daily screen-time limits (minutes)</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('update_limits', profile_id=profile.id) }}">
+      <div class="row g-2 mb-3">
+        {% for d in days() %}
+        {% set dow = loop.index0 %}
+        <div class="col">
+          <label class="form-label small">{{ d }}</label>
+          {% set ns = namespace(val='') %}
+          {% for l in limits %}{% if l.day_of_week == dow %}{% set ns.val = l.allowed_minutes %}{% endif %}{% endfor %}
+          <input type="number" name="limit_{{ dow }}" class="form-control form-control-sm text-center"
+                 min="0" max="1440" placeholder="—" value="{{ ns.val }}">
+        </div>
+        {% endfor %}
+      </div>
+      <button class="btn btn-primary">Save limits</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── adjustments ────────────────────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header">One-off adjustments</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}"
+          class="row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label class="form-label small">Date</label>
+        <input type="date" name="target_date" class="form-control form-control-sm" value="{{ today }}" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small">Minutes (±)</label>
+        <input type="number" name="minutes" class="form-control form-control-sm" style="width:100px"
+               placeholder="e.g. 30" required>
+      </div>
+      <div class="col">
+        <label class="form-label small">Reason (optional)</label>
+        <input type="text" name="reason" class="form-control form-control-sm"
+               placeholder="Good behaviour bonus">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary btn-sm">Add adjustment</button>
+      </div>
+    </form>
+
+    {% if adjustments %}
+    <table class="table table-sm">
+      <thead><tr><th>Date</th><th>Minutes</th><th>Reason</th><th>Created</th></tr></thead>
+      <tbody>
+        {% for a in adjustments %}
+        <tr>
+          <td>{{ a.target_date }}</td>
+          <td>
+            {% if a.adjustment_minutes >= 0 %}
+              <span class="text-success">+{{ a.adjustment_minutes }}</span>
+            {% else %}
+              <span class="text-danger">{{ a.adjustment_minutes }}</span>
+            {% endif %}
+          </td>
+          <td>{{ a.reason or '—' }}</td>
+          <td><small class="text-muted">{{ a.created_at }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted small mb-0">No adjustments yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── usage history ──────────────────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header">Usage history (last 14 days)</div>
+  <div class="card-body p-0">
+    {% if usage %}
+    <table class="table table-sm mb-0">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Used</th>
+          <th>Limit</th>
+          <th>Adjustments</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usage %}
+        <tr>
+          <td>{{ u.date }}</td>
+          <td>{{ u.used_minutes }}m</td>
+          <td>{{ u.limit_minutes ~ 'm' if u.limit_minutes is not none else '—' }}</td>
+          <td>
+            {% if u.adjustments_minutes != 0 %}
+              {% if u.adjustments_minutes > 0 %}
+                <span class="text-success">+{{ u.adjustments_minutes }}m</span>
+              {% else %}
+                <span class="text-danger">{{ u.adjustments_minutes }}m</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="p-3 text-muted mb-0">No usage data yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let rowCount = {{ schedules | length }};
+
+document.getElementById('addScheduleRow').addEventListener('click', function() {
+  const tbody = document.querySelector('#scheduleTable tbody');
+  const row = document.createElement('tr');
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const opts = days.map((d,i) => `<option value="${i}">${d}</option>`).join('');
+  row.innerHTML = `
+    <td><select name="dow_${rowCount}" class="form-select form-select-sm">${opts}</select></td>
+    <td><input type="time" name="start_${rowCount}" class="form-control form-control-sm" required></td>
+    <td><input type="time" name="end_${rowCount}"   class="form-control form-control-sm" required></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger remove-row">&#x2715;</button></td>
+  `;
+  tbody.appendChild(row);
+  rowCount++;
+});
+
+document.querySelector('#scheduleTable').addEventListener('click', function(e) {
+  if (e.target.classList.contains('remove-row')) {
+    e.target.closest('tr').remove();
+  }
+});
+</script>
+{% endblock %}
