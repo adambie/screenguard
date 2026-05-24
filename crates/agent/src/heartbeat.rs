@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Local, NaiveDate};
+use chrono::{Datelike, Local, NaiveDate};
 use common::messages::{
     AgentHello, Heartbeat, HeartbeatUser, ServerMessage, UsageSync, UserListUpdate,
     MSG_AGENT_HELLO, MSG_HEARTBEAT, MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
@@ -236,21 +236,41 @@ impl HeartbeatLoop {
                         });
                     }
 
-                    if adj_delta > 0 {
-                        tokio::spawn(async move {
-                            let body = format!("{adj_delta} minutes of extra screen time granted today.");
-                            let _ = crate::dbus::send_desktop_notification(
-                                uid, "Screen time added", &body,
-                            ).await;
-                        });
-                    } else if adj_delta < 0 {
-                        let removed = -adj_delta;
-                        tokio::spawn(async move {
-                            let body = format!("{removed} minutes of screen time removed today.");
-                            let _ = crate::dbus::send_desktop_notification(
-                                uid, "Screen time reduced", &body,
-                            ).await;
-                        });
+                    if adj_delta != 0 {
+                        // Calculate remaining after adjustment.
+                        let dow = chrono::Local::now().date_naive()
+                            .weekday()
+                            .num_days_from_monday() as u8;
+                        let limit = u.daily_limits.iter()
+                            .find(|l| l.day_of_week == dow)
+                            .map(|l| l.allowed_minutes as i32)
+                            .unwrap_or(1440);
+                        let used_min = {
+                            let db = self.db.lock().await;
+                            (db.get_usage_seconds(uid, &today).unwrap_or(0) / 60) as i32
+                        };
+                        let remaining = (limit + new_adj - used_min).max(0);
+
+                        if adj_delta > 0 {
+                            tokio::spawn(async move {
+                                let body = format!(
+                                    "+{adj_delta} minutes granted. {remaining} minutes remaining today."
+                                );
+                                let _ = crate::dbus::send_desktop_notification(
+                                    uid, "Screen time added", &body,
+                                ).await;
+                            });
+                        } else {
+                            let removed = -adj_delta;
+                            tokio::spawn(async move {
+                                let body = format!(
+                                    "-{removed} minutes taken. {remaining} minutes remaining today."
+                                );
+                                let _ = crate::dbus::send_desktop_notification(
+                                    uid, "Screen time reduced", &body,
+                                ).await;
+                            });
+                        }
                     }
                 }
             }
