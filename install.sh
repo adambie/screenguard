@@ -21,11 +21,21 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 need_cmd() { command -v "$1" &>/dev/null || error "Required command not found: $1"; }
 download() { curl -fsSL "$1" -o "$2" || error "Download failed: $1"; }
 
+# Always read from /dev/tty so interactive prompts work when piped through curl.
+ask() {
+    local prompt="$1" varname="$2" default="${3:-}"
+    [[ -n $default ]] && prompt+=" [${default}]"
+    prompt+=": "
+    local val
+    read -rp "$prompt" val </dev/tty
+    printf -v "$varname" '%s' "${val:-$default}"
+}
+
 confirm() {
     local prompt="$1" default="${2:-y}"
     local yn
     [[ $default == y ]] && prompt+=" [Y/n] " || prompt+=" [y/N] "
-    read -rp "$prompt" yn
+    read -rp "$prompt" yn </dev/tty
     yn="${yn:-$default}"
     [[ $yn =~ ^[Yy] ]]
 }
@@ -56,7 +66,7 @@ echo "  2) Server only  — management server"
 echo "  3) Both         — server + agent on this machine"
 echo
 while true; do
-    read -rp "Enter choice [1-3]: " choice
+    ask "Enter choice [1-3]" choice
     case $choice in
         1) INSTALL_AGENT=1; INSTALL_SERVER=0; break ;;
         2) INSTALL_AGENT=0; INSTALL_SERVER=1; break ;;
@@ -73,11 +83,11 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 && ${INSTALL_SERVER:-0} -eq 0 ]]; then
     echo "  2) Fixed URL            — you know the server's address"
     echo
     while true; do
-        read -rp "Enter choice [1-2]: " disc
+        ask "Enter choice [1-2]" disc
         case $disc in
             1) SERVER_URL=""; break ;;
             2)
-                read -rp "Server URL (e.g. http://192.168.1.100:8080): " SERVER_URL
+                ask "Server URL (e.g. http://192.168.1.100:8080)" SERVER_URL
                 [[ -n $SERVER_URL ]] && break || warn "URL cannot be empty"
                 ;;
             *) warn "Please enter 1 or 2" ;;
@@ -92,8 +102,7 @@ fi
 SERVER_PORT=8080
 if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     header "Server configuration"
-    read -rp "Listen port [8080]: " input_port
-    SERVER_PORT="${input_port:-8080}"
+    ask "Listen port" SERVER_PORT "8080"
 fi
 
 # ── confirm ───────────────────────────────────────────────────────────────────
