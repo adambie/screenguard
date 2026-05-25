@@ -45,9 +45,20 @@ confirm() {
 need_cmd curl
 need_cmd systemctl
 
-header "ScreenGuard installer"
-echo "  GitHub: https://github.com/${REPO}"
-echo
+MODE="install"
+for arg in "$@"; do
+    case $arg in
+        --update)    MODE="update"    ;;
+        --uninstall) MODE="uninstall" ;;
+        --help|-h)
+            echo "Usage: sudo bash install.sh [--update | --uninstall]"
+            echo "  (no flag)    Fresh install — interactive"
+            echo "  --update     Download latest binaries, restart services"
+            echo "  --uninstall  Stop services and remove all ScreenGuard files"
+            exit 0
+            ;;
+    esac
+done
 
 # ── architecture ──────────────────────────────────────────────────────────────
 ARCH=$(uname -m)
@@ -57,6 +68,156 @@ case $ARCH in
     armv7l)  error "armv7 is not yet supported. Only x86_64 and aarch64 are available." ;;
     *)       error "Unsupported architecture: $ARCH" ;;
 esac
+
+# ════════════════════════════════════════════════════════════════════════════
+# UNINSTALL
+# ════════════════════════════════════════════════════════════════════════════
+if [[ $MODE == uninstall ]]; then
+    header "ScreenGuard uninstaller"
+
+    AGENT_INSTALLED=0; SERVER_INSTALLED=0
+    [[ -f "${INSTALL_DIR}/screenguard-agent"  ]] && AGENT_INSTALLED=1
+    [[ -f "${INSTALL_DIR}/screenguard-server" ]] && SERVER_INSTALLED=1
+
+    if [[ $AGENT_INSTALLED -eq 0 && $SERVER_INSTALLED -eq 0 ]]; then
+        warn "No ScreenGuard binaries found in ${INSTALL_DIR}. Nothing to uninstall."
+        exit 0
+    fi
+
+    header "This will remove:"
+    [[ $SERVER_INSTALLED -eq 1 ]] && echo "  • screenguard-server binary and systemd unit"
+    [[ $AGENT_INSTALLED  -eq 1 ]] && echo "  • screenguard-agent binary and systemd unit"
+    echo "  • Systemd units in ${SYSTEMD_DIR}/"
+    echo
+    echo "  Config and data directories will be removed only if you confirm separately."
+    echo
+
+    confirm "Proceed with uninstall?" n || { echo "Aborted."; exit 0; }
+
+    header "Stopping and disabling services"
+    for svc in screenguard-server screenguard-agent; do
+        if systemctl is-active --quiet "$svc" 2>/dev/null; then
+            systemctl stop "$svc"
+            info "Stopped $svc"
+        fi
+        if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+            systemctl disable "$svc"
+            info "Disabled $svc"
+        fi
+    done
+
+    header "Removing files"
+    for bin in screenguard-server screenguard-agent; do
+        if [[ -f "${INSTALL_DIR}/${bin}" ]]; then
+            rm -f "${INSTALL_DIR}/${bin}"
+            info "Removed ${INSTALL_DIR}/${bin}"
+        fi
+    done
+    for unit in screenguard-server.service screenguard-agent.service; do
+        if [[ -f "${SYSTEMD_DIR}/${unit}" ]]; then
+            rm -f "${SYSTEMD_DIR}/${unit}"
+            info "Removed ${SYSTEMD_DIR}/${unit}"
+        fi
+    done
+    systemctl daemon-reload
+
+    echo
+    if confirm "Also remove config directory ${CONFIG_DIR}/ (agent.toml, server.toml)?" n; then
+        rm -rf "${CONFIG_DIR}"
+        info "Removed ${CONFIG_DIR}"
+    fi
+    if [[ -d "${DATA_DIR}" ]]; then
+        if confirm "Also remove data directory ${DATA_DIR}/ (database — this deletes all profiles, schedules, usage history)?" n; then
+            rm -rf "${DATA_DIR}"
+            info "Removed ${DATA_DIR}"
+        fi
+    fi
+
+    header "Done — ScreenGuard has been removed."
+    exit 0
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# UPDATE
+# ════════════════════════════════════════════════════════════════════════════
+if [[ $MODE == update ]]; then
+    header "ScreenGuard updater"
+    info "Architecture: ${ARCH}"
+
+    AGENT_INSTALLED=0; SERVER_INSTALLED=0
+    [[ -f "${INSTALL_DIR}/screenguard-agent"  ]] && AGENT_INSTALLED=1
+    [[ -f "${INSTALL_DIR}/screenguard-server" ]] && SERVER_INSTALLED=1
+
+    if [[ $AGENT_INSTALLED -eq 0 && $SERVER_INSTALLED -eq 0 ]]; then
+        error "No ScreenGuard binaries found in ${INSTALL_DIR}. Run without --update to do a fresh install."
+    fi
+
+    header "Will update:"
+    [[ $SERVER_INSTALLED -eq 1 ]] && echo "  • screenguard-server"
+    [[ $AGENT_INSTALLED  -eq 1 ]] && echo "  • screenguard-agent"
+    echo "  • systemd service units"
+    echo "  Configs in ${CONFIG_DIR}/ will NOT be touched."
+    echo
+    confirm "Proceed?" || { echo "Aborted."; exit 0; }
+
+    TMP=$(mktemp -d)
+    trap 'rm -rf "$TMP"' EXIT
+
+    header "Downloading latest binaries"
+    if [[ $SERVER_INSTALLED -eq 1 ]]; then
+        info "Downloading screenguard-server..."
+        download "${RELEASES_URL}/screenguard-server-${BIN_ARCH}" "${TMP}/screenguard-server"
+        chmod +x "${TMP}/screenguard-server"
+        download "${RELEASES_URL}/screenguard-server.service" "${TMP}/screenguard-server.service"
+    fi
+    if [[ $AGENT_INSTALLED -eq 1 ]]; then
+        info "Downloading screenguard-agent..."
+        download "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}" "${TMP}/screenguard-agent"
+        chmod +x "${TMP}/screenguard-agent"
+        download "${RELEASES_URL}/screenguard-agent.service" "${TMP}/screenguard-agent.service"
+    fi
+
+    header "Stopping services"
+    if [[ $SERVER_INSTALLED -eq 1 ]]; then
+        systemctl stop screenguard-server 2>/dev/null && info "Stopped screenguard-server" || true
+    fi
+    if [[ $AGENT_INSTALLED -eq 1 ]]; then
+        systemctl stop screenguard-agent 2>/dev/null && info "Stopped screenguard-agent" || true
+    fi
+
+    header "Installing"
+    if [[ $SERVER_INSTALLED -eq 1 ]]; then
+        cp "${TMP}/screenguard-server" "${INSTALL_DIR}/screenguard-server"
+        cp "${TMP}/screenguard-server.service" "${SYSTEMD_DIR}/screenguard-server.service"
+        info "Updated screenguard-server"
+    fi
+    if [[ $AGENT_INSTALLED -eq 1 ]]; then
+        cp "${TMP}/screenguard-agent" "${INSTALL_DIR}/screenguard-agent"
+        cp "${TMP}/screenguard-agent.service" "${SYSTEMD_DIR}/screenguard-agent.service"
+        info "Updated screenguard-agent"
+    fi
+
+    header "Restarting services"
+    systemctl daemon-reload
+    if [[ $SERVER_INSTALLED -eq 1 ]]; then
+        systemctl restart screenguard-server
+        info "screenguard-server restarted"
+    fi
+    if [[ $AGENT_INSTALLED -eq 1 ]]; then
+        systemctl restart screenguard-agent
+        info "screenguard-agent restarted"
+    fi
+
+    header "Done — ScreenGuard updated to latest release."
+    exit 0
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# INSTALL (fresh)
+# ════════════════════════════════════════════════════════════════════════════
+header "ScreenGuard installer"
+echo "  GitHub: https://github.com/${REPO}"
+echo
 info "Architecture: ${ARCH}"
 
 # ── what to install ───────────────────────────────────────────────────────────
@@ -94,7 +255,6 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 && ${INSTALL_SERVER:-0} -eq 0 ]]; then
         esac
     done
 elif [[ ${INSTALL_AGENT:-0} -eq 1 && ${INSTALL_SERVER:-0} -eq 1 ]]; then
-    # Both on same machine — agent connects to local server
     SERVER_URL="http://127.0.0.1:8080"
 fi
 
@@ -152,7 +312,6 @@ if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
 
     mkdir -p "${DATA_DIR}"
 
-    # Write server config (only if it doesn't exist yet)
     if [[ ! -f "${CONFIG_DIR}/server.toml" ]]; then
         cat > "${CONFIG_DIR}/server.toml" <<EOF
 listen_addr = "0.0.0.0"
@@ -175,7 +334,6 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
 
     mkdir -p "${DATA_DIR}"
 
-    # Write agent config (only if it doesn't exist yet)
     if [[ ! -f "${CONFIG_DIR}/agent.toml" ]]; then
         if [[ -n $SERVER_URL ]]; then
             cat > "${CONFIG_DIR}/agent.toml" <<EOF
@@ -194,13 +352,6 @@ EOF
 
     cp "${TMP}/screenguard-agent.service" "${SYSTEMD_DIR}/screenguard-agent.service"
     info "Installed systemd unit: screenguard-agent.service"
-fi
-
-# ── update config paths to /etc/screenguard ───────────────────────────────────
-# Patch ExecStart EnvironmentFile to point at new config dir
-if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
-    sed -i "s|/etc/screenguard/server.env|${CONFIG_DIR}/server.env|g" \
-        "${SYSTEMD_DIR}/screenguard-server.service"
 fi
 
 # ── enable & start ────────────────────────────────────────────────────────────
@@ -225,6 +376,11 @@ if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     echo -e "  Web UI:  cd webui && SERVER_URL=http://localhost:${SERVER_PORT} uv run --with flask --with requests python app.py"
     echo -e "  Logs:    journalctl -u screenguard-server -f"
     echo -e "  Config:  ${CONFIG_DIR}/server.toml"
+    echo
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+        warn "ufw firewall is active. Agents on other machines will not reach the server until you run:"
+        warn "  sudo ufw allow ${SERVER_PORT}/tcp"
+    fi
 fi
 
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
@@ -233,4 +389,7 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     echo -e "  Reset:   screenguard-agent --reset"
 fi
 
+echo
+echo -e "  To update later:    sudo bash install.sh --update"
+echo -e "  To uninstall later: sudo bash install.sh --uninstall"
 echo
