@@ -4,11 +4,10 @@ After=network-online.target dbus.service
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 ExecStart=/usr/local/bin/screenguard-agent
 Restart=always
 RestartSec=5
-WatchdogSec=60
 
 ProtectSystem=strict
 ReadWritePaths=/var/lib/screenguard
