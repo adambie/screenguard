@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -212,8 +212,9 @@ pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Send a desktop notification to a user by connecting to their session D-Bus.
-/// Silently does nothing if the user has no active session bus (e.g. not logged in).
+/// Send a desktop notification to a user by spawning the agent binary as that user.
+/// This avoids the D-Bus peer-credential rejection that occurs when root connects directly
+/// to a user's session bus socket.
 pub async fn send_desktop_notification(uid: u32, summary: &str, body: &str) -> Result<()> {
     let socket = format!("/run/user/{uid}/bus");
     if !std::path::Path::new(&socket).exists() {
@@ -221,34 +222,58 @@ pub async fn send_desktop_notification(uid: u32, summary: &str, body: &str) -> R
         return Ok(());
     }
 
-    let address = format!("unix:path={socket}");
-    let conn = match zbus::connection::Builder::address(address.as_str())?
-        .build()
-        .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!("Cannot connect to session bus for uid={uid}: {e}");
-            return Ok(());
-        }
-    };
+    let exe = std::env::current_exe().context("Cannot determine agent executable path")?;
+    let gid = lookup_gid_for_uid(uid).unwrap_or(uid);
+    let summary = summary.to_string();
+    let body = body.to_string();
 
+    tokio::task::spawn_blocking(move || {
+        use std::os::unix::process::CommandExt;
+        let result = std::process::Command::new(&exe)
+            .arg("--notify")
+            .arg(&summary)
+            .arg(&body)
+            .env_clear()
+            .env("DBUS_SESSION_BUS_ADDRESS", format!("unix:path=/run/user/{uid}/bus"))
+            .env("XDG_RUNTIME_DIR", format!("/run/user/{uid}"))
+            .uid(uid)
+            .gid(gid)
+            .spawn();
+        if let Err(e) = result {
+            tracing::warn!("Failed to spawn notification subprocess for uid={uid}: {e}");
+        }
+    })
+    .await?;
+
+    Ok(())
+}
+
+/// Called when the agent binary is invoked with `--notify`.
+/// At this point the process is already running as the target user, so the session
+/// bus connection uses the correct peer credentials.
+pub async fn notify_as_current_user(summary: &str, body: &str) -> Result<()> {
+    let conn = zbus::Connection::session().await?;
     let proxy = NotificationsProxy::new(&conn).await?;
     let hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
     let _ = proxy
-        .notify(
-            "Parental Controller",
-            0,
-            "dialog-information",
-            summary,
-            body,
-            &[],
-            hints,
-            5000,
-        )
+        .notify("ScreenGuard", 0, "dialog-information", summary, body, &[], hints, 5000)
         .await;
-
     Ok(())
+}
+
+fn lookup_gid_for_uid(uid: u32) -> Option<u32> {
+    let content = std::fs::read_to_string("/etc/passwd").ok()?;
+    for line in content.lines() {
+        let mut fields = line.split(':');
+        let _name = fields.next()?;
+        let _pass = fields.next()?;
+        let uid_str = fields.next()?;
+        let gid_str = fields.next()?;
+        if uid_str.parse::<u32>().ok() == Some(uid) {
+            return gid_str.parse().ok();
+        }
+    }
+    None
 }
 
 #[proxy(

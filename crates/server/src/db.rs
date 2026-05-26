@@ -628,14 +628,15 @@ pub fn replace_daily_limits(pool: &DbPool, profile_id: Uuid, limits: &[(u8, i32)
 
 pub fn get_adjustments(pool: &DbPool, profile_id: Uuid, from: Option<&str>, to: Option<&str>) -> Result<Vec<TimeAdjustment>> {
     let conn = pool.get()?;
-    let mut sql = "SELECT id,profile_id,target_date,adjustment_minutes,reason,created_at
-                   FROM time_adjustments WHERE profile_id=?1".to_string();
-    if from.is_some() { sql.push_str(" AND target_date>=?2"); }
-    if to.is_some() { sql.push_str(" AND target_date<=?3"); }
-    sql.push_str(" ORDER BY target_date DESC");
-    let mut stmt = conn.prepare(&sql)?;
+    let from_val = from.unwrap_or("0000-00-00");
+    let to_val = to.unwrap_or("9999-12-31");
+    let mut stmt = conn.prepare(
+        "SELECT id,profile_id,target_date,adjustment_minutes,reason,created_at
+         FROM time_adjustments WHERE profile_id=?1 AND target_date>=?2 AND target_date<=?3
+         ORDER BY target_date DESC",
+    )?;
     let rows = stmt.query_map(
-        params![profile_id.to_string(), from.unwrap_or(""), to.unwrap_or("")],
+        params![profile_id.to_string(), from_val, to_val],
         |r| Ok(TimeAdjustment {
             id: r.get::<_, String>(0)?.parse().unwrap_or_default(),
             profile_id: r.get::<_, String>(1)?.parse().unwrap_or_default(),

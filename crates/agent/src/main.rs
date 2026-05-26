@@ -27,8 +27,21 @@ async fn main() -> Result<()> {
         &[libsystemd::daemon::NotifyState::Status("starting".into())],
     );
 
+    let args: Vec<String> = std::env::args().collect();
+
+    // Handle --notify <summary> <body>: send a desktop notification as the current user and exit.
+    // The agent spawns itself under the target uid, so at this point we are already that user.
+    if args.get(1).map(String::as_str) == Some("--notify") {
+        let summary = args.get(2).map(String::as_str).unwrap_or("");
+        let body = args.get(3).map(String::as_str).unwrap_or("");
+        if let Err(e) = crate::dbus::notify_as_current_user(summary, body).await {
+            tracing::warn!("Notification failed: {e}");
+        }
+        return Ok(());
+    }
+
     // Handle --reset: clear pairing state and exit.
-    if std::env::args().any(|a| a == "--reset") {
+    if args.iter().any(|a| a == "--reset") {
         let db = Db::open(None).context("Failed to open agent database")?;
         db.reset_pairing()?;
         println!("Agent reset. Re-run without --reset to start pairing.");
