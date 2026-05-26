@@ -27,6 +27,12 @@ jobs:
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross --locked
 
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" crates/agent/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" crates/server/Cargo.toml
+
       - name: Build agent
         run: cross build --release -p agent --target ${{ matrix.target }}
 
