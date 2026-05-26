@@ -126,6 +126,11 @@ if [[ $MODE == uninstall ]]; then
         rm -f "/etc/xdg/autostart/screenguard-tray.desktop"
         info "Removed /etc/xdg/autostart/screenguard-tray.desktop"
     fi
+    if [[ -f "/etc/dbus-1/system.d/screenguard-dbus.conf" ]]; then
+        rm -f "/etc/dbus-1/system.d/screenguard-dbus.conf"
+        info "Removed D-Bus policy /etc/dbus-1/system.d/screenguard-dbus.conf"
+        systemctl reload dbus 2>/dev/null || true
+    fi
     systemctl daemon-reload
 
     echo
@@ -189,6 +194,7 @@ if [[ $MODE == update ]]; then
         download "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}" "${TMP}/screenguard-tray"
         chmod +x "${TMP}/screenguard-tray"
         download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
+        download "${RELEASES_URL}/screenguard-dbus.conf" "${TMP}/screenguard-dbus.conf"
     fi
 
     header "Stopping services"
@@ -211,6 +217,8 @@ if [[ $MODE == update ]]; then
         info "Updated screenguard-agent"
         cp "${TMP}/screenguard-tray" "${INSTALL_DIR}/screenguard-tray"
         cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
+        cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
+        systemctl reload dbus 2>/dev/null || true
         info "Updated screenguard-tray"
     fi
 
@@ -317,6 +325,7 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     download "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}" "${TMP}/screenguard-tray"
     chmod +x "${TMP}/screenguard-tray"
     download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
+    download "${RELEASES_URL}/screenguard-dbus.conf" "${TMP}/screenguard-dbus.conf"
 fi
 
 download "${RELEASES_URL}/screenguard-server.service" "${TMP}/screenguard-server.service"
@@ -357,6 +366,9 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     mkdir -p /etc/xdg/autostart
     cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
     info "Installed /etc/xdg/autostart/screenguard-tray.desktop"
+    cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
+    systemctl reload dbus 2>/dev/null || true
+    info "Installed D-Bus policy /etc/dbus-1/system.d/screenguard-dbus.conf"
 
     mkdir -p "${DATA_DIR}"
 

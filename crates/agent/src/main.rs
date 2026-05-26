@@ -5,6 +5,7 @@ mod discovery;
 mod enforcement;
 mod heartbeat;
 mod pairing;
+mod status_dbus;
 mod users;
 mod ws_client;
 
@@ -12,6 +13,16 @@ use anyhow::{Context, Result};
 use db::{AgentMode, Db, ServerConnection};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
+
+fn wss_to_http(url: &str) -> String {
+    let s = url.replacen("wss://", "https://", 1).replacen("ws://", "http://", 1);
+    if let Some((scheme, rest)) = s.split_once("//") {
+        let host_port = rest.split('/').next().unwrap_or(rest);
+        format!("{scheme}//{host_port}")
+    } else {
+        s
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -97,6 +108,20 @@ async fn main() -> Result<()> {
 
     tracing::info!("Connecting to server at {server_url}");
 
+    let status_handle = {
+        let http_url = wss_to_http(&server_url);
+        match status_dbus::start(http_url).await {
+            Ok(h) => {
+                tracing::info!("Tray D-Bus interface registered");
+                Some(Arc::new(h))
+            }
+            Err(e) => {
+                tracing::warn!("Tray D-Bus interface unavailable: {e}");
+                None
+            }
+        }
+    };
+
     let ws = ws_client::spawn(server_url, auth_token);
 
     let (session_tx, session_rx) = mpsc::channel(64);
@@ -136,6 +161,7 @@ async fn main() -> Result<()> {
         cfg.user_scan_interval,
         cfg.min_uid,
         cfg.cache_ttl_hours,
+        status_handle,
     );
 
     // SIGTERM: notify systemd STOPPING=1 then exit.

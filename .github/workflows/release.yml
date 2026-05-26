@@ -73,6 +73,7 @@ jobs:
           cp deploy/screenguard-server.service dist/
           cp deploy/screenguard-agent.service  dist/
           cp deploy/screenguard-tray.desktop   dist/
+          cp deploy/screenguard-dbus.conf      dist/
           cp install.sh dist/
 
       - uses: softprops/action-gh-release@v2

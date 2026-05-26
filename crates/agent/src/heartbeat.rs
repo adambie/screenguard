@@ -27,12 +27,9 @@ pub struct HeartbeatLoop {
     min_uid: u32,
     agent_version: String,
     cache_ttl_hours: u64,
-    /// Tracks which warning thresholds have already fired per uid today.
-    /// Cleared at midnight and when remaining goes back above a threshold.
     notified_thresholds: HashMap<u32, HashSet<i32>>,
-    /// UIDs whose sessions were locked by enforcement (not by the user manually).
-    /// Used to avoid duplicate lock tasks and to unlock when time is granted back.
     locked_uids: HashSet<u32>,
+    status_handle: Option<Arc<crate::status_dbus::Handle>>,
 }
 
 impl HeartbeatLoop {
@@ -47,6 +44,7 @@ impl HeartbeatLoop {
         user_scan_interval_secs: u64,
         min_uid: u32,
         cache_ttl_hours: u64,
+        status_handle: Option<Arc<crate::status_dbus::Handle>>,
     ) -> Self {
         Self {
             db,
@@ -61,6 +59,7 @@ impl HeartbeatLoop {
             cache_ttl_hours,
             notified_thresholds: HashMap::new(),
             locked_uids: HashSet::new(),
+            status_handle,
         }
     }
 
@@ -297,25 +296,25 @@ impl HeartbeatLoop {
                 }
             }
             ServerMessage::RemainingUpdate(update) => {
-                let db = self.db.lock().await;
-                for entry in &update.users {
-                    let enforce_str = match entry.enforce {
-                        EnforceAction::Allow => "allow",
-                        EnforceAction::Warn => "warn",
-                        EnforceAction::Lock => "lock",
-                    };
-                    db.upsert_server_remaining(
-                        entry.local_uid,
-                        entry.remaining_minutes,
-                        enforce_str,
-                    )?;
-                    write_status_file(
-                        entry.local_uid,
-                        entry.remaining_minutes as i64 * 60,
-                        enforce_str,
-                    );
+                {
+                    let db = self.db.lock().await;
+                    for entry in &update.users {
+                        db.upsert_server_remaining(
+                            entry.local_uid,
+                            entry.remaining_minutes,
+                            enforce_str(entry.enforce.clone()),
+                        )?;
+                    }
                 }
-                drop(db);
+                if let Some(ref handle) = self.status_handle {
+                    for entry in &update.users {
+                        handle.update_uid(
+                            entry.local_uid,
+                            entry.remaining_minutes as i64 * 60,
+                            enforce_str(entry.enforce.clone()),
+                        ).await;
+                    }
+                }
 
                 for entry in &update.users {
                     if entry.enforce == EnforceAction::Lock {
@@ -593,34 +592,11 @@ impl HeartbeatLoop {
     }
 }
 
-/// Write a JSON status file for the tray binary to read.
-/// Called on every RemainingUpdate so the tray has fresh data within one heartbeat.
-/// Silently skips if the user is not logged in (no /run/user/{uid}/).
-fn write_status_file(uid: u32, remaining_seconds: i64, enforce: &str) {
-    // Write under /var/lib/screenguard (always writable in the systemd sandbox)
-    // rather than /run/user/{uid} (a separate tmpfs that the service namespace
-    // never sees because it is mounted by logind after service start).
-    let dir = format!("/var/lib/screenguard/tray/{uid}");
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("tray: failed to create {dir}: {e}");
-        return;
-    }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let json = format!(
-        r#"{{"remaining_seconds":{remaining_seconds},"enforce":"{enforce}","written_at":{now}}}"#
-    );
-    let path = format!("{dir}/status.json");
-    match std::fs::write(&path, &json) {
-        Ok(()) => {
-            // Ensure the file is world-readable so the unprivileged tray binary can read it.
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644));
-            tracing::debug!("tray: wrote {path}");
-        }
-        Err(e) => tracing::warn!("tray: failed to write {path}: {e}"),
+fn enforce_str(action: EnforceAction) -> &'static str {
+    match action {
+        EnforceAction::Allow => "allow",
+        EnforceAction::Warn => "warn",
+        EnforceAction::Lock => "lock",
     }
 }
 
