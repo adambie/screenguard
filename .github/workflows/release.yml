@@ -39,12 +39,16 @@ jobs:
       - name: Build server
         run: cross build --release -p server --target ${{ matrix.target }}
 
+      - name: Build tray
+        run: cross build --release -p tray --target ${{ matrix.target }}
+
       - name: Stage binaries
         run: |
           ARCH=$(echo "${{ matrix.target }}" | cut -d- -f1)
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/agent  dist/screenguard-agent-${ARCH}
+          cp target/${{ matrix.target }}/release/agent                    dist/screenguard-agent-${ARCH}
           cp target/${{ matrix.target }}/release/parental-controller-server dist/screenguard-server-${ARCH}
+          cp target/${{ matrix.target }}/release/screenguard-tray          dist/screenguard-tray-${ARCH}
           chmod +x dist/*
 
       - uses: actions/upload-artifact@v4
@@ -68,6 +72,7 @@ jobs:
         run: |
           cp deploy/screenguard-server.service dist/
           cp deploy/screenguard-agent.service  dist/
+          cp deploy/screenguard-tray.desktop   dist/
           cp install.sh dist/
 
       - uses: softprops/action-gh-release@v2

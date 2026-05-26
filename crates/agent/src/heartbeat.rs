@@ -309,6 +309,11 @@ impl HeartbeatLoop {
                         entry.remaining_minutes,
                         enforce_str,
                     )?;
+                    write_status_file(
+                        entry.local_uid,
+                        entry.remaining_minutes as i64 * 60,
+                        enforce_str,
+                    );
                 }
                 drop(db);
 
@@ -586,6 +591,28 @@ impl HeartbeatLoop {
             }
         }
     }
+}
+
+/// Write a JSON status file for the tray binary to read.
+/// Called on every RemainingUpdate so the tray has fresh data within one heartbeat.
+/// Silently skips if the user is not logged in (no /run/user/{uid}/).
+fn write_status_file(uid: u32, remaining_seconds: i64, enforce: &str) {
+    let runtime_dir = format!("/run/user/{uid}");
+    if !std::path::Path::new(&runtime_dir).exists() {
+        return;
+    }
+    let dir = format!("{runtime_dir}/screenguard");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let json = format!(
+        r#"{{"remaining_seconds":{remaining_seconds},"enforce":"{enforce}","written_at":{now}}}"#
+    );
+    let _ = std::fs::write(format!("{dir}/status.json"), json);
 }
 
 fn gethostname() -> String {

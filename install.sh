@@ -86,7 +86,10 @@ if [[ $MODE == uninstall ]]; then
 
     header "This will remove:"
     [[ $SERVER_INSTALLED -eq 1 ]] && echo "  • screenguard-server binary and systemd unit"
-    [[ $AGENT_INSTALLED  -eq 1 ]] && echo "  • screenguard-agent binary and systemd unit"
+    if [[ $AGENT_INSTALLED -eq 1 ]]; then
+        echo "  • screenguard-agent binary and systemd unit"
+        echo "  • screenguard-tray binary and XDG autostart entry"
+    fi
     echo "  • Systemd units in ${SYSTEMD_DIR}/"
     echo
     echo "  Config and data directories will be removed only if you confirm separately."
@@ -107,7 +110,7 @@ if [[ $MODE == uninstall ]]; then
     done
 
     header "Removing files"
-    for bin in screenguard-server screenguard-agent; do
+    for bin in screenguard-server screenguard-agent screenguard-tray; do
         if [[ -f "${INSTALL_DIR}/${bin}" ]]; then
             rm -f "${INSTALL_DIR}/${bin}"
             info "Removed ${INSTALL_DIR}/${bin}"
@@ -119,6 +122,10 @@ if [[ $MODE == uninstall ]]; then
             info "Removed ${SYSTEMD_DIR}/${unit}"
         fi
     done
+    if [[ -f "/etc/xdg/autostart/screenguard-tray.desktop" ]]; then
+        rm -f "/etc/xdg/autostart/screenguard-tray.desktop"
+        info "Removed /etc/xdg/autostart/screenguard-tray.desktop"
+    fi
     systemctl daemon-reload
 
     echo
@@ -154,7 +161,10 @@ if [[ $MODE == update ]]; then
 
     header "Will update:"
     [[ $SERVER_INSTALLED -eq 1 ]] && echo "  • screenguard-server"
-    [[ $AGENT_INSTALLED  -eq 1 ]] && echo "  • screenguard-agent"
+    if [[ $AGENT_INSTALLED -eq 1 ]]; then
+        echo "  • screenguard-agent"
+        echo "  • screenguard-tray"
+    fi
     echo "  • systemd service units"
     echo "  Configs in ${CONFIG_DIR}/ will NOT be touched."
     echo
@@ -175,6 +185,10 @@ if [[ $MODE == update ]]; then
         download "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}" "${TMP}/screenguard-agent"
         chmod +x "${TMP}/screenguard-agent"
         download "${RELEASES_URL}/screenguard-agent.service" "${TMP}/screenguard-agent.service"
+        info "Downloading screenguard-tray..."
+        download "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}" "${TMP}/screenguard-tray"
+        chmod +x "${TMP}/screenguard-tray"
+        download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
     fi
 
     header "Stopping services"
@@ -195,6 +209,9 @@ if [[ $MODE == update ]]; then
         cp "${TMP}/screenguard-agent" "${INSTALL_DIR}/screenguard-agent"
         cp "${TMP}/screenguard-agent.service" "${SYSTEMD_DIR}/screenguard-agent.service"
         info "Updated screenguard-agent"
+        cp "${TMP}/screenguard-tray" "${INSTALL_DIR}/screenguard-tray"
+        cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
+        info "Updated screenguard-tray"
     fi
 
     header "Restarting services"
@@ -296,6 +313,10 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     info "Downloading screenguard-agent..."
     download "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}" "${TMP}/screenguard-agent"
     chmod +x "${TMP}/screenguard-agent"
+    info "Downloading screenguard-tray..."
+    download "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}" "${TMP}/screenguard-tray"
+    chmod +x "${TMP}/screenguard-tray"
+    download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
 fi
 
 download "${RELEASES_URL}/screenguard-server.service" "${TMP}/screenguard-server.service"
@@ -331,6 +352,11 @@ fi
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     cp "${TMP}/screenguard-agent" "${INSTALL_DIR}/screenguard-agent"
     info "Installed ${INSTALL_DIR}/screenguard-agent"
+    cp "${TMP}/screenguard-tray" "${INSTALL_DIR}/screenguard-tray"
+    info "Installed ${INSTALL_DIR}/screenguard-tray"
+    mkdir -p /etc/xdg/autostart
+    cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
+    info "Installed /etc/xdg/autostart/screenguard-tray.desktop"
 
     mkdir -p "${DATA_DIR}"
 

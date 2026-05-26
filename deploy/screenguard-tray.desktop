@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ScreenGuard Tray
+Comment=Screen time remaining indicator
+Exec=/usr/local/bin/screenguard-tray
+Icon=appointment-soon
+Terminal=false
+Categories=System;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

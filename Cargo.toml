@@ -2,6 +2,8 @@
 members = [
     "crates/common",
     "crates/agent",
-    "crates/server", "crates/dummy-server",
+    "crates/server",
+    "crates/dummy-server",
+    "crates/tray",
 ]
 resolver = "2"
