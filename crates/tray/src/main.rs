@@ -36,7 +36,6 @@ struct TrayState {
     status: String,
     icon_name: String,
     title: String,
-    tooltip: String,
 }
 
 impl TrayState {
@@ -45,7 +44,6 @@ impl TrayState {
             status: "Passive".into(),
             icon_name: "appointment-soon".into(),
             title: "ScreenGuard".into(),
-            tooltip: String::new(),
         }
     }
 
@@ -55,9 +53,9 @@ impl TrayState {
             .unwrap_or_default()
             .as_secs();
 
-        // If the file hasn't been updated in over a minute the agent is likely
-        // not running or this user has no active session — hide the icon.
-        if now_ts.saturating_sub(sf.written_at) > 60 {
+        // Hide the icon if the file hasn't been refreshed in 120 s — the agent
+        // is likely down or this user is no longer being tracked.
+        if now_ts.saturating_sub(sf.written_at) > 120 {
             return Self::passive();
         }
 
@@ -73,14 +71,10 @@ impl TrayState {
             _ => ("appointment-soon".to_string(), "Active".to_string()),
         };
 
-        let title = fmt_remaining(effective);
-        let tooltip = format!("Screen time remaining: {title}");
-
         Self {
             status,
             icon_name,
-            title,
-            tooltip,
+            title: fmt_remaining(effective),
         }
     }
 }
@@ -144,18 +138,6 @@ impl Sni {
         self.state.lock().await.icon_name.clone()
     }
 
-    /// ToolTip type: (sa(iiay)ss) — icon_name, icon_pixmaps, title, description
-    #[zbus(property)]
-    async fn tool_tip(&self) -> (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
-        let s = self.state.lock().await;
-        (
-            s.icon_name.clone(),
-            vec![],
-            "ScreenGuard".to_string(),
-            s.tooltip.clone(),
-        )
-    }
-
     fn activate(&self, _x: i32, _y: i32) {}
     fn context_menu(&self, _x: i32, _y: i32) {}
     fn secondary_activate(&self, _x: i32, _y: i32) {}
@@ -168,9 +150,6 @@ impl Sni {
 
     #[zbus(signal)]
     async fn new_status(emitter: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn new_tool_tip(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 // ── StatusNotifierWatcher proxy ───────────────────────────────────────────────
@@ -190,22 +169,11 @@ trait StatusNotifierWatcher {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let status_path = status_file_path();
 
-    // Wait up to 30 s for the status file to appear after login — the agent
-    // may not have sent its first RemainingUpdate yet.
-    let mut appeared = false;
-    for _ in 0..30 {
-        if status_path.exists() {
-            appeared = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-    if !appeared {
-        // This user is not managed — exit silently so autostart is harmless.
-        return Ok(());
-    }
-
-    let state = Arc::new(Mutex::new(read_state(&status_path)));
+    // Stay running even if the status file doesn't exist yet — it will appear
+    // once the agent connects and sends its first RemainingUpdate. This removes
+    // the login timing race where the tray would exit before the agent was ready.
+    // The icon stays Passive (hidden) until the file appears.
+    let state = Arc::new(Mutex::new(TrayState::passive()));
 
     let pid = std::process::id();
     let service_name = format!("org.kde.StatusNotifierItem-{pid}-1");
@@ -247,7 +215,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if title_changed {
                 let _ = Sni::new_title(&signal_emitter).await;
-                let _ = Sni::new_tool_tip(&signal_emitter).await;
             }
             if icon_changed {
                 let _ = Sni::new_icon(&signal_emitter).await;
