@@ -651,12 +651,15 @@ pub fn get_adjustments(pool: &DbPool, profile_id: Uuid, from: Option<&str>, to: 
 
 pub fn latest_adjustment_reason_for_date(pool: &DbPool, profile_id: Uuid, date: &str) -> Result<Option<String>> {
     let conn = pool.get()?;
-    let reason: Option<String> = conn.query_row(
+    // Use explicit Option<String> so NULL values are decoded as None rather
+    // than causing InvalidColumnType. .optional() handles no-rows; .flatten()
+    // collapses Option<Option<String>> → Option<String>.
+    let reason = conn.query_row(
         "SELECT reason FROM time_adjustments WHERE profile_id=?1 AND target_date=?2
          ORDER BY created_at DESC LIMIT 1",
         params![profile_id.to_string(), date],
-        |r| r.get(0),
-    ).optional()?;
+        |r| r.get::<_, Option<String>>(0),
+    ).optional()?.flatten();
     Ok(reason)
 }
 
