@@ -45,6 +45,8 @@ trait Login1Session {
 
     fn lock(&self) -> zbus::Result<()>;
 
+    fn unlock(&self) -> zbus::Result<()>;
+
     fn terminate(&self) -> zbus::Result<()>;
 }
 
@@ -188,6 +190,26 @@ pub async fn lock_sessions(session_ids: &[String]) -> Result<()> {
                 .await
             {
                 let _ = session.lock().await;
+            }
+    }
+    Ok(())
+}
+
+/// Unlock all sessions in the given list via DBus.
+/// Called when enforcement is lifted (e.g. admin grants more time).
+pub async fn unlock_sessions(session_ids: &[String]) -> Result<()> {
+    let conn = Connection::system().await?;
+    let manager = Login1ManagerProxy::new(&conn).await?;
+    let sessions = manager.list_sessions().await?;
+
+    for (sid, _uid, _user, _seat, path) in &sessions {
+        if session_ids.contains(sid)
+            && let Ok(session) = Login1SessionProxy::builder(&conn)
+                .path(path.as_ref())?
+                .build()
+                .await
+            {
+                let _ = session.unlock().await;
             }
     }
     Ok(())

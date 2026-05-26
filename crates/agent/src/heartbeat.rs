@@ -30,6 +30,9 @@ pub struct HeartbeatLoop {
     /// Tracks which warning thresholds have already fired per uid today.
     /// Cleared at midnight and when remaining goes back above a threshold.
     notified_thresholds: HashMap<u32, HashSet<i32>>,
+    /// UIDs whose sessions were locked by enforcement (not by the user manually).
+    /// Used to avoid duplicate lock tasks and to unlock when time is granted back.
+    locked_uids: HashSet<u32>,
 }
 
 impl HeartbeatLoop {
@@ -57,6 +60,7 @@ impl HeartbeatLoop {
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             cache_ttl_hours,
             notified_thresholds: HashMap::new(),
+            locked_uids: HashSet::new(),
         }
     }
 
@@ -156,7 +160,12 @@ impl HeartbeatLoop {
                 if idle {
                     active_since.insert(uid, None);
                 } else {
-                    active_since.entry(uid).or_insert(Some(Instant::now()));
+                    // or_insert won't update an existing None entry, so we must
+                    // explicitly set it when transitioning idle→active.
+                    let ts = active_since.entry(uid).or_insert(None);
+                    if ts.is_none() {
+                        *ts = Some(Instant::now());
+                    }
                 }
             }
             SessionEvent::PrepareForSleep { suspend: true } => {
@@ -305,21 +314,44 @@ impl HeartbeatLoop {
 
                 for entry in &update.users {
                     if entry.enforce == EnforceAction::Lock {
-                        let db = self.db.clone();
-                        let uid = entry.local_uid;
-                        tokio::spawn(async move {
-                            if let Err(e) = execute_lock(uid, &db).await {
-                                tracing::error!("Lock failed for uid={uid}: {e}");
-                            }
-                        });
-                    } else if entry.enforce == EnforceAction::Warn {
-                        let uid = entry.local_uid;
-                        let remaining = entry.remaining_minutes;
-                        tracing::warn!("uid={uid} has {remaining} minutes remaining");
-                        self.fire_threshold_notifications(uid, remaining).await;
+                        // Only start one lock task per uid — avoid notification spam and
+                        // overlapping grace-period timers from successive heartbeats.
+                        if self.locked_uids.insert(entry.local_uid) {
+                            let db = self.db.clone();
+                            let uid = entry.local_uid;
+                            tokio::spawn(async move {
+                                if let Err(e) = execute_lock(uid, &db).await {
+                                    tracing::error!("Lock failed for uid={uid}: {e}");
+                                }
+                            });
+                        }
                     } else {
-                        // Allow — clear notified set so thresholds re-arm if time is added later.
-                        self.notified_thresholds.remove(&entry.local_uid);
+                        // Warn or Allow: if we locked this uid earlier, unlock the screen now.
+                        if self.locked_uids.remove(&entry.local_uid) {
+                            let uid = entry.local_uid;
+                            let db = self.db.clone();
+                            tokio::spawn(async move {
+                                let session_ids = db.lock().await
+                                    .get_all_session_ids(uid)
+                                    .unwrap_or_default();
+                                if !session_ids.is_empty() {
+                                    if let Err(e) = crate::dbus::unlock_sessions(&session_ids).await {
+                                        tracing::warn!("Unlock failed for uid={uid}: {e}");
+                                    } else {
+                                        tracing::info!("Unlocked sessions for uid={uid} (time granted)");
+                                    }
+                                }
+                            });
+                        }
+                        if entry.enforce == EnforceAction::Warn {
+                            let uid = entry.local_uid;
+                            let remaining = entry.remaining_minutes;
+                            tracing::warn!("uid={uid} has {remaining} minutes remaining");
+                            self.fire_threshold_notifications(uid, remaining).await;
+                        } else {
+                            // Allow — clear notified set so thresholds re-arm if time is added later.
+                            self.notified_thresholds.remove(&entry.local_uid);
+                        }
                     }
                 }
             }
