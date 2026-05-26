@@ -62,19 +62,31 @@ impl TrayState {
         let elapsed = now_ts.saturating_sub(sf.written_at) as i64;
         let effective = (sf.remaining_seconds - elapsed).max(0);
 
-        let (icon_name, status) = match sf.enforce.as_str() {
-            "lock" => (
-                "system-lock-screen".to_string(),
-                "NeedsAttention".to_string(),
-            ),
-            "warn" => ("dialog-warning".to_string(), "Active".to_string()),
-            _ => ("appointment-soon".to_string(), "Active".to_string()),
-        };
-
-        Self {
-            status,
-            icon_name,
-            title: fmt_remaining(effective),
+        match sf.enforce.as_str() {
+            "lock" => Self {
+                status: "NeedsAttention".into(),
+                icon_name: "system-lock-screen".into(),
+                title: "Locked".into(),
+            },
+            "warn" => Self {
+                status: "Active".into(),
+                icon_name: "dialog-warning".into(),
+                title: fmt_remaining(effective),
+            },
+            _ => {
+                // "allow" — if more than 2 hours remain treat it as unrestricted
+                // so we don't show a meaningless large countdown.
+                let title = if effective > 2 * 3600 {
+                    "Unlimited".into()
+                } else {
+                    fmt_remaining(effective)
+                };
+                Self {
+                    status: "Active".into(),
+                    icon_name: "chronometer".into(),
+                    title,
+                }
+            }
         }
     }
 }
@@ -138,6 +150,18 @@ impl Sni {
         self.state.lock().await.icon_name.clone()
     }
 
+    /// Text label shown next to the icon by shells that support it (AppIndicator/Ayatana).
+    #[zbus(property)]
+    async fn x_ayatana_label(&self) -> String {
+        self.state.lock().await.title.clone()
+    }
+
+    /// Width hint for the label so the panel can reserve stable space.
+    #[zbus(property)]
+    fn x_ayatana_label_guide(&self) -> &str {
+        "00h 00m"
+    }
+
     fn activate(&self, _x: i32, _y: i32) {}
     fn context_menu(&self, _x: i32, _y: i32) {}
     fn secondary_activate(&self, _x: i32, _y: i32) {}
@@ -150,6 +174,13 @@ impl Sni {
 
     #[zbus(signal)]
     async fn new_status(emitter: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn x_ayatana_new_label(
+        emitter: &SignalEmitter<'_>,
+        label: &str,
+        guide: &str,
+    ) -> zbus::Result<()>;
 }
 
 // ── StatusNotifierWatcher proxy ───────────────────────────────────────────────
@@ -207,6 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if new_state != *current {
             let new_status = new_state.status.clone();
+            let new_title = new_state.title.clone();
             let icon_changed = new_state.icon_name != current.icon_name;
             let status_changed = new_state.status != current.status;
             let title_changed = new_state.title != current.title;
@@ -215,6 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if title_changed {
                 let _ = Sni::new_title(&signal_emitter).await;
+                let _ = Sni::x_ayatana_new_label(&signal_emitter, &new_title, "00h 00m").await;
             }
             if icon_changed {
                 let _ = Sni::new_icon(&signal_emitter).await;
