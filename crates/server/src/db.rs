@@ -642,7 +642,7 @@ pub fn get_adjustments(pool: &DbPool, profile_id: Uuid, from: Option<&str>, to: 
             profile_id: r.get::<_, String>(1)?.parse().unwrap_or_default(),
             target_date: r.get(2)?,
             adjustment_minutes: r.get(3)?,
-            reason: r.get(4)?,
+            reason: r.get::<_, Option<String>>(4)?,
             created_at: r.get(5)?,
         }),
     )?;

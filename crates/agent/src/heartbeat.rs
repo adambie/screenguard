@@ -597,12 +597,10 @@ impl HeartbeatLoop {
 /// Called on every RemainingUpdate so the tray has fresh data within one heartbeat.
 /// Silently skips if the user is not logged in (no /run/user/{uid}/).
 fn write_status_file(uid: u32, remaining_seconds: i64, enforce: &str) {
-    let runtime_dir = format!("/run/user/{uid}");
-    if !std::path::Path::new(&runtime_dir).exists() {
-        tracing::debug!("tray: /run/user/{uid} absent, skipping status write");
-        return;
-    }
-    let dir = format!("{runtime_dir}/screenguard");
+    // Write under /var/lib/screenguard (always writable in the systemd sandbox)
+    // rather than /run/user/{uid} (a separate tmpfs that the service namespace
+    // never sees because it is mounted by logind after service start).
+    let dir = format!("/var/lib/screenguard/tray/{uid}");
     if let Err(e) = std::fs::create_dir_all(&dir) {
         tracing::warn!("tray: failed to create {dir}: {e}");
         return;
@@ -616,7 +614,12 @@ fn write_status_file(uid: u32, remaining_seconds: i64, enforce: &str) {
     );
     let path = format!("{dir}/status.json");
     match std::fs::write(&path, &json) {
-        Ok(()) => tracing::debug!("tray: wrote {path}"),
+        Ok(()) => {
+            // Ensure the file is world-readable so the unprivileged tray binary can read it.
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644));
+            tracing::debug!("tray: wrote {path}");
+        }
         Err(e) => tracing::warn!("tray: failed to write {path}: {e}"),
     }
 }

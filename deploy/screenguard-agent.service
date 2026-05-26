@@ -10,7 +10,7 @@ Restart=always
 RestartSec=5
 
 ProtectSystem=strict
-ReadWritePaths=/var/lib/screenguard /run/user
+ReadWritePaths=/var/lib/screenguard
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only

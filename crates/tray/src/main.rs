@@ -15,21 +15,18 @@ struct StatusFile {
 }
 
 fn status_file_path() -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
-        let uid = std::fs::read_to_string("/proc/self/status")
-            .ok()
-            .and_then(|s| {
-                s.lines()
-                    .find(|l| l.starts_with("Uid:"))?
-                    .split_whitespace()
-                    .nth(1)?
-                    .parse::<u32>()
-                    .ok()
-            })
-            .unwrap_or(1000);
-        format!("/run/user/{uid}")
-    });
-    PathBuf::from(runtime_dir).join("screenguard/status.json")
+    let uid = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))?
+                .split_whitespace()
+                .nth(1)?
+                .parse::<u32>()
+                .ok()
+        })
+        .unwrap_or(1000);
+    PathBuf::from(format!("/var/lib/screenguard/tray/{uid}/status.json"))
 }
 
 // ── tray state (derived from status file) ────────────────────────────────────
