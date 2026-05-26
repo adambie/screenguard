@@ -599,10 +599,12 @@ impl HeartbeatLoop {
 fn write_status_file(uid: u32, remaining_seconds: i64, enforce: &str) {
     let runtime_dir = format!("/run/user/{uid}");
     if !std::path::Path::new(&runtime_dir).exists() {
+        tracing::debug!("tray: /run/user/{uid} absent, skipping status write");
         return;
     }
     let dir = format!("{runtime_dir}/screenguard");
-    if std::fs::create_dir_all(&dir).is_err() {
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        tracing::warn!("tray: failed to create {dir}: {e}");
         return;
     }
     let now = std::time::SystemTime::now()
@@ -612,7 +614,11 @@ fn write_status_file(uid: u32, remaining_seconds: i64, enforce: &str) {
     let json = format!(
         r#"{{"remaining_seconds":{remaining_seconds},"enforce":"{enforce}","written_at":{now}}}"#
     );
-    let _ = std::fs::write(format!("{dir}/status.json"), json);
+    let path = format!("{dir}/status.json");
+    match std::fs::write(&path, &json) {
+        Ok(()) => tracing::debug!("tray: wrote {path}"),
+        Err(e) => tracing::warn!("tray: failed to write {path}: {e}"),
+    }
 }
 
 fn gethostname() -> String {
