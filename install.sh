@@ -7,6 +7,7 @@ RELEASES_URL="https://github.com/${REPO}/releases/latest/download"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/screenguard"
 DATA_DIR="/var/lib/screenguard"
+WEBUI_DIR="/opt/screenguard/webui"
 SYSTEMD_DIR="/etc/systemd/system"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -75,12 +76,13 @@ esac
 if [[ $MODE == uninstall ]]; then
     header "ScreenGuard uninstaller"
 
-    AGENT_INSTALLED=0; SERVER_INSTALLED=0
+    AGENT_INSTALLED=0; SERVER_INSTALLED=0; WEBUI_INSTALLED=0
     [[ -f "${INSTALL_DIR}/screenguard-agent"  ]] && AGENT_INSTALLED=1
     [[ -f "${INSTALL_DIR}/screenguard-server" ]] && SERVER_INSTALLED=1
+    [[ -f "${WEBUI_DIR}/app.py"               ]] && WEBUI_INSTALLED=1
 
-    if [[ $AGENT_INSTALLED -eq 0 && $SERVER_INSTALLED -eq 0 ]]; then
-        warn "No ScreenGuard binaries found in ${INSTALL_DIR}. Nothing to uninstall."
+    if [[ $AGENT_INSTALLED -eq 0 && $SERVER_INSTALLED -eq 0 && $WEBUI_INSTALLED -eq 0 ]]; then
+        warn "No ScreenGuard components found. Nothing to uninstall."
         exit 0
     fi
 
@@ -90,6 +92,7 @@ if [[ $MODE == uninstall ]]; then
         echo "  • screenguard-agent binary and systemd unit"
         echo "  • screenguard-tray binary and XDG autostart entry"
     fi
+    [[ $WEBUI_INSTALLED -eq 1 ]] && echo "  • screenguard-webui (${WEBUI_DIR}) and systemd unit"
     echo "  • Systemd units in ${SYSTEMD_DIR}/"
     echo
     echo "  Config and data directories will be removed only if you confirm separately."
@@ -98,7 +101,7 @@ if [[ $MODE == uninstall ]]; then
     confirm "Proceed with uninstall?" n || { echo "Aborted."; exit 0; }
 
     header "Stopping and disabling services"
-    for svc in screenguard-server screenguard-agent; do
+    for svc in screenguard-server screenguard-agent screenguard-webui; do
         if systemctl is-active --quiet "$svc" 2>/dev/null; then
             systemctl stop "$svc"
             info "Stopped $svc"
@@ -116,12 +119,16 @@ if [[ $MODE == uninstall ]]; then
             info "Removed ${INSTALL_DIR}/${bin}"
         fi
     done
-    for unit in screenguard-server.service screenguard-agent.service; do
+    for unit in screenguard-server.service screenguard-agent.service screenguard-webui.service; do
         if [[ -f "${SYSTEMD_DIR}/${unit}" ]]; then
             rm -f "${SYSTEMD_DIR}/${unit}"
             info "Removed ${SYSTEMD_DIR}/${unit}"
         fi
     done
+    if [[ $WEBUI_INSTALLED -eq 1 && -d "${WEBUI_DIR}" ]]; then
+        rm -rf "${WEBUI_DIR}"
+        info "Removed ${WEBUI_DIR}"
+    fi
     if [[ -f "/etc/xdg/autostart/screenguard-tray.desktop" ]]; then
         rm -f "/etc/xdg/autostart/screenguard-tray.desktop"
         info "Removed /etc/xdg/autostart/screenguard-tray.desktop"
@@ -156,9 +163,10 @@ if [[ $MODE == update ]]; then
     header "ScreenGuard updater"
     info "Architecture: ${ARCH}"
 
-    AGENT_INSTALLED=0; SERVER_INSTALLED=0
+    AGENT_INSTALLED=0; SERVER_INSTALLED=0; WEBUI_INSTALLED=0
     [[ -f "${INSTALL_DIR}/screenguard-agent"  ]] && AGENT_INSTALLED=1
     [[ -f "${INSTALL_DIR}/screenguard-server" ]] && SERVER_INSTALLED=1
+    [[ -f "${WEBUI_DIR}/app.py"               ]] && WEBUI_INSTALLED=1
 
     if [[ $AGENT_INSTALLED -eq 0 && $SERVER_INSTALLED -eq 0 ]]; then
         error "No ScreenGuard binaries found in ${INSTALL_DIR}. Run without --update to do a fresh install."
@@ -170,6 +178,7 @@ if [[ $MODE == update ]]; then
         echo "  • screenguard-agent"
         echo "  • screenguard-tray"
     fi
+    [[ $WEBUI_INSTALLED -eq 1 ]] && echo "  • screenguard-webui"
     echo "  • systemd service units"
     echo "  Configs in ${CONFIG_DIR}/ will NOT be touched."
     echo
@@ -196,6 +205,11 @@ if [[ $MODE == update ]]; then
         download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
         download "${RELEASES_URL}/screenguard-dbus.conf" "${TMP}/screenguard-dbus.conf"
     fi
+    if [[ $WEBUI_INSTALLED -eq 1 ]]; then
+        info "Downloading screenguard-webui..."
+        download "${RELEASES_URL}/screenguard-webui.tar.gz" "${TMP}/screenguard-webui.tar.gz"
+        download "${RELEASES_URL}/screenguard-webui.service" "${TMP}/screenguard-webui.service"
+    fi
 
     header "Stopping services"
     if [[ $SERVER_INSTALLED -eq 1 ]]; then
@@ -203,6 +217,9 @@ if [[ $MODE == update ]]; then
     fi
     if [[ $AGENT_INSTALLED -eq 1 ]]; then
         systemctl stop screenguard-agent 2>/dev/null && info "Stopped screenguard-agent" || true
+    fi
+    if [[ $WEBUI_INSTALLED -eq 1 ]]; then
+        systemctl stop screenguard-webui 2>/dev/null && info "Stopped screenguard-webui" || true
     fi
 
     header "Installing"
@@ -221,6 +238,12 @@ if [[ $MODE == update ]]; then
         systemctl reload dbus 2>/dev/null || true
         info "Updated screenguard-tray"
     fi
+    if [[ $WEBUI_INSTALLED -eq 1 ]]; then
+        tar -xzf "${TMP}/screenguard-webui.tar.gz" -C "${WEBUI_DIR}"
+        "${WEBUI_DIR}/venv/bin/pip" install --quiet -r "${WEBUI_DIR}/requirements.txt"
+        cp "${TMP}/screenguard-webui.service" "${SYSTEMD_DIR}/screenguard-webui.service"
+        info "Updated screenguard-webui"
+    fi
 
     header "Restarting services"
     systemctl daemon-reload
@@ -231,6 +254,10 @@ if [[ $MODE == update ]]; then
     if [[ $AGENT_INSTALLED -eq 1 ]]; then
         systemctl restart screenguard-agent
         info "screenguard-agent restarted"
+    fi
+    if [[ $WEBUI_INSTALLED -eq 1 ]]; then
+        systemctl restart screenguard-webui
+        info "screenguard-webui restarted"
     fi
 
     header "Done — ScreenGuard updated to latest release."
@@ -290,9 +317,22 @@ if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     ask "Listen port" SERVER_PORT "8080"
 fi
 
+# ── web UI ────────────────────────────────────────────────────────────────────
+INSTALL_WEBUI=0
+WEBUI_PORT=5000
+if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
+    echo
+    if confirm "Install web UI? (requires Python 3)" y; then
+        need_cmd python3
+        INSTALL_WEBUI=1
+        ask "Web UI listen port" WEBUI_PORT "5000"
+    fi
+fi
+
 # ── confirm ───────────────────────────────────────────────────────────────────
 header "Summary"
 [[ ${INSTALL_SERVER:-0} -eq 1 ]] && echo "  • Install server  (port ${SERVER_PORT})"
+[[ $INSTALL_WEBUI -eq 1 ]] && echo "  • Install web UI  (port ${WEBUI_PORT})"
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     if [[ -n $SERVER_URL ]]; then
         echo "  • Install agent   (server: ${SERVER_URL})"
@@ -328,6 +368,12 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     download "${RELEASES_URL}/screenguard-dbus.conf" "${TMP}/screenguard-dbus.conf"
 fi
 
+if [[ $INSTALL_WEBUI -eq 1 ]]; then
+    info "Downloading screenguard-webui..."
+    download "${RELEASES_URL}/screenguard-webui.tar.gz" "${TMP}/screenguard-webui.tar.gz"
+    download "${RELEASES_URL}/screenguard-webui.service" "${TMP}/screenguard-webui.service"
+fi
+
 download "${RELEASES_URL}/screenguard-server.service" "${TMP}/screenguard-server.service"
 download "${RELEASES_URL}/screenguard-agent.service"  "${TMP}/screenguard-agent.service"
 
@@ -356,6 +402,29 @@ EOF
 
     cp "${TMP}/screenguard-server.service" "${SYSTEMD_DIR}/screenguard-server.service"
     info "Installed systemd unit: screenguard-server.service"
+
+    if [[ $INSTALL_WEBUI -eq 1 ]]; then
+        mkdir -p "${WEBUI_DIR}"
+        tar -xzf "${TMP}/screenguard-webui.tar.gz" -C "${WEBUI_DIR}"
+        info "Extracted web UI to ${WEBUI_DIR}"
+        python3 -m venv "${WEBUI_DIR}/venv"
+        "${WEBUI_DIR}/venv/bin/pip" install --quiet -r "${WEBUI_DIR}/requirements.txt"
+        info "Installed Python dependencies"
+        if [[ ! -f "${CONFIG_DIR}/webui.env" ]]; then
+            WEBUI_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            cat > "${CONFIG_DIR}/webui.env" <<EOF
+SERVER_URL=http://127.0.0.1:${SERVER_PORT}
+SECRET_KEY=${WEBUI_SECRET}
+UI_PORT=${WEBUI_PORT}
+EOF
+            chmod 600 "${CONFIG_DIR}/webui.env"
+            info "Created ${CONFIG_DIR}/webui.env"
+        else
+            warn "Config already exists, skipping: ${CONFIG_DIR}/webui.env"
+        fi
+        cp "${TMP}/screenguard-webui.service" "${SYSTEMD_DIR}/screenguard-webui.service"
+        info "Installed systemd unit: screenguard-webui.service"
+    fi
 fi
 
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
@@ -401,6 +470,11 @@ if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     info "screenguard-server enabled and started"
 fi
 
+if [[ $INSTALL_WEBUI -eq 1 ]]; then
+    systemctl enable --now screenguard-webui
+    info "screenguard-webui enabled and started"
+fi
+
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     systemctl enable --now screenguard-agent
     info "screenguard-agent enabled and started"
@@ -411,13 +485,18 @@ header "Done!"
 
 if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     echo -e "  Server running on port ${SERVER_PORT}"
-    echo -e "  Web UI:  cd webui && SERVER_URL=http://localhost:${SERVER_PORT} uv run --with flask --with requests python app.py"
+    if [[ $INSTALL_WEBUI -eq 1 ]]; then
+        LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        echo -e "  Web UI:  http://${LOCAL_IP:-localhost}:${WEBUI_PORT}"
+        echo -e "  Web UI logs:  journalctl -u screenguard-webui -f"
+    fi
     echo -e "  Logs:    journalctl -u screenguard-server -f"
     echo -e "  Config:  ${CONFIG_DIR}/server.toml"
     echo
     if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
         warn "ufw firewall is active. Agents on other machines will not reach the server until you run:"
         warn "  sudo ufw allow ${SERVER_PORT}/tcp"
+        [[ $INSTALL_WEBUI -eq 1 ]] && warn "  sudo ufw allow ${WEBUI_PORT}/tcp"
     fi
 fi
 

@@ -72,9 +72,14 @@ jobs:
         run: |
           cp deploy/screenguard-server.service dist/
           cp deploy/screenguard-agent.service  dist/
+          cp deploy/screenguard-webui.service  dist/
           cp deploy/screenguard-tray.desktop   dist/
           cp deploy/screenguard-dbus.conf      dist/
           cp install.sh dist/
+          tar -czf dist/screenguard-webui.tar.gz \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            -C webui .
 
       - uses: softprops/action-gh-release@v2
         with:
