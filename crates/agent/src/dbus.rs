@@ -43,6 +43,9 @@ trait Login1Session {
     #[zbus(property)]
     fn idle_hint(&self) -> zbus::Result<bool>;
 
+    #[zbus(property, name = "Type")]
+    fn session_type(&self) -> zbus::Result<String>;
+
     fn lock(&self) -> zbus::Result<()>;
 
     fn unlock(&self) -> zbus::Result<()>;
@@ -64,9 +67,13 @@ impl DbusMonitor {
     pub async fn run(self) -> Result<()> {
         let manager = Login1ManagerProxy::new(&self.conn).await?;
 
-        // Emit events for sessions already active at startup, and start idle watchers.
+        // Emit events for graphical sessions already active at startup.
+        // TTY/SSH sessions are excluded — they are never idle and must not count as screen time.
         if let Ok(sessions) = manager.list_sessions().await {
             for (session_id, uid, _user, _seat, path) in sessions {
+                if !self.is_graphical_session(&path).await {
+                    continue;
+                }
                 let idle = self.get_session_idle(&path).await.unwrap_or(false);
                 let _ = self.tx.send(SessionEvent::SessionStarted {
                     uid,
@@ -96,7 +103,7 @@ impl DbusMonitor {
                     let session_id = args.session_id.to_string();
                     let path = args.object_path.clone();
                     let uid = self.get_session_uid(&path).await.unwrap_or(0);
-                    if uid > 0 {
+                    if uid > 0 && self.is_graphical_session(&path).await {
                         let idle = self.get_session_idle(&path).await.unwrap_or(false);
                         let _ = self.tx.send(SessionEvent::SessionStarted {
                             uid,
@@ -148,6 +155,22 @@ impl DbusMonitor {
             .build()
             .await?;
         Ok(session.idle_hint().await?)
+    }
+
+    /// Returns true only for graphical sessions (x11 or wayland).
+    /// TTY, SSH, and other non-graphical sessions are never counted as screen time.
+    async fn is_graphical_session(&self, path: &zbus::zvariant::OwnedObjectPath) -> bool {
+        let Ok(session) = Login1SessionProxy::builder(&self.conn)
+            .path(path.as_ref())
+            .and_then(|b| Ok(b))
+        else {
+            return false;
+        };
+        let Ok(session) = session.build().await else { return false; };
+        matches!(
+            session.session_type().await.as_deref(),
+            Ok("x11") | Ok("wayland") | Ok("mir")
+        )
     }
 }
 
