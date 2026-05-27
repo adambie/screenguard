@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/screenguard/webui
 EnvironmentFile=/etc/screenguard/webui.env
-ExecStart=/opt/screenguard/webui/venv/bin/gunicorn -w 2 -b 0.0.0.0:$UI_PORT app:app
+ExecStart=/bin/sh -c 'exec /opt/screenguard/webui/venv/bin/gunicorn -w 2 -b 0.0.0.0:${UI_PORT} app:app'
 Restart=always
 RestartSec=5
 
