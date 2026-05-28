@@ -67,9 +67,13 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
                     tracing::info!("Agent {} is pending_delete — sending unpair", hello.machine_id);
                     let msg = WssMessage::new(MSG_UNPAIR, &Unpair {})?;
                     let _ = out_tx.send(msg).await;
+                    // Drain until the agent closes the connection.
                     while let Some(Ok(msg)) = stream.next().await {
                         if matches!(msg, Message::Close(_)) { break; }
                     }
+                    // Agent has acknowledged — delete the record so re-pairing starts fresh.
+                    let _ = db::delete_agent(&state.db, agent.id);
+                    tracing::info!("Agent {} deleted after unpair", hello.machine_id);
                     return Ok(());
                 }
             }
@@ -90,6 +94,16 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
     let result = message_loop(&mut stream, &state, agent_db_id, &machine_id).await;
 
     state.remove_online(&machine_id).await;
+
+    // If the agent was pending_delete, it disconnected after receiving unpair — clean up now.
+    if let Ok(Some(agent)) = db::get_agent_by_id(&state.db, agent_db_id) {
+        if agent.status == "pending_delete" {
+            let _ = db::delete_agent(&state.db, agent_db_id);
+            tracing::info!("Agent {} deleted after unpair (was online)", machine_id);
+            return result;
+        }
+    }
+
     let _ = db::update_agent_last_seen(&state.db, agent_db_id);
     tracing::info!("Agent {machine_id} disconnected");
 
