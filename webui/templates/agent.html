@@ -61,7 +61,7 @@
           <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Timezone</dt>
           <dd class="col-7 mb-0">{{ agent.timezone or '—' }}</dd>
           <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Last seen</dt>
-          <dd class="col-7 mb-0">{{ agent.last_seen_at | time_ago }}</dd>
+          <dd class="col-7 mb-0">{% if agent.online %}now{% else %}{{ agent.last_seen_at | time_ago }}{% endif %}</dd>
           <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Machine ID</dt>
           <dd class="col-7 mb-0">
             <code style="font-size:11px;color:var(--t2)">{{ agent.machine_id }}</code>

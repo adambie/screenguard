@@ -48,7 +48,9 @@
             {% endif %}
           </td>
           <td><span style="font-size:12px;color:var(--t2)">{{ a.agent_version or '—' }}</span></td>
-          <td><span style="font-size:12px;color:var(--t2)">{{ a.last_seen_at | time_ago }}</span></td>
+          <td><span style="font-size:12px;color:var(--t2)">
+            {% if a.online %}now{% else %}{{ a.last_seen_at | time_ago }}{% endif %}
+          </span></td>
           <td class="text-end" style="white-space:nowrap">
             {% if a.status == 'pending_delete' %}
               <form method="post" action="{{ url_for('undo_delete_agent', agent_id=a.id) }}" class="d-inline">
