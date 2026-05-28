@@ -183,13 +183,33 @@
 
 <!-- ── schedule ──────────────────────────────────────────────────────── -->
 <div class="card mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>Allowed time windows</span>
-    <button type="button" class="btn btn-sm btn-outline-secondary"
-            id="addScheduleRow" style="font-size:.8rem">+ Add window</button>
-  </div>
+  <div class="card-header">Allowed time windows</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('update_schedules', profile_id=profile.id) }}">
+
+      {# quick-add bar #}
+      <div class="d-flex align-items-center gap-2 mb-3 pb-3" style="border-bottom:1px solid var(--bd)">
+        <select id="quickDow" class="form-select form-select-sm flex-shrink-0" style="width:120px">
+          <option value="week">All week</option>
+          <option value="weekday">Mon – Fri</option>
+          <option value="weekend">Sat – Sun</option>
+          <option disabled>──────</option>
+          <option value="0">Mon</option>
+          <option value="1">Tue</option>
+          <option value="2">Wed</option>
+          <option value="3">Thu</option>
+          <option value="4">Fri</option>
+          <option value="5">Sat</option>
+          <option value="6">Sun</option>
+        </select>
+        <input type="time" id="quickStart" class="form-control form-control-sm flex-shrink-0" style="width:115px">
+        <span class="text-secondary px-1" style="flex-shrink:0">–</span>
+        <input type="time" id="quickEnd" class="form-control form-control-sm flex-shrink-0" style="width:115px">
+        <button type="button" id="quickAddBtn"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0">+ Add</button>
+      </div>
+
+      {# existing rows #}
       <div id="scheduleList">
         {% for s in schedules %}
         <div class="d-flex align-items-center gap-2 mb-2 schedule-row">
@@ -339,22 +359,38 @@
 let rowCount = {{ schedules | length }};
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
-document.getElementById('addScheduleRow')?.addEventListener('click', function() {
+function addScheduleRow(dayIndex, start, end) {
   const list = document.getElementById('scheduleList');
   const empty = document.getElementById('emptySchedule');
   if (empty) empty.remove();
+  const opts = DAYS.map((d, i) =>
+    `<option value="${i}"${i === dayIndex ? ' selected' : ''}>${d}</option>`
+  ).join('');
   const div = document.createElement('div');
   div.className = 'd-flex align-items-center gap-2 mb-2 schedule-row';
-  const opts = DAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
   div.innerHTML = `
     <select name="dow_${rowCount}" class="form-select form-select-sm flex-shrink-0" style="width:88px">${opts}</select>
-    <input type="time" name="start_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px" required>
+    <input type="time" name="start_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px" value="${start}" required>
     <span class="text-secondary px-1">–</span>
-    <input type="time" name="end_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px" required>
+    <input type="time" name="end_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px" value="${end}" required>
     <button type="button" class="btn btn-sm remove-row border-0 text-secondary ms-auto px-2" title="Remove">✕</button>
   `;
   list.appendChild(div);
   rowCount++;
+}
+
+document.getElementById('quickAddBtn')?.addEventListener('click', function() {
+  const dow   = document.getElementById('quickDow').value;
+  const start = document.getElementById('quickStart').value;
+  const end   = document.getElementById('quickEnd').value;
+  if (!start || !end) return;
+
+  const days = dow === 'week'    ? [0,1,2,3,4,5,6]
+             : dow === 'weekday' ? [0,1,2,3,4]
+             : dow === 'weekend' ? [5,6]
+             : [parseInt(dow)];
+
+  days.forEach(d => addScheduleRow(d, start, end));
 });
 
 document.getElementById('scheduleList')?.addEventListener('click', function(e) {
