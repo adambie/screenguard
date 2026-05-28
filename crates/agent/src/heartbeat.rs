@@ -373,6 +373,13 @@ impl HeartbeatLoop {
                 tracing::info!("Received config_reload — re-sending agent_hello");
                 self.send_agent_hello().await?;
             }
+            ServerMessage::Unpair => {
+                tracing::info!("Received unpair from server — resetting pairing state and restarting");
+                let db = self.db.lock().await;
+                db.reset_pairing()?;
+                drop(db);
+                std::process::exit(0);
+            }
             ServerMessage::Unknown(t) => {
                 tracing::debug!("Unknown message type from server: {t}");
             }

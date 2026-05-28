@@ -118,9 +118,40 @@ pub async fn delete_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let agent = db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    db::mark_agent_pending_delete(&state.db, id).map_err(internal)?;
+
+    // If the agent is currently online, send unpair immediately.
+    let online = state.online.read().await;
+    if let Some(handle) = online.values().find(|h| h.agent_id == id) {
+        use common::messages::{Unpair, MSG_UNPAIR};
+        use common::protocol::WssMessage;
+        if let Ok(msg) = WssMessage::new(MSG_UNPAIR, &Unpair {}) {
+            let _ = handle.outbound_tx.send(msg).await;
+        }
+    }
+    drop(online);
+
+    tracing::info!("Agent {} marked pending_delete (machine_id={})", id, agent.machine_id);
+    Ok(Json(serde_json::json!({ "message": "Agent queued for deletion" })))
+}
+
+pub async fn undo_delete_agent(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    db::restore_agent(&state.db, id).map_err(internal)?;
+    Ok(Json(serde_json::json!({ "message": "Agent deletion cancelled" })))
+}
+
+pub async fn force_delete_agent(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
     db::delete_agent(&state.db, id).map_err(internal)?;
-    Ok(Json(serde_json::json!({ "message": "Agent deleted" })))
+    Ok(Json(serde_json::json!({ "message": "Agent force deleted" })))
 }
 
 pub async fn list_agent_users(

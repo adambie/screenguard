@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use common::messages::{
     ConfigPush, ConfigReload, LockNow, NotifyUser, PairingAccepted, RemainingUpdate, ServerMessage,
-    MSG_CONFIG_PUSH, MSG_CONFIG_RELOAD, MSG_LOCK_NOW, MSG_NOTIFY_USER, MSG_PAIRING_ACCEPTED,
-    MSG_REMAINING_UPDATE,
+    Unpair, MSG_CONFIG_PUSH, MSG_CONFIG_RELOAD, MSG_LOCK_NOW, MSG_NOTIFY_USER,
+    MSG_PAIRING_ACCEPTED, MSG_REMAINING_UPDATE, MSG_UNPAIR,
 };
 use common::protocol::WssMessage;
 use futures_util::{SinkExt, StreamExt};
@@ -128,6 +128,10 @@ fn parse_server_message(text: &str) -> Result<ServerMessage> {
         MSG_CONFIG_RELOAD => {
             let _ = envelope.parse_payload::<ConfigReload>();
             ServerMessage::ConfigReload
+        }
+        MSG_UNPAIR => {
+            let _ = envelope.parse_payload::<Unpair>();
+            ServerMessage::Unpair
         }
         other => ServerMessage::Unknown(other.to_string()),
     };

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use common::messages::{
-    AgentHello, Heartbeat, PairingAccepted, PairingRequest, RemainingUpdate,
+    AgentHello, Heartbeat, PairingAccepted, PairingRequest, RemainingUpdate, Unpair,
     UsageSync, UserListUpdate, MSG_AGENT_HELLO, MSG_CONFIG_PUSH, MSG_HEARTBEAT,
-    MSG_PAIRING_ACCEPTED, MSG_PAIRING_REQUEST, MSG_REMAINING_UPDATE, MSG_USAGE_SYNC,
-    MSG_USER_LIST_UPDATE,
+    MSG_PAIRING_ACCEPTED, MSG_PAIRING_REQUEST, MSG_REMAINING_UPDATE, MSG_UNPAIR,
+    MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
 };
 use common::protocol::WssMessage;
 use futures_util::{SinkExt, StreamExt};
@@ -61,6 +61,18 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
         }
         MSG_AGENT_HELLO => {
             let hello: AgentHello = envelope.parse_payload()?;
+            // If agent is pending_delete, send unpair and wait for it to disconnect.
+            if let Ok(Some(agent)) = db::get_agent_by_machine_id(&state.db, &hello.machine_id) {
+                if agent.status == "pending_delete" {
+                    tracing::info!("Agent {} is pending_delete — sending unpair", hello.machine_id);
+                    let msg = WssMessage::new(MSG_UNPAIR, &Unpair {})?;
+                    let _ = out_tx.send(msg).await;
+                    while let Some(Ok(msg)) = stream.next().await {
+                        if matches!(msg, Message::Close(_)) { break; }
+                    }
+                    return Ok(());
+                }
+            }
             handle_agent_hello(hello, &state, out_tx.clone()).await?
         }
         other => {

@@ -19,18 +19,27 @@
       </thead>
       <tbody>
         {% for a in agents %}
-        <tr>
+        <tr style="{% if a.status == 'pending_delete' %}opacity:.55{% endif %}">
           <td>
-            <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
-               class="text-decoration-none fw-semibold" style="color:var(--t1)">
-              {{ a.display_name or a.hostname }}
-            </a>
+            {% if a.status == 'pending_delete' %}
+              <span class="fw-semibold" style="color:var(--t2);
+                    text-decoration:line-through;text-decoration-color:var(--er)">
+                {{ a.display_name or a.hostname }}
+              </span>
+            {% else %}
+              <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
+                 class="text-decoration-none fw-semibold" style="color:var(--t1)">
+                {{ a.display_name or a.hostname }}
+              </a>
+            {% endif %}
             {% if a.display_name and a.display_name != a.hostname %}
               <div style="font-size:11.5px;color:var(--t2)">{{ a.hostname }}</div>
             {% endif %}
           </td>
           <td>
-            {% if a.status == 'pending' %}
+            {% if a.status == 'pending_delete' %}
+              <span class="badge text-bg-danger">pending delete</span>
+            {% elif a.status == 'pending' %}
               <span class="badge text-bg-warning">pending</span>
             {% elif a.online %}
               <span class="badge text-bg-success">online</span>
@@ -41,17 +50,27 @@
           <td><span style="font-size:12px;color:var(--t2)">{{ a.agent_version or '—' }}</span></td>
           <td><span style="font-size:12px;color:var(--t2)">{{ a.last_seen_at | time_ago }}</span></td>
           <td class="text-end" style="white-space:nowrap">
-            {% if a.status == 'pending' %}
-              <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}" class="d-inline">
-                <button class="btn btn-sm btn-primary">Accept</button>
+            {% if a.status == 'pending_delete' %}
+              <form method="post" action="{{ url_for('undo_delete_agent', agent_id=a.id) }}" class="d-inline">
+                <button class="btn btn-sm btn-outline-secondary">Undo</button>
+              </form>
+              <form method="post" action="{{ url_for('force_delete_agent', agent_id=a.id) }}" class="d-inline"
+                    onsubmit="return confirm('Remove server record immediately? The agent will not be notified if offline.')">
+                <button class="btn btn-sm btn-outline-danger">Force remove</button>
+              </form>
+            {% else %}
+              {% if a.status == 'pending' %}
+                <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}" class="d-inline">
+                  <button class="btn btn-sm btn-primary">Accept</button>
+                </form>
+              {% endif %}
+              <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
+                 class="btn btn-sm btn-outline-secondary">Details</a>
+              <form method="post" action="{{ url_for('delete_agent', agent_id=a.id) }}" class="d-inline"
+                    onsubmit="return confirm('Queue this agent for deletion? It will reset itself when next online.')">
+                <button class="btn btn-sm btn-outline-danger">Delete</button>
               </form>
             {% endif %}
-            <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
-               class="btn btn-sm btn-outline-secondary">Details</a>
-            <form method="post" action="{{ url_for('delete_agent', agent_id=a.id) }}" class="d-inline"
-                  onsubmit="return confirm('Delete this agent?')">
-              <button class="btn btn-sm btn-outline-danger">Delete</button>
-            </form>
           </td>
         </tr>
         {% endfor %}

@@ -27,6 +27,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/agents", get(agents::list_agents))
         .route("/agents/{id}", get(agents::get_agent).patch(agents::patch_agent).delete(agents::delete_agent))
         .route("/agents/{id}/accept", post(agents::accept_agent))
+        .route("/agents/{id}/undo-delete", post(agents::undo_delete_agent))
+        .route("/agents/{id}/force-delete", post(agents::force_delete_agent))
         .route("/agents/{id}/users", get(agents::list_agent_users))
         // Agent users
         .route("/agent-users/{id}", patch(profiles::patch_agent_user))

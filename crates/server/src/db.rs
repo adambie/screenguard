@@ -19,7 +19,43 @@ pub fn open(path: &str) -> Result<DbPool> {
     let pool = Pool::new(manager).context("Failed to create DB pool")?;
     let conn = pool.get().context("Failed to get DB connection")?;
     conn.execute_batch(SCHEMA)?;
+    migrate_v1(&conn)?;
     Ok(pool)
+}
+
+// Migration 1: add 'pending_delete' to the agents status CHECK constraint.
+// SQLite doesn't support ALTER COLUMN, so we recreate the table.
+fn migrate_v1(conn: &rusqlite::Connection) -> Result<()> {
+    let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v >= 1 {
+        return Ok(());
+    }
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+    conn.execute_batch("
+        BEGIN;
+        CREATE TABLE agents_v1 (
+            id              TEXT PRIMARY KEY,
+            machine_id      TEXT NOT NULL UNIQUE,
+            display_name    TEXT NOT NULL,
+            hostname        TEXT NOT NULL,
+            timezone        TEXT NOT NULL DEFAULT 'UTC',
+            status          TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending','paired','disabled','pending_delete')),
+            auth_token_hash TEXT,
+            agent_version   TEXT,
+            paired_at       INTEGER,
+            last_seen_at    INTEGER,
+            created_at      INTEGER NOT NULL
+        );
+        INSERT INTO agents_v1 SELECT * FROM agents;
+        DROP TABLE agents;
+        ALTER TABLE agents_v1 RENAME TO agents;
+        COMMIT;
+    ")?;
+    conn.execute_batch("PRAGMA user_version = 1")?;
+    conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    tracing::info!("DB migration v1 applied (pending_delete status)");
+    Ok(())
 }
 
 const SCHEMA: &str = "
@@ -360,6 +396,24 @@ pub fn update_agent_hello(
     conn.execute(
         "UPDATE agents SET hostname=?1, timezone=?2, agent_version=?3, last_seen_at=?4 WHERE id=?5",
         params![hostname, timezone, agent_version, Utc::now().timestamp(), id.to_string()],
+    )?;
+    Ok(())
+}
+
+pub fn mark_agent_pending_delete(pool: &DbPool, id: Uuid) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE agents SET status='pending_delete' WHERE id=?1",
+        params![id.to_string()],
+    )?;
+    Ok(())
+}
+
+pub fn restore_agent(pool: &DbPool, id: Uuid) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE agents SET status='paired' WHERE id=?1 AND status='pending_delete'",
+        params![id.to_string()],
     )?;
     Ok(())
 }

@@ -197,9 +197,27 @@ def accept_agent(agent_id):
 def delete_agent(agent_id):
     r = api("DELETE", f"/agents/{agent_id}")
     if r and r.ok:
-        flash("Agent deleted.", "success")
+        flash("Agent queued for deletion — it will be unlinked when it next connects.", "success")
     else:
         flash("Delete failed.", "danger")
+    return redirect(url_for("agents"))
+
+
+@app.route("/agents/<agent_id>/undo-delete", methods=["POST"])
+@require_login
+def undo_delete_agent(agent_id):
+    r = api("POST", f"/agents/{agent_id}/undo-delete")
+    flash("Deletion cancelled." if (r and r.ok) else "Failed to cancel deletion.",
+          "success" if (r and r.ok) else "danger")
+    return redirect(url_for("agents"))
+
+
+@app.route("/agents/<agent_id>/force-delete", methods=["POST"])
+@require_login
+def force_delete_agent(agent_id):
+    r = api("POST", f"/agents/{agent_id}/force-delete")
+    flash("Agent removed." if (r and r.ok) else "Force delete failed.",
+          "success" if (r and r.ok) else "danger")
     return redirect(url_for("agents"))
 
 

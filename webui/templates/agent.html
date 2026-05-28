@@ -18,11 +18,21 @@
       <div style="font-size:12.5px;color:var(--t2)">{{ agent.hostname }}</div>
     {% endif %}
   </div>
-  <div class="flex-shrink-0 pt-1">
-    <form method="post" action="{{ url_for('delete_agent', agent_id=agent.id) }}"
-          onsubmit="return confirm('Delete this agent and all its data?')">
-      <button class="btn btn-sm btn-outline-danger">Delete</button>
-    </form>
+  <div class="d-flex gap-2 flex-shrink-0 pt-1">
+    {% if agent.status == 'pending_delete' %}
+      <form method="post" action="{{ url_for('undo_delete_agent', agent_id=agent.id) }}">
+        <button class="btn btn-sm btn-outline-secondary">Undo deletion</button>
+      </form>
+      <form method="post" action="{{ url_for('force_delete_agent', agent_id=agent.id) }}"
+            onsubmit="return confirm('Remove server record immediately?')">
+        <button class="btn btn-sm btn-outline-danger">Force remove</button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('delete_agent', agent_id=agent.id) }}"
+            onsubmit="return confirm('Queue this agent for deletion? It will reset itself when next online.')">
+        <button class="btn btn-sm btn-outline-danger">Delete</button>
+      </form>
+    {% endif %}
   </div>
 </div>
 
@@ -34,7 +44,9 @@
         <dl class="row mb-0" style="font-size:13.5px;row-gap:8px">
           <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Status</dt>
           <dd class="col-7 mb-0">
-            {% if agent.status == 'pending' %}
+            {% if agent.status == 'pending_delete' %}
+              <span class="badge text-bg-danger">pending deletion</span>
+            {% elif agent.status == 'pending' %}
               <span class="badge text-bg-warning">pending approval</span>
             {% elif agent.online %}
               <span class="badge text-bg-success">online</span>

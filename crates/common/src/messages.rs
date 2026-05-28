@@ -15,6 +15,7 @@ pub const MSG_PAIRING_ACCEPTED: &str = "pairing_accepted";
 pub const MSG_LOCK_NOW: &str = "lock_now";
 pub const MSG_CONFIG_RELOAD: &str = "config_reload";
 pub const MSG_NOTIFY_USER: &str = "notify_user";
+pub const MSG_UNPAIR: &str = "unpair";
 
 // ── Agent → Server ────────────────────────────────────────────────────────────
 
@@ -92,6 +93,9 @@ pub struct NotifyUser {
     pub body: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Unpair {}
+
 // ── Typed inbound envelope (server → agent) ───────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -102,5 +106,6 @@ pub enum ServerMessage {
     LockNow(LockNow),
     NotifyUser(NotifyUser),
     ConfigReload,
+    Unpair,
     Unknown(String),
 }
