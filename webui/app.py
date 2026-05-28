@@ -7,6 +7,7 @@ Usage:
     SERVER_URL=http://localhost:8080 python app.py
 """
 
+import math
 import os
 import requests
 from datetime import date, timedelta, datetime, timezone
@@ -297,7 +298,8 @@ def profile_detail(profile_id):
 
     usage_by_date = {u['date']: u for u in usage}
     max_used = max((u.get('used_minutes') or 0 for u in usage), default=0)
-    max_used = max(max_used, 1)
+    # Round up to the next 15-minute interval, minimum 15m, so bars never touch the top
+    chart_max = max(math.ceil(max_used / 15) * 15, 15)
 
     week_bars = []
     for i in range(7):
@@ -307,7 +309,7 @@ def profile_detail(profile_id):
         limit = u.get('limit_minutes')
         adj = u.get('adjustments_minutes') or 0
         eff_limit = (limit + adj) if limit is not None else None
-        pct = min(int(used / max_used * 100), 100)
+        pct = min(int(used / chart_max * 100), 100)
         over = eff_limit is not None and used > eff_limit
         warn = eff_limit is not None and eff_limit > 0 and used / eff_limit >= 0.75
         week_bars.append({
@@ -330,7 +332,7 @@ def profile_detail(profile_id):
                            agent_users=data.get("agent_users", []),
                            status=status,
                            week_bars=week_bars,
-                           week_max=max_used,
+                           week_max=chart_max,
                            week_offset=week_offset,
                            week_start=week_start,
                            week_end=week_end,

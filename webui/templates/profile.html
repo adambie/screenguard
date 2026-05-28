@@ -242,9 +242,9 @@
     </div>
   </div>
   <div class="card-body">
-    {% set wm = [week_max, 60] | max %}
-    {% set tick2 = (wm * 2 / 3) | int %}
-    {% set tick1 = (wm / 3) | int %}
+    {% set wm = week_max %}
+    {% set tick2 = (wm * 2 // 3) %}
+    {% set tick1 = (wm // 3) %}
     <div style="display:flex;gap:10px">
 
       {# y-axis labels — padding-bottom aligns with x-axis height below chart #}
