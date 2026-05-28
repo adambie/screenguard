@@ -1,65 +1,71 @@
 {% extends "base.html" %}
-{% block title %}Agents – Parental Controller{% endblock %}
+{% block title %}Agents – ScreenGuard{% endblock %}
 
 {% block content %}
-<h3 class="mb-3">Agents</h3>
+<h2 class="mb-4 fw-semibold" style="font-size:1.25rem;letter-spacing:-.02em">Agents</h2>
 
 {% if agents %}
-<table class="table table-hover align-middle bg-white shadow-sm rounded">
-  <thead>
-    <tr>
-      <th>Name / Hostname</th>
-      <th>Status</th>
-      <th>Version</th>
-      <th>Last Seen</th>
-      <th>Pairing Code</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for a in agents %}
-    <tr>
-      <td>
-        <a href="{{ url_for('agent_detail', agent_id=a.id) }}" class="text-decoration-none fw-semibold">
-          {{ a.display_name or a.hostname }}
-        </a>
-        {% if a.display_name and a.display_name != a.hostname %}
-          <br><small class="text-muted">{{ a.hostname }}</small>
-        {% endif %}
-      </td>
-      <td>
-        {% if a.status == 'paired' %}
-          <span class="badge badge-online">online</span>
-        {% elif a.status == 'pending' %}
-          <span class="badge badge-pending">pending</span>
-        {% else %}
-          <span class="badge badge-offline">{{ a.status }}</span>
-        {% endif %}
-      </td>
-      <td><small>{{ a.agent_version or '—' }}</small></td>
-      <td><small class="text-muted">{{ a.last_seen or '—' }}</small></td>
-      <td>
-        {% if a.status == 'pending' %}
-          <code>{{ a.pairing_code }}</code>
-        {% else %}—{% endif %}
-      </td>
-      <td class="text-end">
-        {% if a.status == 'pending' %}
-          <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}" class="d-inline">
-            <button class="btn btn-sm btn-success">Accept</button>
-          </form>
-        {% endif %}
-        <a href="{{ url_for('agent_detail', agent_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Details</a>
-        <form method="post" action="{{ url_for('delete_agent', agent_id=a.id) }}" class="d-inline"
-              onsubmit="return confirm('Delete this agent?')">
-          <button class="btn btn-sm btn-outline-danger">Delete</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="card">
+  <div class="card-body p-0">
+    <table class="table mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Version</th>
+          <th>Last seen</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in agents %}
+        <tr>
+          <td>
+            <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
+               class="text-decoration-none fw-semibold" style="color:var(--t1)">
+              {{ a.display_name or a.hostname }}
+            </a>
+            {% if a.display_name and a.display_name != a.hostname %}
+              <div style="font-size:11.5px;color:var(--t2)">{{ a.hostname }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {% if a.status == 'pending' %}
+              <span class="badge text-bg-warning">pending</span>
+            {% elif a.online %}
+              <span class="badge text-bg-success">online</span>
+            {% else %}
+              <span class="badge text-bg-secondary">offline</span>
+            {% endif %}
+          </td>
+          <td><span style="font-size:12px;color:var(--t2)">{{ a.agent_version or '—' }}</span></td>
+          <td><span style="font-size:12px;color:var(--t2)">{{ a.last_seen_at | time_ago }}</span></td>
+          <td class="text-end" style="white-space:nowrap">
+            {% if a.status == 'pending' %}
+              <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}" class="d-inline">
+                <button class="btn btn-sm btn-primary">Accept</button>
+              </form>
+            {% endif %}
+            <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
+               class="btn btn-sm btn-outline-secondary">Details</a>
+            <form method="post" action="{{ url_for('delete_agent', agent_id=a.id) }}" class="d-inline"
+                  onsubmit="return confirm('Delete this agent?')">
+              <button class="btn btn-sm btn-outline-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% else %}
-<div class="alert alert-info">No agents registered yet. Install and start the agent on a managed machine.</div>
+<div class="card">
+  <div class="card-body">
+    <p class="text-secondary small mb-0">
+      No agents registered yet. Install and start the agent on a managed machine.
+    </p>
+  </div>
+</div>
 {% endif %}
 {% endblock %}

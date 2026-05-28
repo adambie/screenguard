@@ -15,7 +15,7 @@
 </div>
 
 {% if profiles %}
-<table class="table table-hover align-middle bg-white shadow-sm rounded">
+<table class="table table-hover align-middle">
   <thead>
     <tr>
       <th>Name</th>
@@ -31,7 +31,7 @@
           {{ p.display_name }}
         </a>
       </td>
-      <td><small class="text-muted">{{ p.created_at }}</small></td>
+      <td><small class="text-muted">{{ p.created_at | ts_date }}</small></td>
       <td class="text-end">
         <a href="{{ url_for('profile_detail', profile_id=p.id) }}" class="btn btn-sm btn-outline-primary">Manage</a>
         <form method="post" action="{{ url_for('delete_profile', profile_id=p.id) }}" class="d-inline"

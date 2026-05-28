@@ -1,57 +1,89 @@
 {% extends "base.html" %}
-{% block title %}Agent: {{ agent.display_name or agent.hostname }} – Parental Controller{% endblock %}
+{% block title %}{{ agent.display_name or agent.hostname }} – ScreenGuard{% endblock %}
 
 {% block content %}
-<nav aria-label="breadcrumb" class="mb-3">
-  <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('agents') }}">Agents</a></li>
-    <li class="breadcrumb-item active">{{ agent.display_name or agent.hostname }}</li>
-  </ol>
-</nav>
 
-<div class="row g-3 mb-4">
+<div class="d-flex align-items-start justify-content-between mb-1 gap-3">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-2">
+        <li class="breadcrumb-item">
+          <a href="{{ url_for('agents') }}" class="text-decoration-none text-secondary">Agents</a>
+        </li>
+        <li class="breadcrumb-item active">{{ agent.display_name or agent.hostname }}</li>
+      </ol>
+    </nav>
+    <h1 class="h2 fw-bold mb-1">{{ agent.display_name or agent.hostname }}</h1>
+    {% if agent.display_name and agent.display_name != agent.hostname %}
+      <div style="font-size:12.5px;color:var(--t2)">{{ agent.hostname }}</div>
+    {% endif %}
+  </div>
+  <div class="flex-shrink-0 pt-1">
+    <form method="post" action="{{ url_for('delete_agent', agent_id=agent.id) }}"
+          onsubmit="return confirm('Delete this agent and all its data?')">
+      <button class="btn btn-sm btn-outline-danger">Delete</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-4 mt-1">
   <div class="col-md-6">
-    <div class="card shadow-sm">
-      <div class="card-header">Agent info</div>
+    <div class="card h-100">
+      <div class="card-header">Info</div>
       <div class="card-body">
-        <dl class="row mb-0">
-          <dt class="col-5">Hostname</dt><dd class="col-7">{{ agent.hostname }}</dd>
-          <dt class="col-5">Status</dt>
-          <dd class="col-7">
-            {% if agent.status == 'paired' %}<span class="badge bg-success">paired</span>
-            {% elif agent.status == 'pending' %}<span class="badge bg-warning text-dark">pending</span>
-            {% else %}<span class="badge bg-secondary">{{ agent.status }}</span>{% endif %}
+        <dl class="row mb-0" style="font-size:13.5px;row-gap:8px">
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Status</dt>
+          <dd class="col-7 mb-0">
+            {% if agent.status == 'pending' %}
+              <span class="badge text-bg-warning">pending approval</span>
+            {% elif agent.online %}
+              <span class="badge text-bg-success">online</span>
+            {% else %}
+              <span class="badge text-bg-secondary">offline</span>
+            {% endif %}
           </dd>
-          <dt class="col-5">Version</dt><dd class="col-7">{{ agent.agent_version or '—' }}</dd>
-          <dt class="col-5">Timezone</dt><dd class="col-7">{{ agent.timezone or '—' }}</dd>
-          <dt class="col-5">Last seen</dt><dd class="col-7">{{ agent.last_seen_at or '—' }}</dd>
-          <dt class="col-5">Machine ID</dt>
-          <dd class="col-7"><small class="text-muted font-monospace">{{ agent.machine_id }}</small></dd>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Hostname</dt>
+          <dd class="col-7 mb-0">{{ agent.hostname }}</dd>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Version</dt>
+          <dd class="col-7 mb-0">{{ agent.agent_version or '—' }}</dd>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Timezone</dt>
+          <dd class="col-7 mb-0">{{ agent.timezone or '—' }}</dd>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Last seen</dt>
+          <dd class="col-7 mb-0">{{ agent.last_seen_at | time_ago }}</dd>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Machine ID</dt>
+          <dd class="col-7 mb-0">
+            <code style="font-size:11px;color:var(--t2)">{{ agent.machine_id }}</code>
+          </dd>
         </dl>
       </div>
     </div>
   </div>
 
-  <div class="col-md-6">
-    <div class="card shadow-sm">
-      <div class="card-header">Rename agent</div>
+  <div class="col-md-6 d-flex flex-column gap-3">
+    <div class="card">
+      <div class="card-header">Rename</div>
       <div class="card-body">
         <form method="post" action="{{ url_for('rename_agent', agent_id=agent.id) }}"
               class="d-flex gap-2">
-          <input name="display_name" class="form-control" placeholder="Display name"
-                 value="{{ agent.display_name or '' }}">
-          <button class="btn btn-primary text-nowrap">Save</button>
+          <input name="display_name" class="form-control form-control-sm"
+                 placeholder="Display name" value="{{ agent.display_name or '' }}">
+          <button class="btn btn-sm btn-primary text-nowrap">Save name</button>
         </form>
       </div>
     </div>
 
     {% if agent.status == 'pending' %}
-    <div class="card shadow-sm mt-3">
-      <div class="card-header">Pairing</div>
+    <div class="card" style="border-color:rgba(217,119,6,.4)">
+      <div class="card-header" style="color:var(--wa)">Pending approval</div>
       <div class="card-body">
-        <p class="mb-2">Pairing code: <code class="fs-5">{{ agent.pairing_code }}</code></p>
+        <p class="mb-3" style="font-size:13px;color:var(--t2)">
+          Pairing code:
+          <code style="font-size:15px;font-weight:700;color:var(--t1);letter-spacing:.06em">
+            {{ agent.pairing_code }}
+          </code>
+        </p>
         <form method="post" action="{{ url_for('accept_agent', agent_id=agent.id) }}">
-          <button class="btn btn-success">Accept agent</button>
+          <button class="btn btn-sm btn-primary">Accept agent</button>
         </form>
       </div>
     </div>
@@ -59,10 +91,11 @@
   </div>
 </div>
 
-<div class="card shadow-sm">
+<!-- ── managed users ──────────────────────────────────────────────────── -->
+<div class="card">
   <div class="card-header">Managed users</div>
+  {% if users %}
   <div class="card-body p-0">
-    {% if users %}
     <table class="table mb-0 align-middle">
       <thead>
         <tr>
@@ -75,13 +108,13 @@
       <tbody>
         {% for u in users %}
         <tr>
-          <td>{{ u.local_username }}</td>
-          <td><small class="text-muted">{{ u.local_uid }}</small></td>
+          <td style="font-weight:500">{{ u.local_username }}</td>
+          <td><span style="font-size:12px;color:var(--t2)">{{ u.local_uid }}</span></td>
           <td>
             {% if u.status == 'managed' %}
-              <span class="badge bg-primary">managed</span>
+              <span class="badge text-bg-success">managed</span>
             {% else %}
-              <span class="badge bg-secondary">unmanaged</span>
+              <span class="badge text-bg-secondary">unmanaged</span>
             {% endif %}
           </td>
           <td>
@@ -92,7 +125,7 @@
                 <option value="">— unmanaged —</option>
                 {% for p in profiles %}
                   <option value="{{ p.id }}"
-                    {% if u.profile_id == p.id %}selected{% endif %}>
+                    {% if u.profile_id == p.id and u.status == 'managed' %}selected{% endif %}>
                     {{ p.display_name }}
                   </option>
                 {% endfor %}
@@ -104,11 +137,14 @@
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    <p class="p-3 text-muted mb-0">
+  </div>
+  {% else %}
+  <div class="card-body">
+    <p class="text-secondary small mb-0">
       No users discovered yet. The agent reports users on first connection.
     </p>
-    {% endif %}
   </div>
+  {% endif %}
 </div>
+
 {% endblock %}

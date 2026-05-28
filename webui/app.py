@@ -9,13 +9,60 @@ Usage:
 
 import os
 import requests
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, g)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
+
+@app.template_filter('ts_date')
+def ts_date(ts):
+    """Format a Unix timestamp as YYYY-MM-DD."""
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime('%Y-%m-%d')
+    except Exception:
+        return '—'
+
+
+@app.template_filter('time_ago')
+def time_ago(ts):
+    """Format a Unix timestamp as 'just now', '5m ago', '2h ago', or 'May 3'."""
+    if ts is None:
+        return '—'
+    try:
+        dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+        diff = int((datetime.now(tz=timezone.utc) - dt).total_seconds())
+        if diff < 60:
+            return 'just now'
+        if diff < 3600:
+            return f'{diff // 60}m ago'
+        if diff < 86400:
+            return f'{diff // 3600}h ago'
+        return dt.strftime('%b %-d')
+    except Exception:
+        return str(ts)
+
+
+@app.template_filter('fmt_mins')
+def fmt_mins(m):
+    """Format minutes as '1h 30m', '45m', '0m', or '—' for None."""
+    if m is None:
+        return '—'
+    try:
+        m = int(m)
+    except (ValueError, TypeError):
+        return str(m)
+    if m <= 0:
+        return '0m'
+    h, rem = divmod(m, 60)
+    if h and rem:
+        return f'{h}h {rem}m'
+    if h:
+        return f'{h}h'
+    return f'{rem}m'
 
 SERVER = os.environ.get("SERVER_URL", "http://localhost:8080").rstrip("/")
 API = f"{SERVER}/api/v1"
@@ -185,9 +232,7 @@ def link_agent_user(user_id):
 @app.route("/profiles")
 @require_login
 def profiles():
-    r = api("GET", "/profiles")
-    profiles_list = r.json().get("profiles", []) if r and r.ok else []
-    return render_template("profiles.html", profiles=profiles_list)
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/profiles/create", methods=["POST"])
@@ -196,13 +241,13 @@ def create_profile():
     name = request.form.get("display_name", "").strip()
     if not name:
         flash("Name is required.", "warning")
-        return redirect(url_for("profiles"))
+        return redirect(url_for("dashboard"))
     r = api("POST", "/profiles", json={"display_name": name})
     if r and r.ok:
         flash(f"Profile '{name}' created.", "success")
     else:
         flash("Failed to create profile.", "danger")
-    return redirect(url_for("profiles"))
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/profiles/<profile_id>")
@@ -211,19 +256,54 @@ def profile_detail(profile_id):
     r = api("GET", f"/profiles/{profile_id}")
     if not r or not r.ok:
         flash("Profile not found.", "danger")
-        return redirect(url_for("profiles"))
+        return redirect(url_for("dashboard"))
     data = r.json()
 
     r2 = api("GET", f"/profiles/{profile_id}/status")
     status = r2.json().get("profile") if r2 and r2.ok else {}
 
+    r_agents = api("GET", "/agents")
+    agents_by_id = {a["id"]: a for a in (r_agents.json().get("agents", []) if r_agents and r_agents.ok else [])}
+    for u in data.get("agent_users", []):
+        u["agent_hostname"] = agents_by_id.get(str(u.get("agent_id", "")), {}).get("hostname", "?")
+
+    today_date = date.today()
+    week_offset = int(request.args.get('week', 0))
+    # Monday of the selected week
+    week_start = today_date - timedelta(days=today_date.weekday()) + timedelta(weeks=week_offset)
+    week_end = week_start + timedelta(days=6)
+
     r3 = api("GET", f"/profiles/{profile_id}/usage",
-             params={"from": str(date.today() - timedelta(days=14)),
-                     "to": str(date.today())})
+             params={"from": str(week_start), "to": str(week_end)})
     usage = r3.json().get("usage", []) if r3 and r3.ok else []
 
-    r4 = api("GET", f"/profiles/{profile_id}/adjustments")
-    adjustments = r4.json().get("adjustments", []) if r4 and r4.ok else []
+    usage_by_date = {u['date']: u for u in usage}
+    max_used = max((u.get('used_minutes') or 0 for u in usage), default=0)
+    max_used = max(max_used, 1)
+
+    week_bars = []
+    for i in range(7):
+        day = week_start + timedelta(days=i)
+        u = usage_by_date.get(str(day), {})
+        used = u.get('used_minutes') or 0
+        limit = u.get('limit_minutes')
+        adj = u.get('adjustments_minutes') or 0
+        eff_limit = (limit + adj) if limit is not None else None
+        pct = min(int(used / max_used * 100), 100)
+        over = eff_limit is not None and used > eff_limit
+        warn = eff_limit is not None and eff_limit > 0 and used / eff_limit >= 0.75
+        week_bars.append({
+            'date': str(day),
+            'day_name': day.strftime('%a'),
+            'is_today': day == today_date,
+            'is_future': day > today_date,
+            'used': used,
+            'limit': limit,
+            'eff_limit': eff_limit,
+            'pct': pct,
+            'over': over,
+            'warn': warn,
+        })
 
     return render_template("profile.html",
                            profile=data["profile"],
@@ -231,9 +311,12 @@ def profile_detail(profile_id):
                            limits=data.get("daily_limits", []),
                            agent_users=data.get("agent_users", []),
                            status=status,
-                           usage=usage,
-                           adjustments=adjustments,
-                           today=str(date.today()))
+                           week_bars=week_bars,
+                           week_max=max_used,
+                           week_offset=week_offset,
+                           week_start=week_start,
+                           week_end=week_end,
+                           today=str(today_date))
 
 
 @app.route("/profiles/<profile_id>/rename", methods=["POST"])
@@ -250,7 +333,7 @@ def rename_profile(profile_id):
 def delete_profile(profile_id):
     r = api("DELETE", f"/profiles/{profile_id}")
     flash("Profile deleted." if (r and r.ok) else "Delete failed.", "success" if (r and r.ok) else "danger")
-    return redirect(url_for("profiles"))
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/profiles/<profile_id>/schedules", methods=["POST"])
