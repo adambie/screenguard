@@ -46,19 +46,7 @@
 
 <!-- ── today's status ───────────────────────────────────────────────── -->
 <div class="card mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>Today</span>
-    {% if status and status.today is defined %}
-      {% set t = status.today %}
-      {% if t.enforce == 'lock' %}
-        <span class="badge rounded-pill text-bg-danger">Locked</span>
-      {% elif t.enforce == 'warn' %}
-        <span class="badge rounded-pill text-bg-warning">Warning</span>
-      {% else %}
-        <span class="badge rounded-pill text-bg-success">Active</span>
-      {% endif %}
-    {% endif %}
-  </div>
+  <div class="card-header">Today</div>
   <div class="card-body">
     {% if status and status.today is defined %}
       {% set t = status.today %}
@@ -74,55 +62,84 @@
         {% set pct = none %}
       {% endif %}
 
-      <div class="row g-4 align-items-center">
-        <div class="col-md-7">
-          <div class="mb-1" style="font-size:2.75rem;font-weight:700;line-height:1;letter-spacing:-.03em">
-            {{ t.remaining_minutes | fmt_mins }}
-          </div>
-          <div class="text-secondary mb-3" style="font-size:.875rem">remaining today</div>
+      {% set can_unlock = t.adjustments_minutes is not none and t.adjustments_minutes < 0 %}
+      {# bar state #}
+      {% if eff_total is none %}
+        {% set bar_type = 'nolimit' %}
+        {% set bar_color = 'var(--ok)' %}
+      {% elif t.remaining_minutes is none or t.remaining_minutes <= 0 %}
+        {% set bar_type = 'blocked' %}
+        {% set bar_color = '' %}
+      {% elif t.remaining_minutes > 30 %}
+        {% set bar_type = 'normal' %}
+        {% set bar_color = 'var(--ok)' %}
+      {% elif t.remaining_minutes > 15 %}
+        {% set bar_type = 'normal' %}
+        {% set bar_color = 'var(--wa)' %}
+      {% else %}
+        {% set bar_type = 'normal' %}
+        {% set bar_color = 'var(--er)' %}
+      {% endif %}
+      <div class="row g-3 align-items-stretch">
 
-          {% if pct is not none %}
-            <div class="progress mb-2" style="height:6px;border-radius:99px;background:var(--bs-secondary-bg)">
-              <div class="progress-bar
-                  {% if pct >= 90 %}bg-danger{% elif pct >= 70 %}bg-warning{% else %}bg-success{% endif %}"
-                   role="progressbar"
-                   style="width:{{ pct }}%;border-radius:99px;transition:width .4s ease"></div>
+        {# ── col 1: time remaining ── #}
+        <div class="col-sm-6 col-md-3">
+          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+                        color:var(--t2);margin-bottom:12px">Today</div>
+            <div style="font-size:2.25rem;font-weight:700;line-height:1;letter-spacing:-.03em;margin-bottom:4px">
+              {{ t.remaining_minutes | fmt_mins }}
             </div>
-            <div class="d-flex justify-content-between" style="font-size:.8rem;color:var(--bs-secondary-color)">
-              <span>{{ t.used_minutes | fmt_mins }} used</span>
-              <span>
-                {{ eff_total | fmt_mins }} total
-                {% if t.adjustments_minutes != 0 %}
-                  <span class="{% if t.adjustments_minutes > 0 %}text-success{% else %}text-danger{% endif %}">
-                    ({{ '%+d' % t.adjustments_minutes }}m adj)
-                  </span>
+            <div style="font-size:.8rem;color:var(--t2);margin-bottom:14px">remaining today</div>
+            {# status bar #}
+            {% if bar_type == 'nolimit' %}
+              <div style="height:22px;border-radius:var(--r2);background:var(--ok);margin-bottom:7px"></div>
+            {% elif bar_type == 'blocked' %}
+              <div style="height:22px;border-radius:var(--r2);background:var(--bd);margin-bottom:7px"></div>
+            {% else %}
+              <div style="height:22px;border-radius:var(--r2);overflow:hidden;background:{{ bar_color }};margin-bottom:7px">
+                {% if pct and pct > 0 %}
+                  <div style="width:{{ pct }}%;height:100%;background:var(--c2)"></div>
                 {% endif %}
-              </span>
-            </div>
-          {% else %}
-            <div class="text-secondary" style="font-size:.875rem">No daily limit — runs all day</div>
-          {% endif %}
+              </div>
+            {% endif %}
+            {# labels below bar #}
+            {% if eff_total is not none %}
+              <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--t2)">
+                <span>{{ t.used_minutes | fmt_mins }} used</span>
+                <span>
+                  of {{ eff_total | fmt_mins }}
+                  {% if t.adjustments_minutes != 0 %}
+                    <span class="{% if t.adjustments_minutes > 0 %}text-success{% else %}text-danger{% endif %}">
+                      ({{ '%+d' % t.adjustments_minutes }}m)
+                    </span>
+                  {% endif %}
+                </span>
+              </div>
+            {% else %}
+              <div style="font-size:.75rem;color:var(--t2)">No daily limit — runs all day</div>
+            {% endif %}
+          </div>
         </div>
 
-        <div class="col-md-5 d-flex flex-column gap-3">
-
-          {# ── box 1: time adjustment ── #}
-          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+        {# ── col 2: adjust time ── #}
+        <div class="col-sm-6 col-md-3">
+          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:10px">Adjust time</div>
+                        color:var(--t2);margin-bottom:12px">Adjust today's time</div>
             <div style="text-align:center;font-size:13px;color:var(--t2);margin-bottom:10px">
               <strong id="adjDisplay" style="color:var(--t1);font-size:15px">0</strong> min
             </div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-bottom:10px;flex-wrap:wrap">
               <button type="button" id="adjDec"
                       class="btn btn-sm btn-outline-secondary"
-                      style="border-radius:20px;padding:3px 13px;font-size:12px">&#8854; −15m</button>
+                      style="border-radius:20px;padding:3px 11px;font-size:12px">&#8854; −15m</button>
               <button type="button" id="adjReset"
                       style="background:none;border:none;color:var(--t2);font-size:12px;
-                             padding:3px 8px;cursor:pointer;border-radius:var(--r2)">Reset</button>
+                             padding:3px 6px;cursor:pointer;border-radius:var(--r2)">Reset</button>
               <button type="button" id="adjInc"
                       class="btn btn-sm btn-outline-secondary"
-                      style="border-radius:20px;padding:3px 13px;font-size:12px">&#8853; +15m</button>
+                      style="border-radius:20px;padding:3px 11px;font-size:12px">&#8853; +15m</button>
             </div>
             <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}">
               <input type="hidden" name="target_date" value="{{ today }}">
@@ -132,36 +149,37 @@
                       disabled style="opacity:.35;transition:opacity .15s">Apply Changes</button>
             </form>
           </div>
+        </div>
 
-          {# ── box 2: lock / unlock ── #}
-          {% set can_unlock = t.adjustments_minutes is not none and t.adjustments_minutes < 0 %}
-          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+        {# ── col 3: lock / unlock ── #}
+        <div class="col-sm-6 col-md-3">
+          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:10px">Screen time</div>
-            <div class="d-flex gap-2">
-              <form method="post" action="{{ url_for('lock_now', profile_id=profile.id) }}" class="flex-fill">
+                        color:var(--t2);margin-bottom:12px">Screen time</div>
+            <div class="d-flex flex-column gap-3">
+              <form method="post" action="{{ url_for('lock_now', profile_id=profile.id) }}">
                 <button type="submit"
-                        class="btn btn-sm w-100 d-flex align-items-center justify-content-center gap-1"
-                        style="font-size:12.5px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)"
+                        class="btn w-100 d-flex align-items-center justify-content-center gap-2"
+                        style="font-size:13px;padding:9px 12px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)"
                         onclick="return confirm('Zero out remaining time for today?')">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
                     <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
                   </svg>
                   Lock
                 </button>
               </form>
-              <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}" class="flex-fill">
+              <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}">
                 <input type="hidden" name="target_date" value="{{ today }}">
                 <input type="hidden" name="minutes" value="{{ ((t.adjustments_minutes or 0) * -1) | int }}">
                 <input type="hidden" name="reason" value="unlock">
                 <button type="submit"
-                        class="btn btn-sm w-100 d-flex align-items-center justify-content-center gap-1"
-                        style="font-size:12.5px;
+                        class="btn w-100 d-flex align-items-center justify-content-center gap-2"
+                        style="font-size:13px;padding:9px 12px;
                                {% if can_unlock %}border:1px solid rgba(22,163,74,.45);color:var(--ok);background:rgba(22,163,74,.07)
                                {% else %}border:1px solid var(--bd);color:var(--t2);background:none{% endif %}"
                         {% if not can_unlock %}disabled title="Nothing to restore"{% endif %}
                         {% if can_unlock %}onclick="return confirm('Restore today\'s normal time limit?')"{% endif %}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
                     <path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2z"/>
                   </svg>
                   Unlock
@@ -169,20 +187,22 @@
               </form>
             </div>
           </div>
+        </div>
 
-          {# ── box 3: send message ── #}
-          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+        {# ── col 4: message ── #}
+        <div class="col-sm-6 col-md-3">
+          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:10px">Message</div>
-            <form method="post" action="{{ url_for('notify_profile', profile_id=profile.id) }}"
-                  class="input-group input-group-sm">
-              <input type="text" name="message" class="form-control"
-                     placeholder="Send a message to user…" required>
-              <button class="btn btn-outline-secondary">Send</button>
+                        color:var(--t2);margin-bottom:12px">Message</div>
+            <form method="post" action="{{ url_for('notify_profile', profile_id=profile.id) }}">
+              <textarea name="message" class="form-control form-control-sm mb-2"
+                        rows="3" placeholder="Send a message to user…"
+                        required style="resize:none"></textarea>
+              <button class="btn btn-sm btn-outline-secondary w-100">Send</button>
             </form>
           </div>
-
         </div>
+
       </div>
     {% else %}
       <p class="text-secondary mb-0 small">Status unavailable — no agent connected.</p>
@@ -195,23 +215,68 @@
   <div class="card-header">Daily limits</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('update_limits', profile_id=profile.id) }}">
-      <div class="d-flex gap-2 mb-3">
+      <div class="d-flex gap-2 mb-4">
         {% for d in days() %}
           {% set dow = loop.index0 %}
           {% set ns = namespace(val='') %}
           {% for l in limits %}{% if l.day_of_week == dow %}{% set ns.val = l.allowed_minutes %}{% endif %}{% endfor %}
-          <div class="flex-fill text-center">
-            <div class="mb-1" style="font-size:.7rem;font-weight:700;text-transform:uppercase;
+          {% set hval = (ns.val // 60) if ns.val != '' else '' %}
+          {% set mval = '%02d' % (ns.val % 60) if ns.val != '' else '' %}
+          <div class="flex-fill text-center" style="min-width:0">
+
+            {# day label #}
+            <div class="mb-3" style="font-size:.75rem;font-weight:700;text-transform:uppercase;
                                      letter-spacing:.08em;color:var(--bs-secondary-color)">{{ d }}</div>
-            <input type="number" name="limit_{{ dow }}"
-                   class="form-control form-control-sm text-center px-1"
-                   style="font-size:.875rem;min-width:0"
-                   min="0" max="1440" placeholder="—" value="{{ ns.val }}">
+
+            {# h : m inputs #}
+            <div style="display:flex;align-items:center;justify-content:center;gap:3px;margin-bottom:8px">
+              <input type="number"
+                     class="limit-hours form-control text-center px-0"
+                     data-dow="{{ dow }}"
+                     style="width:38px;font-size:1rem;appearance:textfield;-moz-appearance:textfield"
+                     min="0" max="24" placeholder="—" value="{{ hval }}">
+              <span style="font-size:1rem;font-weight:300;color:var(--t2)">:</span>
+              <input type="number"
+                     class="limit-mins form-control text-center px-0"
+                     data-dow="{{ dow }}"
+                     style="width:36px;font-size:1rem;appearance:textfield;-moz-appearance:textfield"
+                     min="0" max="59" placeholder="—" value="{{ mval }}">
+            </div>
+
+            {# +/- 15m buttons #}
+            <div style="display:flex;gap:3px;justify-content:center;margin-bottom:8px">
+              <button type="button" class="limit-dec btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
+                      style="font-size:11px;padding:3px 8px">−15</button>
+              <button type="button" class="limit-inc btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
+                      style="font-size:11px;padding:3px 8px">+15</button>
+            </div>
+
+            {# state badge / actions #}
+            {% if ns.val == 0 %}
+              <div class="limit-state d-flex gap-1 justify-content-center" data-dow="{{ dow }}">
+                <span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:10px">blocked</span>
+                <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
+                        style="font-size:10px;padding:1px 8px;border-radius:99px">clear</button>
+              </div>
+            {% else %}
+              <div class="limit-state d-flex gap-1 justify-content-center" data-dow="{{ dow }}">
+                {% if ns.val != '' %}
+                  <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
+                          style="font-size:10px;padding:1px 8px;border-radius:99px">clear</button>
+                {% else %}
+                  <span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:10px;opacity:.7">no limit</span>
+                {% endif %}
+                <button type="button" class="limit-block btn btn-sm" data-dow="{{ dow }}"
+                        style="font-size:10px;padding:1px 8px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>
+              </div>
+            {% endif %}
+
+            <input type="hidden" name="limit_{{ dow }}" class="limit-hidden" data-dow="{{ dow }}"
+                   value="{{ ns.val }}">
           </div>
         {% endfor %}
       </div>
-      <div class="d-flex justify-content-between align-items-center">
-        <span class="text-secondary" style="font-size:.8rem">Minutes per day — leave blank for no limit</span>
+      <div class="d-flex justify-content-end">
         <button class="btn btn-sm btn-primary">Save limits</button>
       </div>
     </form>
@@ -370,6 +435,12 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.limit-hours::-webkit-outer-spin-button,
+.limit-hours::-webkit-inner-spin-button,
+.limit-mins::-webkit-outer-spin-button,
+.limit-mins::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+</style>
 <script>
 // ── adjustment widget ──────────────────────────────────────────────────────
 (function() {
@@ -435,5 +506,103 @@ document.getElementById('scheduleList')?.addEventListener('click', function(e) {
     e.target.closest('.schedule-row').remove();
   }
 });
+
+// ── daily limit widgets ────────────────────────────────────────────────────
+(function() {
+  function q(cls, dow) {
+    return document.querySelector('.' + cls + '[data-dow="' + dow + '"]');
+  }
+
+  var blockBtn  = '<button type="button" class="limit-block btn btn-sm" data-dow="__D__" style="font-size:10px;padding:1px 8px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>';
+  var clearBtn  = '<button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="__D__" style="font-size:10px;padding:1px 8px;border-radius:99px">clear</button>';
+  var noLimitBadge = '<span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:10px;opacity:.7">no limit</span>';
+  var blockedBadge = '<span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:10px">blocked</span>';
+
+  function tmpl(s, dow) { return s.replace(/__D__/g, dow); }
+
+  function updateState(dow) {
+    var hid = q('limit-hidden', dow);
+    var el  = q('limit-state',  dow);
+    if (!el) return;
+    var val = hid.value;
+    if (val === '') {
+      el.innerHTML = noLimitBadge + tmpl(blockBtn, dow);
+    } else if (parseInt(val) === 0) {
+      el.innerHTML = blockedBadge + tmpl(clearBtn, dow);
+    } else {
+      el.innerHTML = tmpl(clearBtn, dow) + tmpl(blockBtn, dow);
+    }
+  }
+
+  function setDisplay(dow, totalMins) {
+    if (totalMins < 0) totalMins = 0;
+    var h = Math.floor(totalMins / 60);
+    var m = totalMins % 60;
+    q('limit-hours',  dow).value = h;
+    q('limit-mins',   dow).value = String(m).padStart(2, '0');
+    q('limit-hidden', dow).value = totalMins;
+    updateState(dow);
+  }
+
+  function syncHidden(dow) {
+    var hEl  = q('limit-hours',  dow);
+    var mEl  = q('limit-mins',   dow);
+    var hidEl = q('limit-hidden', dow);
+    if (hEl.value.trim() === '' && mEl.value.trim() === '') {
+      hidEl.value = '';
+    } else {
+      hidEl.value = (parseInt(hEl.value) || 0) * 60 + (parseInt(mEl.value) || 0);
+    }
+    updateState(dow);
+  }
+
+  document.querySelectorAll('.limit-hours').forEach(function(el) {
+    el.addEventListener('keydown', function(e) {
+      if (e.key === ':') {
+        e.preventDefault();
+        q('limit-mins', el.dataset.dow).focus();
+      }
+    });
+    el.addEventListener('input', function() { syncHidden(el.dataset.dow); });
+  });
+
+  document.querySelectorAll('.limit-mins').forEach(function(el) {
+    el.addEventListener('input', function() { syncHidden(el.dataset.dow); });
+  });
+
+  document.querySelectorAll('.limit-inc').forEach(function(el) {
+    el.addEventListener('click', function() {
+      var dow = el.dataset.dow;
+      var cur = parseInt(q('limit-hidden', dow).value) || 0;
+      setDisplay(dow, cur + 15);
+    });
+  });
+
+  document.querySelectorAll('.limit-dec').forEach(function(el) {
+    el.addEventListener('click', function() {
+      var dow = el.dataset.dow;
+      var hid = q('limit-hidden', dow);
+      if (hid.value === '') return;
+      var cur = parseInt(hid.value) || 0;
+      if (cur === 0) return;
+      setDisplay(dow, cur - 15);
+    });
+  });
+
+  // delegated — clear/block buttons are dynamically injected by updateState
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('limit-clear')) {
+      var dow = e.target.dataset.dow;
+      q('limit-hours',  dow).value = '';
+      q('limit-mins',   dow).value = '';
+      q('limit-hidden', dow).value = '';
+      updateState(dow);
+    }
+    if (e.target.classList.contains('limit-block')) {
+      var dow = e.target.dataset.dow;
+      setDisplay(dow, 0);
+    }
+  });
+})();
 </script>
 {% endblock %}
