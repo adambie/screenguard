@@ -104,13 +104,14 @@
           {% endif %}
         </div>
 
-        <div class="col-md-5 d-flex flex-column gap-2">
+        <div class="col-md-5 d-flex flex-column gap-3">
 
-          {# ── quick adjustment widget ── #}
+          {# ── box 1: time adjustment ── #}
           <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
-            <div style="text-align:center;font-size:12px;color:var(--t2);margin-bottom:10px">
-              Adjust time:
-              <strong id="adjDisplay" style="color:var(--t1)">0</strong> min
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+                        color:var(--t2);margin-bottom:10px">Adjust time</div>
+            <div style="text-align:center;font-size:13px;color:var(--t2);margin-bottom:10px">
+              <strong id="adjDisplay" style="color:var(--t1);font-size:15px">0</strong> min
             </div>
             <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px">
               <button type="button" id="adjDec"
@@ -132,44 +133,55 @@
             </form>
           </div>
 
-          {# ── lock / unlock controls ── #}
-          <div class="d-flex gap-2">
-            <form method="post" action="{{ url_for('lock_now', profile_id=profile.id) }}" class="flex-fill">
-              <button type="submit" class="btn btn-sm btn-outline-danger w-100 d-flex align-items-center justify-content-center gap-1"
-                      style="font-size:12.5px"
-                      onclick="return confirm('Zero out remaining time for today?')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
-                  <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
-                </svg>
-                Lock screen
-              </button>
-            </form>
-            <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}" class="flex-fill">
-              <input type="hidden" name="target_date" value="{{ today }}">
-              <input type="hidden" name="minutes" value="{{ ((t.adjustments_minutes or 0) * -1) | int }}">
-              <input type="hidden" name="reason" value="unlock">
-              {% set can_unlock = t.adjustments_minutes is not none and t.adjustments_minutes < 0 %}
-              <button type="submit"
-                      class="btn btn-sm w-100 d-flex align-items-center justify-content-center gap-1"
-                      style="font-size:12.5px;
-                             {% if can_unlock %}border:1px solid rgba(22,163,74,.5);color:var(--ok);background:rgba(22,163,74,.08)
-                             {% else %}border:1px solid var(--bd);color:var(--t2);background:none{% endif %}"
-                      {% if not can_unlock %}disabled title="Nothing to restore"{% endif %}
-                      {% if can_unlock %}onclick="return confirm('Restore today\'s normal time limit?')"{% endif %}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
-                  <path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2z"/>
-                </svg>
-                Restore
-              </button>
+          {# ── box 2: lock / unlock ── #}
+          {% set can_unlock = t.adjustments_minutes is not none and t.adjustments_minutes < 0 %}
+          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+                        color:var(--t2);margin-bottom:10px">Screen time</div>
+            <div class="d-flex gap-2">
+              <form method="post" action="{{ url_for('lock_now', profile_id=profile.id) }}" class="flex-fill">
+                <button type="submit"
+                        class="btn btn-sm w-100 d-flex align-items-center justify-content-center gap-1"
+                        style="font-size:12.5px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)"
+                        onclick="return confirm('Zero out remaining time for today?')">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
+                    <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+                  </svg>
+                  Lock
+                </button>
+              </form>
+              <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}" class="flex-fill">
+                <input type="hidden" name="target_date" value="{{ today }}">
+                <input type="hidden" name="minutes" value="{{ ((t.adjustments_minutes or 0) * -1) | int }}">
+                <input type="hidden" name="reason" value="unlock">
+                <button type="submit"
+                        class="btn btn-sm w-100 d-flex align-items-center justify-content-center gap-1"
+                        style="font-size:12.5px;
+                               {% if can_unlock %}border:1px solid rgba(22,163,74,.45);color:var(--ok);background:rgba(22,163,74,.07)
+                               {% else %}border:1px solid var(--bd);color:var(--t2);background:none{% endif %}"
+                        {% if not can_unlock %}disabled title="Nothing to restore"{% endif %}
+                        {% if can_unlock %}onclick="return confirm('Restore today\'s normal time limit?')"{% endif %}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
+                    <path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2z"/>
+                  </svg>
+                  Unlock
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {# ── box 3: send message ── #}
+          <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+                        color:var(--t2);margin-bottom:10px">Message</div>
+            <form method="post" action="{{ url_for('notify_profile', profile_id=profile.id) }}"
+                  class="input-group input-group-sm">
+              <input type="text" name="message" class="form-control"
+                     placeholder="Send a message to user…" required>
+              <button class="btn btn-outline-secondary">Send</button>
             </form>
           </div>
 
-          <form method="post" action="{{ url_for('notify_profile', profile_id=profile.id) }}"
-                class="input-group input-group-sm">
-            <input type="text" name="message" class="form-control"
-                   placeholder="Send a message to user…" required>
-            <button class="btn btn-outline-secondary">Send</button>
-          </form>
         </div>
       </div>
     {% else %}
