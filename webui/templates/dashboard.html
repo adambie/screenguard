@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h2 class="mb-0 fw-semibold" style="font-size:1.25rem;letter-spacing:-.02em">Profiles</h2>
   {% if data.pending_agents %}
-    <a href="{{ url_for('agents') }}" class="btn btn-sm btn-outline-secondary"
+    <a href="{{ url_for('agents') }}" class="btn btn-outline-secondary"
        style="color:var(--wa);border-color:var(--wa)">
       {{ data.pending_agents }} agent{{ 's' if data.pending_agents != 1 }} pending approval
     </a>
@@ -69,7 +69,7 @@
           <input name="display_name" class="form-control form-control-sm text-center mb-2"
                  placeholder="New profile name…" required
                  style="border-color:var(--bd)">
-          <button class="btn btn-sm btn-outline-secondary w-100">Create profile</button>
+          <button class="btn btn-outline-secondary w-100">Create profile</button>
         </form>
       </div>
     </div>

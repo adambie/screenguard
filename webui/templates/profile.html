@@ -26,11 +26,11 @@
     </div>
   </div>
   <div class="d-flex gap-2 flex-shrink-0 pt-1">
-    <button class="btn btn-sm btn-outline-secondary"
+    <button class="btn btn-outline-secondary"
             data-bs-toggle="collapse" data-bs-target="#renameForm">Rename</button>
     <form method="post" action="{{ url_for('delete_profile', profile_id=profile.id) }}"
           onsubmit="return confirm('Delete this profile and all its configuration?')">
-      <button class="btn btn-sm btn-outline-danger">Delete</button>
+      <button class="btn btn-outline-danger">Delete</button>
     </form>
   </div>
 </div>
@@ -40,7 +40,7 @@
         class="d-flex gap-2" style="max-width:380px">
     <input name="display_name" class="form-control form-control-sm"
            value="{{ profile.display_name }}" required>
-    <button class="btn btn-sm btn-primary text-nowrap">Save name</button>
+    <button class="btn btn-primary text-nowrap">Save name</button>
   </form>
 </div>
 
@@ -133,19 +133,19 @@
             <div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-bottom:10px;flex-wrap:wrap">
               <button type="button" id="adjDec"
                       class="btn btn-sm btn-outline-secondary"
-                      style="border-radius:20px;padding:3px 11px;font-size:12px">&#8854; −15m</button>
+                      style="border-radius:20px;padding:5px 16px;font-size:13px">&#8854; −15m</button>
               <button type="button" id="adjReset"
-                      style="background:none;border:none;color:var(--t2);font-size:12px;
-                             padding:3px 6px;cursor:pointer;border-radius:var(--r2)">Reset</button>
+                      style="background:none;border:none;color:var(--t2);font-size:13px;
+                             padding:5px 8px;cursor:pointer;border-radius:var(--r2)">Reset</button>
               <button type="button" id="adjInc"
                       class="btn btn-sm btn-outline-secondary"
-                      style="border-radius:20px;padding:3px 11px;font-size:12px">&#8853; +15m</button>
+                      style="border-radius:20px;padding:5px 16px;font-size:13px">&#8853; +15m</button>
             </div>
             <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}">
               <input type="hidden" name="target_date" value="{{ today }}">
               <input type="hidden" name="minutes" id="adjMinutes" value="0">
               <input type="hidden" name="reason" value="">
-              <button id="adjApply" class="btn btn-sm btn-primary w-100"
+              <button id="adjApply" class="btn btn-primary w-100"
                       disabled style="opacity:.35;transition:opacity .15s">Apply Changes</button>
             </form>
           </div>
@@ -215,14 +215,14 @@
   <div class="card-header">Daily limits</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('update_limits', profile_id=profile.id) }}">
-      <div class="d-flex gap-2 mb-4">
+      <div class="d-flex gap-2 mb-4" style="flex-wrap:wrap">
         {% for d in days() %}
           {% set dow = loop.index0 %}
           {% set ns = namespace(val='') %}
           {% for l in limits %}{% if l.day_of_week == dow %}{% set ns.val = l.allowed_minutes %}{% endif %}{% endfor %}
           {% set hval = (ns.val // 60) if ns.val != '' else '' %}
           {% set mval = '%02d' % (ns.val % 60) if ns.val != '' else '' %}
-          <div class="flex-fill text-center" style="min-width:0">
+          <div class="flex-fill text-center" style="min-width:120px">
 
             {# day label #}
             <div class="mb-3" style="font-size:.75rem;font-weight:700;text-transform:uppercase;
@@ -233,41 +233,41 @@
               <input type="number"
                      class="limit-hours form-control text-center px-0"
                      data-dow="{{ dow }}"
-                     style="width:38px;font-size:1rem;appearance:textfield;-moz-appearance:textfield"
+                     style="width:46px;font-size:1.1rem;appearance:textfield;-moz-appearance:textfield"
                      min="0" max="24" placeholder="—" value="{{ hval }}">
-              <span style="font-size:1rem;font-weight:300;color:var(--t2)">:</span>
+              <span style="font-size:1.2rem;font-weight:300;color:var(--t2)">:</span>
               <input type="number"
                      class="limit-mins form-control text-center px-0"
                      data-dow="{{ dow }}"
-                     style="width:36px;font-size:1rem;appearance:textfield;-moz-appearance:textfield"
+                     style="width:44px;font-size:1.1rem;appearance:textfield;-moz-appearance:textfield"
                      min="0" max="59" placeholder="—" value="{{ mval }}">
             </div>
 
             {# +/- 15m buttons #}
-            <div style="display:flex;gap:3px;justify-content:center;margin-bottom:8px">
-              <button type="button" class="limit-dec btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                      style="font-size:11px;padding:3px 8px">−15</button>
-              <button type="button" class="limit-inc btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                      style="font-size:11px;padding:3px 8px">+15</button>
+            <div style="display:flex;gap:4px;justify-content:center;margin-bottom:10px">
+              <button type="button" class="limit-dec btn btn-outline-secondary" data-dow="{{ dow }}"
+                      style="font-size:13px;padding:7px 12px">−15</button>
+              <button type="button" class="limit-inc btn btn-outline-secondary" data-dow="{{ dow }}"
+                      style="font-size:13px;padding:7px 12px">+15</button>
             </div>
 
             {# state badge / actions #}
             {% if ns.val == 0 %}
-              <div class="limit-state d-flex gap-1 justify-content-center" data-dow="{{ dow }}">
-                <span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:10px">blocked</span>
+              <div class="limit-state d-flex gap-1 justify-content-center flex-wrap" data-dow="{{ dow }}">
+                <span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">blocked</span>
                 <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                        style="font-size:10px;padding:1px 8px;border-radius:99px">clear</button>
+                        style="font-size:12px;padding:5px 12px;border-radius:99px">clear</button>
               </div>
             {% else %}
-              <div class="limit-state d-flex gap-1 justify-content-center" data-dow="{{ dow }}">
+              <div class="limit-state d-flex gap-1 justify-content-center flex-wrap" data-dow="{{ dow }}">
                 {% if ns.val != '' %}
                   <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                          style="font-size:10px;padding:1px 8px;border-radius:99px">clear</button>
+                          style="font-size:12px;padding:5px 12px;border-radius:99px">clear</button>
                 {% else %}
-                  <span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:10px;opacity:.7">no limit</span>
+                  <span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">no limit</span>
                 {% endif %}
                 <button type="button" class="limit-block btn btn-sm" data-dow="{{ dow }}"
-                        style="font-size:10px;padding:1px 8px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>
+                        style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>
               </div>
             {% endif %}
 
@@ -277,7 +277,7 @@
         {% endfor %}
       </div>
       <div class="d-flex justify-content-end">
-        <button class="btn btn-sm btn-primary">Save limits</button>
+        <button class="btn btn-primary">Save limits</button>
       </div>
     </form>
   </div>
@@ -290,7 +290,7 @@
     <form method="post" action="{{ url_for('update_schedules', profile_id=profile.id) }}">
 
       {# quick-add bar #}
-      <div class="d-flex align-items-center gap-2 mb-3 pb-3" style="border-bottom:1px solid var(--bd)">
+      <div class="d-flex align-items-center gap-2 mb-3 pb-3" style="border-bottom:1px solid var(--bd);flex-wrap:wrap">
         <select id="quickDow" class="form-select form-select-sm flex-shrink-0" style="width:120px">
           <option value="week">All week</option>
           <option value="weekday">Mon – Fri</option>
@@ -304,9 +304,9 @@
           <option value="5">Sat</option>
           <option value="6">Sun</option>
         </select>
-        <input type="time" id="quickStart" class="form-control form-control-sm flex-shrink-0" style="width:115px">
+        <input type="time" id="quickStart" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px">
         <span class="text-secondary px-1" style="flex-shrink:0">–</span>
-        <input type="time" id="quickEnd" class="form-control form-control-sm flex-shrink-0" style="width:115px">
+        <input type="time" id="quickEnd" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px">
         <button type="button" id="quickAddBtn"
                 class="btn btn-sm btn-outline-secondary flex-shrink-0">+ Add</button>
       </div>
@@ -314,7 +314,7 @@
       {# existing rows #}
       <div id="scheduleList">
         {% for s in schedules %}
-        <div class="d-flex align-items-center gap-2 mb-2 schedule-row">
+        <div class="d-flex align-items-center gap-2 mb-2 schedule-row" style="flex-wrap:wrap">
           <select name="dow_{{ loop.index0 }}"
                   class="form-select form-select-sm flex-shrink-0" style="width:88px">
             {% for d in days() %}
@@ -323,14 +323,15 @@
             {% endfor %}
           </select>
           <input type="time" name="start_{{ loop.index0 }}"
-                 class="form-control form-control-sm flex-shrink-0" style="width:115px"
+                 class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px"
                  value="{{ s.start_time }}" required>
           <span class="text-secondary px-1">–</span>
           <input type="time" name="end_{{ loop.index0 }}"
-                 class="form-control form-control-sm flex-shrink-0" style="width:115px"
+                 class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px"
                  value="{{ s.end_time }}" required>
           <button type="button"
-                  class="btn btn-sm remove-row border-0 text-secondary ms-auto px-2"
+                  class="btn remove-row border-0 text-secondary ms-auto"
+                  style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center"
                   title="Remove">✕</button>
         </div>
         {% endfor %}
@@ -341,7 +342,7 @@
         {% endif %}
       </div>
       <div class="d-flex justify-content-end mt-3">
-        <button class="btn btn-sm btn-primary">Save schedule</button>
+        <button class="btn btn-primary">Save schedule</button>
       </div>
     </form>
   </div>
@@ -354,13 +355,13 @@
     <div style="display:flex;align-items:center;gap:8px">
       <a href="?week={{ week_offset - 1 }}#usageCard"
          class="btn btn-sm btn-outline-secondary"
-         style="width:28px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1">‹</a>
+         style="width:38px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1">‹</a>
       <span style="font-size:12px;color:var(--t2);min-width:150px;text-align:center;white-space:nowrap">
         {{ week_start.strftime('%b %-d') }} – {{ week_end.strftime('%b %-d, %Y') }}
       </span>
       <a href="?week={{ week_offset + 1 }}#usageCard"
          class="btn btn-sm btn-outline-secondary{% if week_offset >= 0 %} disabled{% endif %}"
-         style="width:28px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1">›</a>
+         style="width:38px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1">›</a>
     </div>
   </div>
   <div class="card-body">
@@ -476,12 +477,13 @@ function addScheduleRow(dayIndex, start, end) {
   ).join('');
   const div = document.createElement('div');
   div.className = 'd-flex align-items-center gap-2 mb-2 schedule-row';
+  div.style.flexWrap = 'wrap';
   div.innerHTML = `
     <select name="dow_${rowCount}" class="form-select form-select-sm flex-shrink-0" style="width:88px">${opts}</select>
-    <input type="time" name="start_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px" value="${start}" required>
+    <input type="time" name="start_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px" value="${start}" required>
     <span class="text-secondary px-1">–</span>
-    <input type="time" name="end_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px" value="${end}" required>
-    <button type="button" class="btn btn-sm remove-row border-0 text-secondary ms-auto px-2" title="Remove">✕</button>
+    <input type="time" name="end_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px" value="${end}" required>
+    <button type="button" class="btn remove-row border-0 text-secondary ms-auto" style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center" title="Remove">✕</button>
   `;
   list.appendChild(div);
   rowCount++;
@@ -513,10 +515,10 @@ document.getElementById('scheduleList')?.addEventListener('click', function(e) {
     return document.querySelector('.' + cls + '[data-dow="' + dow + '"]');
   }
 
-  var blockBtn  = '<button type="button" class="limit-block btn btn-sm" data-dow="__D__" style="font-size:10px;padding:1px 8px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>';
-  var clearBtn  = '<button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="__D__" style="font-size:10px;padding:1px 8px;border-radius:99px">clear</button>';
-  var noLimitBadge = '<span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:10px;opacity:.7">no limit</span>';
-  var blockedBadge = '<span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:10px">blocked</span>';
+  var blockBtn  = '<button type="button" class="limit-block btn btn-sm" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>';
+  var clearBtn  = '<button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px">clear</button>';
+  var noLimitBadge = '<span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">no limit</span>';
+  var blockedBadge = '<span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">blocked</span>';
 
   function tmpl(s, dow) { return s.replace(/__D__/g, dow); }
 
