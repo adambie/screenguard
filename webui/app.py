@@ -13,7 +13,7 @@ import requests
 from datetime import date, timedelta, datetime, timezone
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, g)
+                   session, flash, g, send_from_directory)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -110,6 +110,12 @@ app.jinja_env.globals["days"] = days
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
+
+@app.route("/sw.js")
+def service_worker():
+    return send_from_directory(app.static_folder, "sw.js",
+                               mimetype="application/javascript")
+
 
 @app.route("/", methods=["GET"])
 def index():
