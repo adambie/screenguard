@@ -33,6 +33,13 @@
               <label class="form-label">Password</label>
               <input name="password" type="password" class="form-control" required>
             </div>
+            <div class="mb-3 d-flex align-items-center gap-2">
+              <input type="checkbox" name="keep_signed_in" id="keep_signed_in"
+                     class="form-check-input flex-shrink-0" checked
+                     style="width:20px;height:20px;cursor:pointer">
+              <label for="keep_signed_in" class="form-check-label mb-0"
+                     style="cursor:pointer">Keep me signed in</label>
+            </div>
             <button class="btn btn-primary w-100">Login</button>
           </form>
         {% endif %}

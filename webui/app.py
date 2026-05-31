@@ -17,6 +17,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app.permanent_session_lifetime = timedelta(days=30)
 
 
 @app.template_filter('ts_date')
@@ -79,6 +80,8 @@ def api(method, path, **kwargs):
     try:
         r = requests.request(method, f"{API}{path}", headers=headers,
                              timeout=5, **kwargs)
+        if r.status_code == 401:
+            g.session_expired = True
         return r
     except requests.ConnectionError:
         return None
@@ -89,7 +92,13 @@ def require_login(f):
     def wrapper(*args, **kwargs):
         if "token" not in session:
             return redirect(url_for("login"))
-        return f(*args, **kwargs)
+        g.session_expired = False
+        result = f(*args, **kwargs)
+        if g.session_expired:
+            session.clear()
+            flash("Your session has expired — please log in again.", "warning")
+            return redirect(url_for("login"))
+        return result
     return wrapper
 
 
@@ -135,6 +144,8 @@ def login():
             r = api("POST", "/auth/login", json={"username": username, "password": password})
             if r and r.status_code == 200:
                 data = r.json()
+                if request.form.get("keep_signed_in"):
+                    session.permanent = True
                 session["token"] = data["token"]
                 session["username"] = username
                 return redirect(url_for("dashboard"))
