@@ -300,11 +300,16 @@ impl HeartbeatLoop {
                     }
                 }
                 if let Some(ref handle) = self.status_handle {
+                    let db = self.db.lock().await;
                     for entry in &update.users {
+                        let lang = db.get_cached_enforcement(entry.local_uid)
+                            .map(|e| e.language)
+                            .unwrap_or_else(|_| "en".to_string());
                         handle.update_uid(
                             entry.local_uid,
                             entry.remaining_minutes as i64 * 60,
                             enforce_str(entry.enforce.clone()),
+                            &lang,
                         ).await;
                     }
                 }

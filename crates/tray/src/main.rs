@@ -1,3 +1,5 @@
+mod i18n;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,8 +15,8 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, StructureBuilder, Value};
     default_path = "/org/screenguard/Agent",
 )]
 trait AgentInterface {
-    /// Returns (remaining_seconds, enforce, updated_at, server_http_url).
-    async fn status(&self, uid: u32) -> zbus::Result<(i64, String, u64, String)>;
+    /// Returns (remaining_seconds, enforce, updated_at, server_http_url, language).
+    async fn status(&self, uid: u32) -> zbus::Result<(i64, String, u64, String, String)>;
 }
 
 // ── tray state ────────────────────────────────────────────────────────────────
@@ -28,23 +30,23 @@ struct TrayState {
 }
 
 impl TrayState {
-    fn passive() -> Self {
+    fn passive(lang: &str) -> Self {
         Self {
             status: "Passive".into(),
             icon_name: "chronometer".into(),
             title: "ScreenGuard".into(),
-            tooltip: "Status unavailable".into(),
+            tooltip: i18n::tooltip_unavailable(lang).into(),
         }
     }
 
-    fn from_values(remaining_seconds: i64, enforce: &str, updated_at: u64) -> Self {
+    fn from_values(remaining_seconds: i64, enforce: &str, updated_at: u64, lang: &str) -> Self {
         let now_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
         if updated_at == 0 || now_ts.saturating_sub(updated_at) > 120 {
-            return Self::passive();
+            return Self::passive(lang);
         }
 
         let elapsed = now_ts.saturating_sub(updated_at) as i64;
@@ -55,20 +57,20 @@ impl TrayState {
                 status: "NeedsAttention".into(),
                 icon_name: "system-lock-screen".into(),
                 title: "Locked".into(),
-                tooltip: "Screen time limit reached".into(),
+                tooltip: i18n::tooltip_locked(lang).into(),
             },
             "warn" => Self {
                 status: "Active".into(),
                 icon_name: "dialog-warning".into(),
                 title: fmt_remaining(effective),
-                tooltip: format!("Warning — {} remaining", fmt_remaining(effective)),
+                tooltip: i18n::tooltip_warning(lang, &fmt_remaining(effective)),
             },
             _ => {
                 let (title, tooltip) = if effective > 2 * 3600 {
-                    ("Unlimited".into(), "No time limit today".into())
+                    ("Unlimited".into(), i18n::tooltip_unlimited(lang).into())
                 } else {
                     let t = fmt_remaining(effective);
-                    let tip = format!("{t} remaining today");
+                    let tip = i18n::tooltip_remaining(lang, &t);
                     (t, tip)
                 };
                 Self {
@@ -245,7 +247,6 @@ fn separator_item(id: i32) -> OwnedValue {
 
 struct DbusMenu {
     server_url: Arc<std::sync::Mutex<String>>,
-    status_text: Arc<std::sync::Mutex<String>>,
 }
 
 #[interface(name = "com.canonical.dbusmenu")]
@@ -257,13 +258,10 @@ impl DbusMenu {
         _props: Vec<String>,
     ) -> (u32, MenuItem) {
         let has_url = !self.server_url.lock().unwrap().is_empty();
-        let status = self.status_text.lock().unwrap().clone();
         let version_label = concat!("ScreenGuard ", env!("SCREENGUARD_VERSION"));
         let children = vec![
             label_item(10, version_label, false),
             separator_item(11),
-            label_item(12, &status, false),
-            separator_item(13),
             label_item(1, "Open Admin Page", has_url),
             separator_item(2),
             label_item(99, "Quit", true),
@@ -484,8 +482,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for an Active state before registering with the SNI watcher.
     // GNOME AppIndicator caches the initial status and drops Passive icons.
     let initial_state = loop {
-        if let Ok((remaining, enforce, updated_at, _)) = agent.status(uid).await {
-            let s = TrayState::from_values(remaining, &enforce, updated_at);
+        if let Ok((remaining, enforce, updated_at, _, lang)) = agent.status(uid).await {
+            let s = TrayState::from_values(remaining, &enforce, updated_at, &lang);
             if s.is_active() {
                 break s;
             }
@@ -494,7 +492,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let server_url = Arc::new(std::sync::Mutex::new(String::new()));
-    let status_text = Arc::new(std::sync::Mutex::new(initial_state.tooltip.clone()));
     let state = Arc::new(Mutex::new(initial_state));
 
     let pid = std::process::id();
@@ -510,7 +507,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     conn.object_server()
         .at(
             "/StatusNotifierItem/Menu",
-            DbusMenu { server_url: server_url.clone(), status_text: status_text.clone() },
+            DbusMenu { server_url: server_url.clone() },
         )
         .await?;
 
@@ -529,7 +526,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         ticker.tick().await;
 
-        let (remaining, enforce, updated_at, url) =
+        let (remaining, enforce, updated_at, url, lang) =
             match agent.status(uid).await {
                 Ok(v) => v,
                 Err(_) => continue,
@@ -537,8 +534,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         *server_url.lock().unwrap() = url;
 
-        let new_state = TrayState::from_values(remaining, &enforce, updated_at);
-        *status_text.lock().unwrap() = new_state.tooltip.clone();
+        let new_state = TrayState::from_values(remaining, &enforce, updated_at, &lang);
         let mut current = state.lock().await;
 
         if new_state != *current {

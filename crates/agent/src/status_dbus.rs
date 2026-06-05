@@ -9,6 +9,7 @@ struct PerUid {
     remaining_seconds: i64,
     enforce: String,
     updated_at: u64,
+    language: String,
 }
 
 struct Shared {
@@ -22,13 +23,13 @@ struct AgentIface {
 
 #[interface(name = "org.screenguard.Agent1")]
 impl AgentIface {
-    /// Returns (remaining_seconds, enforce, updated_at, server_url) for the given UID.
-    async fn status(&self, uid: u32) -> (i64, String, u64, String) {
+    /// Returns (remaining_seconds, enforce, updated_at, server_url, language) for the given UID.
+    async fn status(&self, uid: u32) -> (i64, String, u64, String, String) {
         let s = self.shared.lock().await;
         let server_url = s.server_url.clone();
         match s.per_uid.get(&uid) {
-            Some(u) => (u.remaining_seconds, u.enforce.clone(), u.updated_at, server_url),
-            None => (0i64, "allow".into(), 0u64, server_url),
+            Some(u) => (u.remaining_seconds, u.enforce.clone(), u.updated_at, server_url, u.language.clone()),
+            None => (0i64, "allow".into(), 0u64, server_url, "en".into()),
         }
     }
 }
@@ -39,7 +40,7 @@ pub struct Handle {
 }
 
 impl Handle {
-    pub async fn update_uid(&self, uid: u32, remaining_seconds: i64, enforce: &str) {
+    pub async fn update_uid(&self, uid: u32, remaining_seconds: i64, enforce: &str, language: &str) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -49,6 +50,7 @@ impl Handle {
             remaining_seconds,
             enforce: enforce.to_string(),
             updated_at: now,
+            language: language.to_string(),
         });
     }
 }
