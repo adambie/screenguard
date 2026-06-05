@@ -234,12 +234,15 @@ impl HeartbeatLoop {
                     let schedule_changed = old_sig != new_sig;
                     let adj_delta = new_adj - old_adj;
 
+                    let lang = u.language.clone();
+
                     if schedule_changed {
+                        let lang2 = lang.clone();
                         tokio::spawn(async move {
                             let _ = crate::dbus::send_desktop_notification(
                                 uid,
-                                "Schedule updated",
-                                "Your allowed screen time schedule has been changed.",
+                                crate::i18n::notif_schedule_title(&lang2),
+                                crate::i18n::notif_schedule_updated(&lang2),
                             ).await;
                         });
                     }
@@ -260,35 +263,25 @@ impl HeartbeatLoop {
                         let remaining = (limit + new_adj - used_min).max(0);
                         let reason = u.adjustment_message.clone();
 
-                        let mins = |n: i32| if n == 1 { "minute".to_string() } else { "minutes".to_string() };
-
                         if adj_delta > 0 {
-                            let m = mins(adj_delta);
-                            let rm = mins(remaining);
+                            let body = crate::i18n::notif_added_body(
+                                &lang, adj_delta, remaining, reason.as_deref(),
+                            );
+                            let title = crate::i18n::notif_schedule_title(&lang).to_string();
                             tokio::spawn(async move {
-                                let mut body = format!(
-                                    "+{adj_delta} {m} granted. {remaining} {rm} remaining today."
-                                );
-                                if let Some(r) = reason {
-                                    body = format!("{body}\n\"{r}\"");
-                                }
                                 let _ = crate::dbus::send_desktop_notification(
-                                    uid, "Screen time added", &body,
+                                    uid, &title, &body,
                                 ).await;
                             });
                         } else {
                             let removed = -adj_delta;
-                            let m = mins(removed);
-                            let rm = mins(remaining);
+                            let body = crate::i18n::notif_reduced_body(
+                                &lang, removed, remaining, reason.as_deref(),
+                            );
+                            let title = crate::i18n::notif_schedule_title(&lang).to_string();
                             tokio::spawn(async move {
-                                let mut body = format!(
-                                    "-{removed} {m} taken. {remaining} {rm} remaining today."
-                                );
-                                if let Some(r) = reason {
-                                    body = format!("{body}\n\"{r}\"");
-                                }
                                 let _ = crate::dbus::send_desktop_notification(
-                                    uid, "Screen time reduced", &body,
+                                    uid, &title, &body,
                                 ).await;
                             });
                         }
@@ -407,10 +400,10 @@ impl HeartbeatLoop {
     }
 
     async fn fire_threshold_notifications(&mut self, uid: u32, remaining: i32) {
-        let thresholds = {
+        let (thresholds, language) = {
             let db = self.db.lock().await;
             db.get_cached_enforcement(uid)
-                .map(|e| e.warning_thresholds)
+                .map(|e| (e.warning_thresholds, e.language))
                 .unwrap_or_default()
         };
 
@@ -426,11 +419,11 @@ impl HeartbeatLoop {
 
         for t in to_notify {
             notified.insert(t);
-            let m = if remaining == 1 { "minute" } else { "minutes" };
-            let body = format!("{remaining} {m} of screen time remaining today.");
+            let title = crate::i18n::notif_warning_title(&language).to_string();
+            let body = crate::i18n::notif_warning_body(&language, remaining);
             tokio::spawn(async move {
                 if let Err(e) = crate::dbus::send_desktop_notification(
-                    uid, "Screen time warning", &body,
+                    uid, &title, &body,
                 ).await {
                     tracing::warn!("Warn notification failed for uid={uid}: {e}");
                 }

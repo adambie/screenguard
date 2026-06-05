@@ -286,13 +286,35 @@
     </button>
     <div class="collapse navbar-collapse" id="sgNav">
       <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('agents') }}">Agents</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">{{ t('nav.dashboard') }}</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('agents') }}">{{ t('nav.agents') }}</a></li>
       </ul>
-      <div class="d-flex align-items-center gap-3">
+      <div class="d-flex align-items-center gap-2">
         <span style="font-size:12.5px;color:var(--t2)">{{ session.username }}</span>
-        <button class="sg-theme-btn" id="sgThemeBtn" title="Toggle theme">🌙</button>
-        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('logout') }}">Sign out</a>
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                  type="button" data-bs-toggle="dropdown"
+                  style="font-size:12px;padding:6px 10px;min-height:36px">
+            {{ t('lang.' + (session.lang or 'en')) }}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" style="min-width:130px">
+            {% for code in SUPPORTED_LANGS %}
+            <li>
+              <form method="post" action="{{ url_for('set_language') }}" style="margin:0">
+                <input type="hidden" name="lang" value="{{ code }}">
+                <input type="hidden" name="next" value="{{ request.url }}">
+                <button type="submit"
+                        class="dropdown-item{% if (session.lang or 'en') == code %} active{% endif %}"
+                        style="font-size:13px">
+                  {{ t('lang.' + code) }}
+                </button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        <button class="sg-theme-btn" id="sgThemeBtn" title="{{ t('nav.toggle_theme') }}">🌙</button>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('logout') }}">{{ t('nav.sign_out') }}</a>
       </div>
     </div>
   </div>

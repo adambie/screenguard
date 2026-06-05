@@ -7,6 +7,7 @@ Usage:
     SERVER_URL=http://localhost:8080 python app.py
 """
 
+import json
 import math
 import os
 import requests
@@ -19,6 +20,52 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.permanent_session_lifetime = timedelta(days=30)
 
+# ── i18n ───────────────────────────────────────────────────────────────────────
+
+SUPPORTED_LANGS = ['en', 'es', 'fr', 'de', 'pt', 'pl']
+_TRANSLATIONS: dict = {}
+
+def _load_translations():
+    trans_dir = os.path.join(os.path.dirname(__file__), 'translations')
+    for lang in SUPPORTED_LANGS:
+        path = os.path.join(trans_dir, f'{lang}.json')
+        try:
+            with open(path, encoding='utf-8') as f:
+                _TRANSLATIONS[lang] = json.load(f)
+        except Exception as e:
+            print(f"Warning: could not load translation {lang}: {e}")
+    if 'en' not in _TRANSLATIONS:
+        _TRANSLATIONS['en'] = {}
+
+_load_translations()
+
+def _lang():
+    return session.get('lang', 'en') if session else 'en'
+
+def t(key, **kwargs):
+    """Look up a translation key in the current language, with English fallback."""
+    lang = _lang()
+    trans = _TRANSLATIONS.get(lang, _TRANSLATIONS.get('en', {}))
+    text = trans.get(key) or _TRANSLATIONS.get('en', {}).get(key, key)
+    if kwargs:
+        try:
+            text = text.format(**kwargs)
+        except Exception:
+            pass
+    return text
+
+def days():
+    """Return localized short day names Mon…Sun."""
+    lang = _lang()
+    trans = _TRANSLATIONS.get(lang, _TRANSLATIONS.get('en', {}))
+    return trans.get('days', _TRANSLATIONS.get('en', {}).get('days',
+           ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']))
+
+app.jinja_env.globals['t'] = t
+app.jinja_env.globals['days'] = days
+app.jinja_env.globals['SUPPORTED_LANGS'] = SUPPORTED_LANGS
+
+# ── template filters ───────────────────────────────────────────────────────────
 
 @app.template_filter('ts_date')
 def ts_date(ts):
@@ -38,7 +85,7 @@ def time_ago(ts):
         dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
         diff = int((datetime.now(tz=timezone.utc) - dt).total_seconds())
         if diff < 60:
-            return 'just now'
+            return t('agents.now')
         if diff < 3600:
             return f'{diff // 60}m ago'
         if diff < 86400:
@@ -96,17 +143,10 @@ def require_login(f):
         result = f(*args, **kwargs)
         if g.session_expired:
             session.clear()
-            flash("Your session has expired — please log in again.", "warning")
+            flash(t("flash.session_expired"), "warning")
             return redirect(url_for("login"))
         return result
     return wrapper
-
-
-def days():
-    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-
-app.jinja_env.globals["days"] = days
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
@@ -124,13 +164,22 @@ def index():
     return redirect(url_for("login"))
 
 
+@app.route("/set-language", methods=["POST"])
+def set_language():
+    lang = request.form.get("lang", "en")
+    if lang in SUPPORTED_LANGS:
+        session["lang"] = lang
+    next_url = request.form.get("next") or url_for("dashboard")
+    return redirect(next_url)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     # Check if setup is needed.
     setup_needed = False
     r = api("GET", "/auth/status")
     if r is None:
-        flash("Cannot reach server at " + SERVER, "danger")
+        flash(t("flash.server_unreachable", server=SERVER), "danger")
     elif r.ok:
         setup_needed = r.json().get("setup_needed", False)
 
@@ -142,10 +191,10 @@ def login():
         if action == "setup":
             r = api("POST", "/auth/setup", json={"username": username, "password": password})
             if r and r.status_code == 201:
-                flash("Admin account created — please log in.", "success")
+                flash(t("flash.admin_created"), "success")
                 return redirect(url_for("login"))
             else:
-                flash(f"Setup failed: {r.json().get('error') if r else 'no response'}", "danger")
+                flash(t("flash.setup_failed", error=r.json().get('error') if r else 'no response'), "danger")
         else:
             r = api("POST", "/auth/login", json={"username": username, "password": password})
             if r and r.status_code == 200:
@@ -156,7 +205,7 @@ def login():
                 session["username"] = username
                 return redirect(url_for("dashboard"))
             else:
-                flash("Invalid credentials.", "danger")
+                flash(t("flash.invalid_credentials"), "danger")
 
     return render_template("login.html", setup_needed=setup_needed)
 
@@ -204,9 +253,9 @@ def agent_detail(agent_id):
 def accept_agent(agent_id):
     r = api("POST", f"/agents/{agent_id}/accept")
     if r and r.ok:
-        flash("Agent accepted — it will reconnect shortly.", "success")
+        flash(t("flash.agent_accepted"), "success")
     else:
-        flash(f"Failed: {r.json().get('error') if r else 'no response'}", "danger")
+        flash(t("flash.adjustment_failed", error=r.json().get('error') if r else 'no response'), "danger")
     return redirect(url_for("agents"))
 
 
@@ -215,9 +264,9 @@ def accept_agent(agent_id):
 def delete_agent(agent_id):
     r = api("DELETE", f"/agents/{agent_id}")
     if r and r.ok:
-        flash("Agent queued for deletion — it will be unlinked when it next connects.", "success")
+        flash(t("flash.agent_deleted"), "success")
     else:
-        flash("Delete failed.", "danger")
+        flash(t("flash.lock_failed"), "danger")
     return redirect(url_for("agents"))
 
 
@@ -225,7 +274,7 @@ def delete_agent(agent_id):
 @require_login
 def undo_delete_agent(agent_id):
     r = api("POST", f"/agents/{agent_id}/undo-delete")
-    flash("Deletion cancelled." if (r and r.ok) else "Failed to cancel deletion.",
+    flash(t("flash.deletion_cancelled") if (r and r.ok) else t("flash.cancel_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("agents"))
 
@@ -234,7 +283,7 @@ def undo_delete_agent(agent_id):
 @require_login
 def force_delete_agent(agent_id):
     r = api("POST", f"/agents/{agent_id}/force-delete")
-    flash("Agent removed." if (r and r.ok) else "Force delete failed.",
+    flash(t("flash.agent_removed") if (r and r.ok) else t("flash.force_delete_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("agents"))
 
@@ -257,9 +306,9 @@ def link_agent_user(user_id):
             json={"profile_id": profile_id, "status": status})
     agent_id = request.form.get("agent_id")
     if r and r.ok:
-        flash("User linked to profile." if profile_id else "User unlinked.", "success")
+        flash(t("flash.user_linked") if profile_id else t("flash.user_unlinked"), "success")
     else:
-        flash("Failed to update user.", "danger")
+        flash(t("flash.user_link_failed"), "danger")
     return redirect(url_for("agent_detail", agent_id=agent_id))
 
 
@@ -276,13 +325,13 @@ def profiles():
 def create_profile():
     name = request.form.get("display_name", "").strip()
     if not name:
-        flash("Name is required.", "warning")
+        flash(t("flash.name_required"), "warning")
         return redirect(url_for("dashboard"))
     r = api("POST", "/profiles", json={"display_name": name})
     if r and r.ok:
-        flash(f"Profile '{name}' created.", "success")
+        flash(t("flash.profile_created", name=name), "success")
     else:
-        flash("Failed to create profile.", "danger")
+        flash(t("flash.profile_create_failed"), "danger")
     return redirect(url_for("dashboard"))
 
 
@@ -291,7 +340,7 @@ def create_profile():
 def profile_detail(profile_id):
     r = api("GET", f"/profiles/{profile_id}")
     if not r or not r.ok:
-        flash("Profile not found.", "danger")
+        flash(t("flash.profile_not_found"), "danger")
         return redirect(url_for("dashboard"))
     data = r.json()
 
@@ -305,7 +354,6 @@ def profile_detail(profile_id):
 
     today_date = date.today()
     week_offset = int(request.args.get('week', 0))
-    # Monday of the selected week
     week_start = today_date - timedelta(days=today_date.weekday()) + timedelta(weeks=week_offset)
     week_end = week_start + timedelta(days=6)
 
@@ -315,7 +363,6 @@ def profile_detail(profile_id):
 
     usage_by_date = {u['date']: u for u in usage}
     max_used = max((u.get('used_minutes') or 0 for u in usage), default=0)
-    # Round up to the next 15-minute interval, minimum 15m, so bars never touch the top
     chart_max = max(math.ceil(max_used / 15) * 15, 15)
 
     week_bars = []
@@ -369,14 +416,26 @@ def rename_profile(profile_id):
 @require_login
 def delete_profile(profile_id):
     r = api("DELETE", f"/profiles/{profile_id}")
-    flash("Profile deleted." if (r and r.ok) else "Delete failed.", "success" if (r and r.ok) else "danger")
+    flash(t("flash.profile_deleted") if (r and r.ok) else t("flash.profile_delete_failed"),
+          "success" if (r and r.ok) else "danger")
     return redirect(url_for("dashboard"))
+
+
+@app.route("/profiles/<profile_id>/language", methods=["POST"])
+@require_login
+def set_profile_language(profile_id):
+    lang = request.form.get("language", "en")
+    if lang not in SUPPORTED_LANGS:
+        lang = "en"
+    r = api("PATCH", f"/profiles/{profile_id}", json={"language": lang})
+    flash(t("flash.language_saved") if (r and r.ok) else t("flash.lock_failed"),
+          "success" if (r and r.ok) else "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id))
 
 
 @app.route("/profiles/<profile_id>/schedules", methods=["POST"])
 @require_login
 def update_schedules(profile_id):
-    """Rebuild the schedules list from posted form data."""
     entries = []
     i = 0
     while True:
@@ -389,15 +448,14 @@ def update_schedules(profile_id):
             entries.append({"day_of_week": int(dow), "start_time": start, "end_time": end})
         i += 1
     r = api("PUT", f"/profiles/{profile_id}/schedules", json={"schedules": entries})
-    flash(f"Schedules saved (config v{r.json().get('config_version','?')})." if (r and r.ok)
-          else "Failed to save schedules.", "success" if (r and r.ok) else "danger")
+    flash(t("flash.schedules_saved", version=r.json().get('config_version', '?')) if (r and r.ok)
+          else t("flash.schedules_failed"), "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 
 @app.route("/profiles/<profile_id>/limits", methods=["POST"])
 @require_login
 def update_limits(profile_id):
-    """Rebuild the daily limits from posted form data."""
     limits = []
     for dow in range(7):
         val = request.form.get(f"limit_{dow}", "").strip()
@@ -407,8 +465,8 @@ def update_limits(profile_id):
             except ValueError:
                 pass
     r = api("PUT", f"/profiles/{profile_id}/daily-limits", json={"limits": limits})
-    flash(f"Limits saved (config v{r.json().get('config_version','?')})." if (r and r.ok)
-          else "Failed to save limits.", "success" if (r and r.ok) else "danger")
+    flash(t("flash.limits_saved", version=r.json().get('config_version', '?')) if (r and r.ok)
+          else t("flash.limits_failed"), "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 
@@ -421,11 +479,12 @@ def add_adjustment(profile_id):
     try:
         minutes = int(minutes)
     except ValueError:
-        flash("Invalid minutes value.", "warning")
+        flash(t("flash.invalid_minutes"), "warning")
         return redirect(url_for("profile_detail", profile_id=profile_id))
     r = api("POST", f"/profiles/{profile_id}/adjustments",
             json={"target_date": target, "adjustment_minutes": minutes, "reason": reason})
-    flash(f"Adjustment added." if (r and r.ok) else f"Failed: {r.json() if r else 'no response'}",
+    flash(t("flash.adjustment_added") if (r and r.ok)
+          else t("flash.adjustment_failed", error=r.json() if r else 'no response'),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
@@ -435,15 +494,13 @@ def add_adjustment(profile_id):
 def notify_profile(profile_id):
     message = request.form.get("message", "").strip()
     if not message:
-        flash("Message cannot be empty.", "warning")
+        flash(t("flash.message_empty"), "warning")
         return redirect(url_for("profile_detail", profile_id=profile_id))
-    r = api("POST", f"/profiles/{profile_id}/notify",
-            json={"body": message})
+    r = api("POST", f"/profiles/{profile_id}/notify", json={"body": message})
     if r and r.ok:
-        data = r.json()
-        flash(f"Message sent: {data.get('message', 'ok')}", "success")
+        flash(t("flash.message_sent"), "success")
     else:
-        flash("Failed to send message.", "danger")
+        flash(t("flash.message_failed"), "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 
@@ -451,7 +508,8 @@ def notify_profile(profile_id):
 @require_login
 def lock_now(profile_id):
     r = api("POST", f"/profiles/{profile_id}/lock-now")
-    flash("Today's allowance zeroed out." if (r and r.ok) else "Failed.", "success" if (r and r.ok) else "danger")
+    flash(t("flash.locked") if (r and r.ok) else t("flash.lock_failed"),
+          "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 

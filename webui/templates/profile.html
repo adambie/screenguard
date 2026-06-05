@@ -9,7 +9,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb mb-2">
         <li class="breadcrumb-item">
-          <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-secondary">Dashboard</a>
+          <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-secondary">{{ t('profile.back_dashboard') }}</a>
         </li>
         <li class="breadcrumb-item active">{{ profile.display_name }}</li>
       </ol>
@@ -21,16 +21,16 @@
           {{ u.local_username }}@{{ u.agent_hostname }}
         </span>
       {% else %}
-        <span class="text-secondary small">No users linked yet</span>
+        <span class="text-secondary small">{{ t('profile.no_users') }}</span>
       {% endfor %}
     </div>
   </div>
   <div class="d-flex gap-2 flex-shrink-0 pt-1">
     <button class="btn btn-outline-secondary"
-            data-bs-toggle="collapse" data-bs-target="#renameForm">Rename</button>
+            data-bs-toggle="collapse" data-bs-target="#renameForm">{{ t('profile.btn_rename') }}</button>
     <form method="post" action="{{ url_for('delete_profile', profile_id=profile.id) }}"
-          onsubmit="return confirm('Delete this profile and all its configuration?')">
-      <button class="btn btn-outline-danger">Delete</button>
+          onsubmit='return confirm({{ t("profile.confirm_delete") | tojson }})'>
+      <button class="btn btn-outline-danger">{{ t('profile.btn_delete') }}</button>
     </form>
   </div>
 </div>
@@ -40,20 +40,20 @@
         class="d-flex gap-2" style="max-width:380px">
     <input name="display_name" class="form-control form-control-sm"
            value="{{ profile.display_name }}" required>
-    <button class="btn btn-primary text-nowrap">Save name</button>
+    <button class="btn btn-primary text-nowrap">{{ t('profile.btn_save_name') }}</button>
   </form>
 </div>
 
 <!-- ── today's status ───────────────────────────────────────────────── -->
 <div class="card mb-4">
-  <div class="card-header">Today</div>
+  <div class="card-header">{{ t('profile.card_today') }}</div>
   <div class="card-body">
     {% if status and status.today is defined %}
-      {% set t = status.today %}
-      {% if t.limit_minutes is not none %}
-        {% set eff_total = t.limit_minutes + t.adjustments_minutes %}
+      {% set ts = status.today %}
+      {% if ts.limit_minutes is not none %}
+        {% set eff_total = ts.limit_minutes + ts.adjustments_minutes %}
         {% if eff_total > 0 %}
-          {% set pct = [(t.used_minutes / eff_total * 100) | int, 100] | min %}
+          {% set pct = [(ts.used_minutes / eff_total * 100) | int, 100] | min %}
         {% else %}
           {% set pct = 100 %}
         {% endif %}
@@ -62,18 +62,18 @@
         {% set pct = none %}
       {% endif %}
 
-      {% set can_unlock = t.adjustments_minutes is not none and t.adjustments_minutes < 0 %}
+      {% set can_unlock = ts.adjustments_minutes is not none and ts.adjustments_minutes < 0 %}
       {# bar state #}
       {% if eff_total is none %}
         {% set bar_type = 'nolimit' %}
         {% set bar_color = 'var(--ok)' %}
-      {% elif t.remaining_minutes is none or t.remaining_minutes <= 0 %}
+      {% elif ts.remaining_minutes is none or ts.remaining_minutes <= 0 %}
         {% set bar_type = 'blocked' %}
         {% set bar_color = '' %}
-      {% elif t.remaining_minutes > 30 %}
+      {% elif ts.remaining_minutes > 30 %}
         {% set bar_type = 'normal' %}
         {% set bar_color = 'var(--ok)' %}
-      {% elif t.remaining_minutes > 15 %}
+      {% elif ts.remaining_minutes > 15 %}
         {% set bar_type = 'normal' %}
         {% set bar_color = 'var(--wa)' %}
       {% else %}
@@ -86,11 +86,11 @@
         <div class="col-sm-6 col-md-3">
           <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:12px">Today</div>
+                        color:var(--t2);margin-bottom:12px">{{ t('profile.card_today') }}</div>
             <div style="font-size:2.25rem;font-weight:700;line-height:1;letter-spacing:-.03em;margin-bottom:4px">
-              {{ t.remaining_minutes | fmt_mins }}
+              {{ ts.remaining_minutes | fmt_mins }}
             </div>
-            <div style="font-size:.8rem;color:var(--t2);margin-bottom:14px">remaining today</div>
+            <div style="font-size:.8rem;color:var(--t2);margin-bottom:14px">{{ t('profile.remaining_today') }}</div>
             {# status bar #}
             {% if bar_type == 'nolimit' %}
               <div style="height:22px;border-radius:var(--r2);background:var(--ok);margin-bottom:7px"></div>
@@ -106,18 +106,18 @@
             {# labels below bar #}
             {% if eff_total is not none %}
               <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--t2)">
-                <span>{{ t.used_minutes | fmt_mins }} used</span>
+                <span>{{ ts.used_minutes | fmt_mins }} {{ t('profile.used') }}</span>
                 <span>
-                  of {{ eff_total | fmt_mins }}
-                  {% if t.adjustments_minutes != 0 %}
-                    <span class="{% if t.adjustments_minutes > 0 %}text-success{% else %}text-danger{% endif %}">
-                      ({{ '%+d' % t.adjustments_minutes }}m)
+                  {{ t('profile.of') }} {{ eff_total | fmt_mins }}
+                  {% if ts.adjustments_minutes != 0 %}
+                    <span class="{% if ts.adjustments_minutes > 0 %}text-success{% else %}text-danger{% endif %}">
+                      ({{ '%+d' % ts.adjustments_minutes }}m)
                     </span>
                   {% endif %}
                 </span>
               </div>
             {% else %}
-              <div style="font-size:.75rem;color:var(--t2)">No daily limit — runs all day</div>
+              <div style="font-size:.75rem;color:var(--t2)">{{ t('profile.no_daily_limit') }}</div>
             {% endif %}
           </div>
         </div>
@@ -126,9 +126,9 @@
         <div class="col-sm-6 col-md-3">
           <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:12px">Adjust today's time</div>
+                        color:var(--t2);margin-bottom:12px">{{ t('profile.card_adjust') }}</div>
             <div style="text-align:center;font-size:13px;color:var(--t2);margin-bottom:10px">
-              <strong id="adjDisplay" style="color:var(--t1);font-size:15px">0</strong> min
+              <strong id="adjDisplay" style="color:var(--t1);font-size:15px">0</strong> {{ t('profile.min') }}
             </div>
             <div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-bottom:10px;flex-wrap:wrap">
               <button type="button" id="adjDec"
@@ -136,7 +136,7 @@
                       style="border-radius:20px;padding:5px 16px;font-size:13px">&#8854; −15m</button>
               <button type="button" id="adjReset"
                       style="background:none;border:none;color:var(--t2);font-size:13px;
-                             padding:5px 8px;cursor:pointer;border-radius:var(--r2)">Reset</button>
+                             padding:5px 8px;cursor:pointer;border-radius:var(--r2)">{{ t('profile.btn_reset') }}</button>
               <button type="button" id="adjInc"
                       class="btn btn-sm btn-outline-secondary"
                       style="border-radius:20px;padding:5px 16px;font-size:13px">&#8853; +15m</button>
@@ -146,7 +146,7 @@
               <input type="hidden" name="minutes" id="adjMinutes" value="0">
               <input type="hidden" name="reason" value="">
               <button id="adjApply" class="btn btn-primary w-100"
-                      disabled style="opacity:.35;transition:opacity .15s">Apply Changes</button>
+                      disabled style="opacity:.35;transition:opacity .15s">{{ t('profile.btn_apply') }}</button>
             </form>
           </div>
         </div>
@@ -155,34 +155,34 @@
         <div class="col-sm-6 col-md-3">
           <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:12px">Screen time</div>
+                        color:var(--t2);margin-bottom:12px">{{ t('profile.card_screen_time') }}</div>
             <div class="d-flex flex-column gap-3">
               <form method="post" action="{{ url_for('lock_now', profile_id=profile.id) }}">
                 <button type="submit"
                         class="btn w-100 d-flex align-items-center justify-content-center gap-2"
                         style="font-size:13px;padding:9px 12px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)"
-                        onclick="return confirm('Zero out remaining time for today?')">
+                        onclick='return confirm({{ t("profile.confirm_zero_out") | tojson }})'>
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
                     <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
                   </svg>
-                  Lock
+                  {{ t('profile.btn_lock') }}
                 </button>
               </form>
               <form method="post" action="{{ url_for('add_adjustment', profile_id=profile.id) }}">
                 <input type="hidden" name="target_date" value="{{ today }}">
-                <input type="hidden" name="minutes" value="{{ ((t.adjustments_minutes or 0) * -1) | int }}">
+                <input type="hidden" name="minutes" value="{{ ((ts.adjustments_minutes or 0) * -1) | int }}">
                 <input type="hidden" name="reason" value="unlock">
                 <button type="submit"
                         class="btn w-100 d-flex align-items-center justify-content-center gap-2"
                         style="font-size:13px;padding:9px 12px;
                                {% if can_unlock %}border:1px solid rgba(22,163,74,.45);color:var(--ok);background:rgba(22,163,74,.07)
                                {% else %}border:1px solid var(--bd);color:var(--t2);background:none{% endif %}"
-                        {% if not can_unlock %}disabled title="Nothing to restore"{% endif %}
-                        {% if can_unlock %}onclick="return confirm('Restore today\'s normal time limit?')"{% endif %}>
+                        {% if not can_unlock %}disabled title="{{ t('profile.btn_nothing_to_restore') }}"{% endif %}
+                        {% if can_unlock %}onclick='return confirm({{ t("profile.confirm_restore") | tojson }})'{% endif %}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0">
                     <path d="M11 1a2 2 0 0 0-2 2v4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5V3a3 3 0 0 1 6 0v4a.5.5 0 0 1-1 0V3a2 2 0 0 0-2-2z"/>
                   </svg>
-                  Unlock
+                  {{ t('profile.btn_unlock') }}
                 </button>
               </form>
             </div>
@@ -193,26 +193,26 @@
         <div class="col-sm-6 col-md-3">
           <div style="border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;height:100%">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                        color:var(--t2);margin-bottom:12px">Message</div>
+                        color:var(--t2);margin-bottom:12px">{{ t('profile.card_message') }}</div>
             <form method="post" action="{{ url_for('notify_profile', profile_id=profile.id) }}">
               <textarea name="message" class="form-control form-control-sm mb-2"
-                        rows="3" placeholder="Send a message to user…"
+                        rows="3" placeholder="{{ t('profile.message_placeholder') }}"
                         required style="resize:none"></textarea>
-              <button class="btn btn-sm btn-outline-secondary w-100">Send</button>
+              <button class="btn btn-sm btn-outline-secondary w-100">{{ t('profile.btn_send') }}</button>
             </form>
           </div>
         </div>
 
       </div>
     {% else %}
-      <p class="text-secondary mb-0 small">Status unavailable — no agent connected.</p>
+      <p class="text-secondary mb-0 small">{{ t('profile.status_unavailable') }}</p>
     {% endif %}
   </div>
 </div>
 
 <!-- ── daily limits ──────────────────────────────────────────────────── -->
 <div class="card mb-4">
-  <div class="card-header">Daily limits</div>
+  <div class="card-header">{{ t('profile.card_limits') }}</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('update_limits', profile_id=profile.id) }}">
       <div class="d-flex gap-2 mb-4" style="flex-wrap:wrap">
@@ -254,20 +254,20 @@
             {# state badge / actions #}
             {% if ns.val == 0 %}
               <div class="limit-state d-flex gap-1 justify-content-center flex-wrap" data-dow="{{ dow }}">
-                <span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">blocked</span>
+                <span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">{{ t('profile.badge_blocked') }}</span>
                 <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                        style="font-size:12px;padding:5px 12px;border-radius:99px">clear</button>
+                        style="font-size:12px;padding:5px 12px;border-radius:99px">{{ t('profile.btn_clear') }}</button>
               </div>
             {% else %}
               <div class="limit-state d-flex gap-1 justify-content-center flex-wrap" data-dow="{{ dow }}">
                 {% if ns.val != '' %}
                   <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                          style="font-size:12px;padding:5px 12px;border-radius:99px">clear</button>
+                          style="font-size:12px;padding:5px 12px;border-radius:99px">{{ t('profile.btn_clear') }}</button>
                 {% else %}
-                  <span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">no limit</span>
+                  <span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">{{ t('profile.badge_no_limit') }}</span>
                 {% endif %}
                 <button type="button" class="limit-block btn btn-sm" data-dow="{{ dow }}"
-                        style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>
+                        style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">{{ t('profile.btn_block') }}</button>
               </div>
             {% endif %}
 
@@ -277,7 +277,7 @@
         {% endfor %}
       </div>
       <div class="d-flex justify-content-end">
-        <button class="btn btn-primary">Save limits</button>
+        <button class="btn btn-primary">{{ t('profile.btn_save_limits') }}</button>
       </div>
     </form>
   </div>
@@ -285,30 +285,26 @@
 
 <!-- ── schedule ──────────────────────────────────────────────────────── -->
 <div class="card mb-4">
-  <div class="card-header">Allowed time windows</div>
+  <div class="card-header">{{ t('profile.card_windows') }}</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('update_schedules', profile_id=profile.id) }}">
 
       {# quick-add bar #}
       <div class="d-flex align-items-center gap-2 mb-3 pb-3" style="border-bottom:1px solid var(--bd);flex-wrap:wrap">
         <select id="quickDow" class="form-select form-select-sm flex-shrink-0" style="width:120px">
-          <option value="week">All week</option>
-          <option value="weekday">Mon – Fri</option>
-          <option value="weekend">Sat – Sun</option>
+          <option value="week">{{ t('profile.schedule_all_week') }}</option>
+          <option value="weekday">{{ t('profile.schedule_mon_fri') }}</option>
+          <option value="weekend">{{ t('profile.schedule_sat_sun') }}</option>
           <option disabled>──────</option>
-          <option value="0">Mon</option>
-          <option value="1">Tue</option>
-          <option value="2">Wed</option>
-          <option value="3">Thu</option>
-          <option value="4">Fri</option>
-          <option value="5">Sat</option>
-          <option value="6">Sun</option>
+          {% for d in days() %}
+            <option value="{{ loop.index0 }}">{{ d }}</option>
+          {% endfor %}
         </select>
         <input type="time" id="quickStart" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px">
         <span class="text-secondary px-1" style="flex-shrink:0">–</span>
         <input type="time" id="quickEnd" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px">
         <button type="button" id="quickAddBtn"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0">+ Add</button>
+                class="btn btn-sm btn-outline-secondary flex-shrink-0">{{ t('profile.btn_add_window') }}</button>
       </div>
 
       {# existing rows #}
@@ -332,18 +328,37 @@
           <button type="button"
                   class="btn remove-row border-0 text-secondary ms-auto"
                   style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center"
-                  title="Remove">✕</button>
+                  title="{{ t('profile.btn_remove_window') }}">✕</button>
         </div>
         {% endfor %}
         {% if not schedules %}
           <p class="text-secondary small mb-0" id="emptySchedule">
-            No windows set — all hours allowed.
+            {{ t('profile.schedule_no_windows') }}
           </p>
         {% endif %}
       </div>
       <div class="d-flex justify-content-end mt-3">
-        <button class="btn btn-primary">Save schedule</button>
+        <button class="btn btn-primary">{{ t('profile.btn_save_schedule') }}</button>
       </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── notifications language ────────────────────────────────────────── -->
+<div class="card mb-4">
+  <div class="card-header">{{ t('profile.card_language') }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('set_profile_language', profile_id=profile.id) }}"
+          class="d-flex gap-2 align-items-center" style="max-width:340px">
+      <select name="language" class="form-select form-select-sm">
+        {% for code in SUPPORTED_LANGS %}
+          <option value="{{ code }}"
+            {% if profile.language == code %}selected{% endif %}>
+            {{ t('lang.' + code) }}
+          </option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-primary text-nowrap">{{ t('profile.btn_save_language') }}</button>
     </form>
   </div>
 </div>
@@ -351,7 +366,7 @@
 <!-- ── usage ─────────────────────────────────────────────────────────── -->
 <div class="card mb-4" id="usageCard">
   <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-    <span>Usage</span>
+    <span>{{ t('profile.card_usage') }}</span>
     <div style="display:flex;align-items:center;gap:8px">
       <a href="?week={{ week_offset - 1 }}#usageCard"
          class="btn btn-sm btn-outline-secondary"
@@ -466,7 +481,7 @@
 
 // ── schedule rows ──────────────────────────────────────────────────────────
 let rowCount = {{ schedules | length }};
-const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DAYS = {{ days() | tojson }};
 
 function addScheduleRow(dayIndex, start, end) {
   const list = document.getElementById('scheduleList');
@@ -511,14 +526,21 @@ document.getElementById('scheduleList')?.addEventListener('click', function(e) {
 
 // ── daily limit widgets ────────────────────────────────────────────────────
 (function() {
+  var STRINGS = {
+    block:        {{ t('profile.btn_block')        | tojson }},
+    clear:        {{ t('profile.btn_clear')        | tojson }},
+    noLimit:      {{ t('profile.badge_no_limit')   | tojson }},
+    blocked:      {{ t('profile.badge_blocked')    | tojson }}
+  };
+
   function q(cls, dow) {
     return document.querySelector('.' + cls + '[data-dow="' + dow + '"]');
   }
 
-  var blockBtn  = '<button type="button" class="limit-block btn btn-sm" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">block</button>';
-  var clearBtn  = '<button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px">clear</button>';
-  var noLimitBadge = '<span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">no limit</span>';
-  var blockedBadge = '<span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">blocked</span>';
+  var blockBtn  = '<button type="button" class="limit-block btn btn-sm" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">' + STRINGS.block + '</button>';
+  var clearBtn  = '<button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px">' + STRINGS.clear + '</button>';
+  var noLimitBadge = '<span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">' + STRINGS.noLimit + '</span>';
+  var blockedBadge = '<span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">' + STRINGS.blocked + '</span>';
 
   function tmpl(s, dow) { return s.replace(/__D__/g, dow); }
 

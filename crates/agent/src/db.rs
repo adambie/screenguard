@@ -27,7 +27,16 @@ impl Db {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let db = Self { conn };
         db.create_schema()?;
+        db.migrate()?;
         Ok(db)
+    }
+
+    fn migrate(&self) -> Result<()> {
+        // Ignore error — column already exists on fresh DBs created by create_schema below.
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE cached_enforcement ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
+        );
+        Ok(())
     }
 
     fn create_schema(&self) -> Result<()> {
@@ -250,8 +259,8 @@ impl Db {
             }
 
             tx.execute(
-                "INSERT OR REPLACE INTO cached_enforcement (local_uid, lockout_grace_minutes, warning_thresholds)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT OR REPLACE INTO cached_enforcement (local_uid, lockout_grace_minutes, warning_thresholds, language)
+                 VALUES (?1, ?2, ?3, ?4)",
                 params![
                     u.local_uid,
                     u.lockout_grace_minutes,
@@ -260,6 +269,7 @@ impl Db {
                         .map(|v| v.to_string())
                         .collect::<Vec<_>>()
                         .join(","),
+                    &u.language,
                 ],
             )?;
         }
@@ -485,6 +495,17 @@ pub struct CachedLimit {
 pub struct CachedEnforcement {
     pub lockout_grace_minutes: u32,
     pub warning_thresholds: Vec<u32>,
+    pub language: String,
+}
+
+impl Default for CachedEnforcement {
+    fn default() -> Self {
+        Self {
+            lockout_grace_minutes: 5,
+            warning_thresholds: vec![15, 5, 1],
+            language: "en".to_string(),
+        }
+    }
 }
 
 impl Db {
@@ -529,11 +550,11 @@ impl Db {
     }
 
     pub fn get_cached_enforcement(&self, uid: u32) -> Result<CachedEnforcement> {
-        let (grace, thresholds_str): (u32, String) = self.conn.query_row(
-            "SELECT lockout_grace_minutes, warning_thresholds FROM cached_enforcement WHERE local_uid = ?1",
+        let (grace, thresholds_str, language): (u32, String, String) = self.conn.query_row(
+            "SELECT lockout_grace_minutes, warning_thresholds, language FROM cached_enforcement WHERE local_uid = ?1",
             params![uid],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        ).unwrap_or((5, "15,5,1".to_string()));
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap_or((5, "15,5,1".to_string(), "en".to_string()));
 
         let thresholds = thresholds_str
             .split(',')
@@ -543,6 +564,7 @@ impl Db {
         Ok(CachedEnforcement {
             lockout_grace_minutes: grace,
             warning_thresholds: thresholds,
+            language,
         })
     }
 }

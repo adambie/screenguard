@@ -20,6 +20,7 @@ pub fn open(path: &str) -> Result<DbPool> {
     let conn = pool.get().context("Failed to get DB connection")?;
     conn.execute_batch(SCHEMA)?;
     migrate_v1(&conn)?;
+    migrate_v2(&conn)?;
     Ok(pool)
 }
 
@@ -55,6 +56,19 @@ fn migrate_v1(conn: &rusqlite::Connection) -> Result<()> {
     conn.execute_batch("PRAGMA user_version = 1")?;
     conn.execute_batch("PRAGMA foreign_keys = ON")?;
     tracing::info!("DB migration v1 applied (pending_delete status)");
+    Ok(())
+}
+
+fn migrate_v2(conn: &rusqlite::Connection) -> Result<()> {
+    let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v >= 2 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "ALTER TABLE user_profiles ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
+    )?;
+    conn.execute_batch("PRAGMA user_version = 2")?;
+    tracing::info!("DB migration v2 applied (profile language)");
     Ok(())
 }
 
@@ -197,6 +211,7 @@ pub struct Agent {
 pub struct UserProfile {
     pub id: Uuid,
     pub display_name: String,
+    pub language: String,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -576,19 +591,20 @@ pub fn create_profile(pool: &DbPool, display_name: &str) -> Result<UserProfile> 
         "INSERT INTO config_versions (profile_id, version, updated_at) VALUES (?1, 1, ?2)",
         params![id.to_string(), now],
     )?;
-    Ok(UserProfile { id, display_name: display_name.to_string(), created_at: now, updated_at: now })
+    Ok(UserProfile { id, display_name: display_name.to_string(), language: "en".to_string(), created_at: now, updated_at: now })
 }
 
 pub fn list_profiles(pool: &DbPool) -> Result<Vec<UserProfile>> {
     let conn = pool.get()?;
     let mut stmt = conn.prepare(
-        "SELECT id, display_name, created_at, updated_at FROM user_profiles ORDER BY display_name",
+        "SELECT id, display_name, language, created_at, updated_at FROM user_profiles ORDER BY display_name",
     )?;
     let rows = stmt.query_map([], |r| Ok(UserProfile {
         id: r.get::<_, String>(0)?.parse().unwrap_or_default(),
         display_name: r.get(1)?,
-        created_at: r.get(2)?,
-        updated_at: r.get(3)?,
+        language: r.get(2)?,
+        created_at: r.get(3)?,
+        updated_at: r.get(4)?,
     }))?;
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
 }
@@ -596,15 +612,25 @@ pub fn list_profiles(pool: &DbPool) -> Result<Vec<UserProfile>> {
 pub fn get_profile(pool: &DbPool, id: Uuid) -> Result<Option<UserProfile>> {
     let conn = pool.get()?;
     conn.query_row(
-        "SELECT id, display_name, created_at, updated_at FROM user_profiles WHERE id=?1",
+        "SELECT id, display_name, language, created_at, updated_at FROM user_profiles WHERE id=?1",
         params![id.to_string()],
         |r| Ok(UserProfile {
             id: r.get::<_, String>(0)?.parse().unwrap_or_default(),
             display_name: r.get(1)?,
-            created_at: r.get(2)?,
-            updated_at: r.get(3)?,
+            language: r.get(2)?,
+            created_at: r.get(3)?,
+            updated_at: r.get(4)?,
         }),
     ).optional().map_err(Into::into)
+}
+
+pub fn update_profile_language(pool: &DbPool, id: Uuid, language: &str) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE user_profiles SET language=?1, updated_at=?2 WHERE id=?3",
+        params![language, Utc::now().timestamp(), id.to_string()],
+    )?;
+    Ok(())
 }
 
 pub fn update_profile(pool: &DbPool, id: Uuid, display_name: &str) -> Result<()> {

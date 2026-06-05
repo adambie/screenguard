@@ -152,6 +152,9 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
         let today = Local::now().date_naive().to_string();
         let today_adj = db::sum_adjustments_for_date(pool, profile_id, &today)?;
         let adjustment_message = db::latest_adjustment_reason_for_date(pool, profile_id, &today)?;
+        let language = db::get_profile(pool, profile_id)?
+            .map(|p| p.language)
+            .unwrap_or_else(|| "en".to_string());
 
         user_configs.push(UserConfig {
             local_uid: au.local_uid as u32,
@@ -163,6 +166,7 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             adjustment_message,
             lockout_grace_minutes: enforcement.lockout_grace_minutes as u32,
             warning_thresholds_minutes: enforcement.warning_thresholds.iter().map(|&t| t as u32).collect(),
+            language,
         });
     }
 

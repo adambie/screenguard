@@ -101,11 +101,11 @@ fn parse_time(s: &str) -> Option<NaiveTime> {
 
 /// Execute a lock for a UID: DBus lock → wait grace period → DBus terminate if still active.
 pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
-    let (session_ids, grace_minutes) = {
+    let (session_ids, grace_minutes, language) = {
         let db = db.lock().await;
         let sessions = db.get_all_session_ids(uid)?;
         let enforcement = db.get_cached_enforcement(uid)?;
-        (sessions, enforcement.lockout_grace_minutes)
+        (sessions, enforcement.lockout_grace_minutes, enforcement.language)
     };
 
     if session_ids.is_empty() {
@@ -115,8 +115,8 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
     // Final warning before the screen locks.
     let _ = crate::dbus::send_desktop_notification(
         uid,
-        "Screen time ended",
-        "Your screen will be locked in 4 seconds.",
+        crate::i18n::notif_lock_title(&language),
+        crate::i18n::notif_lock_body(&language),
     ).await;
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
 

@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Agents – ScreenGuard{% endblock %}
+{% block title %}{{ t('agents.heading') }} – ScreenGuard{% endblock %}
 
 {% block content %}
-<h2 class="mb-4 fw-semibold" style="font-size:1.25rem;letter-spacing:-.02em">Agents</h2>
+<h2 class="mb-4 fw-semibold" style="font-size:1.25rem;letter-spacing:-.02em">{{ t('agents.heading') }}</h2>
 
 {% if agents %}
 <div class="card">
@@ -10,10 +10,10 @@
     <table class="table mb-0 align-middle">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Version</th>
-          <th>Last seen</th>
+          <th>{{ t('agents.col_name') }}</th>
+          <th>{{ t('agents.col_status') }}</th>
+          <th>{{ t('agents.col_version') }}</th>
+          <th>{{ t('agents.col_last_seen') }}</th>
           <th></th>
         </tr>
       </thead>
@@ -38,40 +38,40 @@
           </td>
           <td>
             {% if a.status == 'pending_delete' %}
-              <span class="badge text-bg-danger">pending delete</span>
+              <span class="badge text-bg-danger">{{ t('agents.status_pending_delete') }}</span>
             {% elif a.status == 'pending' %}
-              <span class="badge text-bg-warning">pending</span>
+              <span class="badge text-bg-warning">{{ t('agents.status_pending') }}</span>
             {% elif a.online %}
-              <span class="badge text-bg-success">online</span>
+              <span class="badge text-bg-success">{{ t('agents.status_online') }}</span>
             {% else %}
-              <span class="badge text-bg-secondary">offline</span>
+              <span class="badge text-bg-secondary">{{ t('agents.status_offline') }}</span>
             {% endif %}
           </td>
           <td><span style="font-size:12px;color:var(--t2)">{{ a.agent_version or '—' }}</span></td>
           <td><span style="font-size:12px;color:var(--t2)">
-            {% if a.online %}now{% else %}{{ a.last_seen_at | time_ago }}{% endif %}
+            {% if a.online %}{{ t('agents.now') }}{% else %}{{ a.last_seen_at | time_ago }}{% endif %}
           </span></td>
           <td>
             <div class="d-flex flex-wrap gap-2 justify-content-end">
             {% if a.status == 'pending_delete' %}
               <form method="post" action="{{ url_for('undo_delete_agent', agent_id=a.id) }}">
-                <button class="btn btn-outline-secondary">Undo</button>
+                <button class="btn btn-outline-secondary">{{ t('agents.btn_undo') }}</button>
               </form>
               <form method="post" action="{{ url_for('force_delete_agent', agent_id=a.id) }}"
-                    onsubmit="return confirm('Remove server record immediately? The agent will not be notified if offline.')">
-                <button class="btn btn-outline-danger">Force remove</button>
+                    onsubmit='return confirm({{ t("agents.confirm_force_remove") | tojson }})'>
+                <button class="btn btn-outline-danger">{{ t('agents.btn_force_remove') }}</button>
               </form>
             {% else %}
               {% if a.status == 'pending' %}
                 <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}">
-                  <button class="btn btn-primary">Accept</button>
+                  <button class="btn btn-primary">{{ t('agents.btn_accept') }}</button>
                 </form>
               {% endif %}
               <a href="{{ url_for('agent_detail', agent_id=a.id) }}"
-                 class="btn btn-outline-secondary">Details</a>
+                 class="btn btn-outline-secondary">{{ t('agents.btn_details') }}</a>
               <form method="post" action="{{ url_for('delete_agent', agent_id=a.id) }}"
-                    onsubmit="return confirm('Queue this agent for deletion? It will reset itself when next online.')">
-                <button class="btn btn-outline-danger">Delete</button>
+                    onsubmit='return confirm({{ t("agents.confirm_delete") | tojson }})'>
+                <button class="btn btn-outline-danger">{{ t('agents.btn_delete') }}</button>
               </form>
             {% endif %}
             </div>
@@ -85,9 +85,7 @@
 {% else %}
 <div class="card">
   <div class="card-body">
-    <p class="text-secondary small mb-0">
-      No agents registered yet. Install and start the agent on a managed machine.
-    </p>
+    <p class="text-secondary small mb-0">{{ t('agents.empty') }}</p>
   </div>
 </div>
 {% endif %}

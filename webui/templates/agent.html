@@ -8,7 +8,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb mb-2">
         <li class="breadcrumb-item">
-          <a href="{{ url_for('agents') }}" class="text-decoration-none text-secondary">Agents</a>
+          <a href="{{ url_for('agents') }}" class="text-decoration-none text-secondary">{{ t('agent.breadcrumb') }}</a>
         </li>
         <li class="breadcrumb-item active">{{ agent.display_name or agent.hostname }}</li>
       </ol>
@@ -21,16 +21,16 @@
   <div class="d-flex gap-2 flex-shrink-0 pt-1">
     {% if agent.status == 'pending_delete' %}
       <form method="post" action="{{ url_for('undo_delete_agent', agent_id=agent.id) }}">
-        <button class="btn btn-outline-secondary">Undo deletion</button>
+        <button class="btn btn-outline-secondary">{{ t('agent.btn_undo_deletion') }}</button>
       </form>
       <form method="post" action="{{ url_for('force_delete_agent', agent_id=agent.id) }}"
-            onsubmit="return confirm('Remove server record immediately?')">
-        <button class="btn btn-outline-danger">Force remove</button>
+            onsubmit='return confirm({{ t("agent.confirm_force_remove") | tojson }})'>
+        <button class="btn btn-outline-danger">{{ t('agent.btn_force_remove') }}</button>
       </form>
     {% else %}
       <form method="post" action="{{ url_for('delete_agent', agent_id=agent.id) }}"
-            onsubmit="return confirm('Queue this agent for deletion? It will reset itself when next online.')">
-        <button class="btn btn-outline-danger">Delete</button>
+            onsubmit='return confirm({{ t("agent.confirm_delete") | tojson }})'>
+        <button class="btn btn-outline-danger">{{ t('agent.btn_delete') }}</button>
       </form>
     {% endif %}
   </div>
@@ -39,30 +39,30 @@
 <div class="row g-3 mb-4 mt-1">
   <div class="col-md-6">
     <div class="card h-100">
-      <div class="card-header">Info</div>
+      <div class="card-header">{{ t('agent.card_info') }}</div>
       <div class="card-body">
         <dl class="row mb-0" style="font-size:13.5px;row-gap:8px">
-          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Status</dt>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_status') }}</dt>
           <dd class="col-7 mb-0">
             {% if agent.status == 'pending_delete' %}
-              <span class="badge text-bg-danger">pending deletion</span>
+              <span class="badge text-bg-danger">{{ t('agent.status_pending_deletion') }}</span>
             {% elif agent.status == 'pending' %}
-              <span class="badge text-bg-warning">pending approval</span>
+              <span class="badge text-bg-warning">{{ t('agent.status_pending_approval') }}</span>
             {% elif agent.online %}
-              <span class="badge text-bg-success">online</span>
+              <span class="badge text-bg-success">{{ t('agent.status_online') }}</span>
             {% else %}
-              <span class="badge text-bg-secondary">offline</span>
+              <span class="badge text-bg-secondary">{{ t('agent.status_offline') }}</span>
             {% endif %}
           </dd>
-          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Hostname</dt>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_hostname') }}</dt>
           <dd class="col-7 mb-0">{{ agent.hostname }}</dd>
-          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Version</dt>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_version') }}</dt>
           <dd class="col-7 mb-0">{{ agent.agent_version or '—' }}</dd>
-          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Timezone</dt>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_timezone') }}</dt>
           <dd class="col-7 mb-0">{{ agent.timezone or '—' }}</dd>
-          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Last seen</dt>
-          <dd class="col-7 mb-0">{% if agent.online %}now{% else %}{{ agent.last_seen_at | time_ago }}{% endif %}</dd>
-          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">Machine ID</dt>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_last_seen') }}</dt>
+          <dd class="col-7 mb-0">{% if agent.online %}{{ t('agent.now') }}{% else %}{{ agent.last_seen_at | time_ago }}{% endif %}</dd>
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_machine_id') }}</dt>
           <dd class="col-7 mb-0">
             <code style="font-size:11px;color:var(--t2)">{{ agent.machine_id }}</code>
           </dd>
@@ -73,29 +73,29 @@
 
   <div class="col-md-6 d-flex flex-column gap-3">
     <div class="card">
-      <div class="card-header">Rename</div>
+      <div class="card-header">{{ t('agent.card_rename') }}</div>
       <div class="card-body">
         <form method="post" action="{{ url_for('rename_agent', agent_id=agent.id) }}"
               class="d-flex gap-2">
           <input name="display_name" class="form-control form-control-sm"
-                 placeholder="Display name" value="{{ agent.display_name or '' }}">
-          <button class="btn btn-primary text-nowrap">Save name</button>
+                 placeholder="{{ t('agent.placeholder_display_name') }}" value="{{ agent.display_name or '' }}">
+          <button class="btn btn-primary text-nowrap">{{ t('agent.btn_save_name') }}</button>
         </form>
       </div>
     </div>
 
     {% if agent.status == 'pending' %}
     <div class="card" style="border-color:rgba(217,119,6,.4)">
-      <div class="card-header" style="color:var(--wa)">Pending approval</div>
+      <div class="card-header" style="color:var(--wa)">{{ t('agent.card_pending_approval') }}</div>
       <div class="card-body">
         <p class="mb-3" style="font-size:13px;color:var(--t2)">
-          Pairing code:
+          {{ t('agent.pairing_code') }}
           <code style="font-size:15px;font-weight:700;color:var(--t1);letter-spacing:.06em">
             {{ agent.pairing_code }}
           </code>
         </p>
         <form method="post" action="{{ url_for('accept_agent', agent_id=agent.id) }}">
-          <button class="btn btn-primary">Accept agent</button>
+          <button class="btn btn-primary">{{ t('agent.btn_accept') }}</button>
         </form>
       </div>
     </div>
@@ -105,16 +105,16 @@
 
 <!-- ── managed users ──────────────────────────────────────────────────── -->
 <div class="card">
-  <div class="card-header">Managed users</div>
+  <div class="card-header">{{ t('agent.card_managed_users') }}</div>
   {% if users %}
   <div class="card-body p-0">
     <table class="table mb-0 align-middle">
       <thead>
         <tr>
-          <th>Username</th>
-          <th>UID</th>
-          <th>Status</th>
-          <th>Link to profile</th>
+          <th>{{ t('agent.col_username') }}</th>
+          <th>{{ t('agent.col_uid') }}</th>
+          <th>{{ t('agent.col_status') }}</th>
+          <th>{{ t('agent.col_link_to_profile') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -124,9 +124,9 @@
           <td><span style="font-size:12px;color:var(--t2)">{{ u.local_uid }}</span></td>
           <td>
             {% if u.status == 'managed' %}
-              <span class="badge text-bg-success">managed</span>
+              <span class="badge text-bg-success">{{ t('agent.user_managed') }}</span>
             {% else %}
-              <span class="badge text-bg-secondary">unmanaged</span>
+              <span class="badge text-bg-secondary">{{ t('agent.user_unmanaged') }}</span>
             {% endif %}
           </td>
           <td>
@@ -135,7 +135,7 @@
               <input type="hidden" name="agent_id" value="{{ agent.id }}">
               <select name="profile_id" class="form-select form-select-sm flex-fill"
                       style="min-width:0;max-width:180px;overflow:hidden;text-overflow:ellipsis">
-                <option value="">— unmanaged —</option>
+                <option value="">{{ t('agent.dropdown_unmanaged') }}</option>
                 {% for p in profiles %}
                   <option value="{{ p.id }}"
                     {% if u.profile_id == p.id and u.status == 'managed' %}selected{% endif %}>
@@ -143,7 +143,7 @@
                   </option>
                 {% endfor %}
               </select>
-              <button class="btn btn-primary flex-shrink-0">Link</button>
+              <button class="btn btn-primary flex-shrink-0">{{ t('agent.btn_link') }}</button>
             </form>
           </td>
         </tr>
@@ -153,9 +153,7 @@
   </div>
   {% else %}
   <div class="card-body">
-    <p class="text-secondary small mb-0">
-      No users discovered yet. The agent reports users on first connection.
-    </p>
+    <p class="text-secondary small mb-0">{{ t('agent.empty_users') }}</p>
   </div>
   {% endif %}
 </div>

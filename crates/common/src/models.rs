@@ -26,7 +26,11 @@ pub struct UserConfig {
     pub adjustment_message: Option<String>,
     pub lockout_grace_minutes: u32,
     pub warning_thresholds_minutes: Vec<u32>,
+    #[serde(default = "default_lang")]
+    pub language: String,
 }
+
+fn default_lang() -> String { "en".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalUser {

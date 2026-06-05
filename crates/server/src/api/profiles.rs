@@ -55,7 +55,8 @@ pub async fn get_profile(
 
 #[derive(Deserialize)]
 pub struct PatchProfileBody {
-    pub display_name: String,
+    pub display_name: Option<String>,
+    pub language: Option<String>,
 }
 
 pub async fn patch_profile(
@@ -64,7 +65,12 @@ pub async fn patch_profile(
     Json(body): Json<PatchProfileBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
-    db::update_profile(&state.db, id, &body.display_name).map_err(internal)?;
+    if let Some(name) = &body.display_name {
+        db::update_profile(&state.db, id, name).map_err(internal)?;
+    }
+    if let Some(lang) = &body.language {
+        db::update_profile_language(&state.db, id, lang).map_err(internal)?;
+    }
     Ok(Json(serde_json::json!({ "message": "Profile updated" })))
 }
 

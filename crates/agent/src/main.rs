@@ -4,6 +4,7 @@ mod dbus;
 mod discovery;
 mod enforcement;
 mod heartbeat;
+mod i18n;
 mod pairing;
 mod status_dbus;
 mod users;
