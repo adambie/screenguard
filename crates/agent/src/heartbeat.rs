@@ -313,11 +313,32 @@ impl HeartbeatLoop {
                     if entry.enforce == EnforceAction::Lock {
                         let is_new = self.locked_uids.lock().await.insert(entry.local_uid);
                         if is_new {
+                            // Log the reason so it shows up in journalctl.
+                            let uid = entry.local_uid;
+                            if entry.current_window_ends_at.is_none() {
+                                let next = entry.next_window_starts_at
+                                    .map(|t| format!("{}", t.format("%H:%M")))
+                                    .unwrap_or_else(|| "none today".to_string());
+                                tracing::info!(
+                                    "Locking uid={uid}: outside allowed schedule window \
+                                     (next window starts: {next}, \
+                                     daily time remaining: {} min)",
+                                    entry.remaining_minutes
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Locking uid={uid}: daily time limit reached \
+                                     (used: {} min, limit: {} min, adjustments: {} min)",
+                                    entry.used_today_minutes,
+                                    entry.limit_today_minutes.unwrap_or(1440),
+                                    entry.adjustments_today_minutes,
+                                );
+                            }
+
                             // First lock: full flow — notify, lock screen, then terminate after grace.
                             // Remove the uid from the set when done so a new session can be re-locked.
                             let locked_uids = self.locked_uids.clone();
                             let db = self.db.clone();
-                            let uid = entry.local_uid;
                             tokio::spawn(async move {
                                 if let Err(e) = execute_lock(uid, &db).await {
                                     tracing::error!("Lock failed for uid={uid}: {e}");
@@ -327,8 +348,9 @@ impl HeartbeatLoop {
                         } else {
                             // Grace period already running — silently re-lock in case the user
                             // bypassed the lock screen without resetting the grace timer.
-                            let db = self.db.clone();
                             let uid = entry.local_uid;
+                            tracing::info!("Re-locking uid={uid}: session still active during grace period");
+                            let db = self.db.clone();
                             tokio::spawn(async move {
                                 let session_ids = db.lock().await
                                     .get_all_session_ids(uid)
@@ -371,7 +393,7 @@ impl HeartbeatLoop {
                 }
             }
             ServerMessage::LockNow(lock) => {
-                tracing::info!("Received lock_now for uid={}", lock.local_uid);
+                tracing::info!("Locking uid={}: manual lock requested by administrator", lock.local_uid);
                 let db = self.db.clone();
                 let uid = lock.local_uid;
                 tokio::spawn(async move {
@@ -496,9 +518,12 @@ impl HeartbeatLoop {
                 let action = evaluate_enforcement(uid, &self.db, false).await?;
                 match action {
                     EnforceAction::Lock => {
+                        tracing::info!("Locking uid={uid}: offline enforcement triggered (server unreachable)");
                         let db = self.db.clone();
                         tokio::spawn(async move {
-                            let _ = execute_lock(uid, &db).await;
+                            if let Err(e) = execute_lock(uid, &db).await {
+                                tracing::error!("Offline lock failed for uid={uid}: {e}");
+                            }
                         });
                     }
                     EnforceAction::Warn => {

@@ -58,6 +58,7 @@ fn offline_evaluate(uid: u32, db: &Db) -> Result<EnforceAction> {
     };
 
     if !in_window {
+        tracing::info!("uid={uid}: outside allowed schedule window (offline evaluation)");
         return Ok(EnforceAction::Lock);
     }
 
@@ -77,6 +78,7 @@ fn offline_evaluate(uid: u32, db: &Db) -> Result<EnforceAction> {
     let remaining = time_remaining_minutes.min(window_remaining_minutes);
 
     if remaining <= 0 {
+        tracing::info!("uid={uid}: daily time limit reached (offline evaluation)");
         return Ok(EnforceAction::Lock);
     }
 
