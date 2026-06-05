@@ -256,7 +256,10 @@ impl DbusMenu {
         _props: Vec<String>,
     ) -> (u32, MenuItem) {
         let has_url = !self.server_url.lock().unwrap().is_empty();
+        let version_label = concat!("ScreenGuard ", env!("SCREENGUARD_VERSION"));
         let children = vec![
+            label_item(10, version_label, false),
+            separator_item(11),
             label_item(1, "Open Admin Page", has_url),
             separator_item(2),
             label_item(99, "Quit", true),
