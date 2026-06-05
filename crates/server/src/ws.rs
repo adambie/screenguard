@@ -203,6 +203,12 @@ async fn handle_agent_hello(
     Ok((hello.machine_id, agent.id))
 }
 
+/// If no message arrives within this window the connection is considered stale
+/// (e.g. PC went offline abruptly without a clean TCP close) and is dropped so
+/// the agent shows as offline in the UI.  The default heartbeat interval is 10 s,
+/// so 90 s (9× that) gives ample headroom for any reasonable configuration.
+const WS_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
 async fn message_loop(
     stream: &mut (impl StreamExt<Item = Result<Message, axum::Error>> + Unpin),
     state: &Arc<AppState>,
@@ -216,19 +222,26 @@ async fn message_loop(
         .ok_or_else(|| anyhow::anyhow!("Agent handle missing"))?;
     drop(online_map);
 
-    while let Some(msg) = stream.next().await {
-        match msg {
-            Ok(Message::Text(text)) => {
-                if let Err(e) = handle_agent_message(&text, state, agent_id, &out_tx).await {
-                    tracing::warn!("Error handling message from {machine_id}: {e}");
+    loop {
+        match tokio::time::timeout(WS_IDLE_TIMEOUT, stream.next()).await {
+            Err(_) => {
+                tracing::warn!("Agent {machine_id}: no message for {WS_IDLE_TIMEOUT:?}, closing stale connection");
+                break;
+            }
+            Ok(None) => break,
+            Ok(Some(msg)) => match msg {
+                Ok(Message::Text(text)) => {
+                    if let Err(e) = handle_agent_message(&text, state, agent_id, &out_tx).await {
+                        tracing::warn!("Error handling message from {machine_id}: {e}");
+                    }
                 }
-            }
-            Ok(Message::Ping(d)) => {
-                let _ = out_tx.send(WssMessage::new("pong", &serde_json::Value::Null)?).await;
-                let _ = d;
-            }
-            Ok(Message::Close(_)) | Err(_) => break,
-            _ => {}
+                Ok(Message::Ping(d)) => {
+                    let _ = out_tx.send(WssMessage::new("pong", &serde_json::Value::Null)?).await;
+                    let _ = d;
+                }
+                Ok(Message::Close(_)) | Err(_) => break,
+                _ => {}
+            },
         }
     }
     Ok(())

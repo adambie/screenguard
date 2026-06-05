@@ -28,7 +28,7 @@ pub struct HeartbeatLoop {
     agent_version: String,
     cache_ttl_hours: u64,
     notified_thresholds: HashMap<u32, HashSet<i32>>,
-    locked_uids: HashSet<u32>,
+    locked_uids: Arc<tokio::sync::Mutex<HashSet<u32>>>,
     status_handle: Option<Arc<crate::status_dbus::Handle>>,
 }
 
@@ -58,7 +58,7 @@ impl HeartbeatLoop {
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             cache_ttl_hours,
             notified_thresholds: HashMap::new(),
-            locked_uids: HashSet::new(),
+            locked_uids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             status_handle,
         }
     }
@@ -318,20 +318,38 @@ impl HeartbeatLoop {
 
                 for entry in &update.users {
                     if entry.enforce == EnforceAction::Lock {
-                        // Only start one lock task per uid — avoid notification spam and
-                        // overlapping grace-period timers from successive heartbeats.
-                        if self.locked_uids.insert(entry.local_uid) {
+                        let is_new = self.locked_uids.lock().await.insert(entry.local_uid);
+                        if is_new {
+                            // First lock: full flow — notify, lock screen, then terminate after grace.
+                            // Remove the uid from the set when done so a new session can be re-locked.
+                            let locked_uids = self.locked_uids.clone();
                             let db = self.db.clone();
                             let uid = entry.local_uid;
                             tokio::spawn(async move {
                                 if let Err(e) = execute_lock(uid, &db).await {
                                     tracing::error!("Lock failed for uid={uid}: {e}");
                                 }
+                                locked_uids.lock().await.remove(&uid);
+                            });
+                        } else {
+                            // Grace period already running — silently re-lock in case the user
+                            // bypassed the lock screen without resetting the grace timer.
+                            let db = self.db.clone();
+                            let uid = entry.local_uid;
+                            tokio::spawn(async move {
+                                let session_ids = db.lock().await
+                                    .get_all_session_ids(uid)
+                                    .unwrap_or_default();
+                                if !session_ids.is_empty() {
+                                    if let Err(e) = crate::dbus::lock_sessions(&session_ids).await {
+                                        tracing::warn!("Re-lock failed for uid={uid}: {e}");
+                                    }
+                                }
                             });
                         }
                     } else {
                         // Warn or Allow: if we locked this uid earlier, unlock the screen now.
-                        if self.locked_uids.remove(&entry.local_uid) {
+                        if self.locked_uids.lock().await.remove(&entry.local_uid) {
                             let uid = entry.local_uid;
                             let db = self.db.clone();
                             tokio::spawn(async move {
