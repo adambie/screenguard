@@ -245,6 +245,7 @@ fn separator_item(id: i32) -> OwnedValue {
 
 struct DbusMenu {
     server_url: Arc<std::sync::Mutex<String>>,
+    status_text: Arc<std::sync::Mutex<String>>,
 }
 
 #[interface(name = "com.canonical.dbusmenu")]
@@ -256,10 +257,13 @@ impl DbusMenu {
         _props: Vec<String>,
     ) -> (u32, MenuItem) {
         let has_url = !self.server_url.lock().unwrap().is_empty();
+        let status = self.status_text.lock().unwrap().clone();
         let version_label = concat!("ScreenGuard ", env!("SCREENGUARD_VERSION"));
         let children = vec![
             label_item(10, version_label, false),
             separator_item(11),
+            label_item(12, &status, false),
+            separator_item(13),
             label_item(1, "Open Admin Page", has_url),
             separator_item(2),
             label_item(99, "Quit", true),
@@ -477,6 +481,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let server_url = Arc::new(std::sync::Mutex::new(String::new()));
+    let status_text = Arc::new(std::sync::Mutex::new(initial_state.tooltip.clone()));
     let state = Arc::new(Mutex::new(initial_state));
 
     let pid = std::process::id();
@@ -492,7 +497,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     conn.object_server()
         .at(
             "/StatusNotifierItem/Menu",
-            DbusMenu { server_url: server_url.clone() },
+            DbusMenu { server_url: server_url.clone(), status_text: status_text.clone() },
         )
         .await?;
 
@@ -520,6 +525,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         *server_url.lock().unwrap() = url;
 
         let new_state = TrayState::from_values(remaining, &enforce, updated_at);
+        *status_text.lock().unwrap() = new_state.tooltip.clone();
         let mut current = state.lock().await;
 
         if new_state != *current {
