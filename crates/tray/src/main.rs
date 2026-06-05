@@ -24,6 +24,7 @@ struct TrayState {
     status: String,
     icon_name: String,
     title: String,
+    tooltip: String,
 }
 
 impl TrayState {
@@ -32,6 +33,7 @@ impl TrayState {
             status: "Passive".into(),
             icon_name: "chronometer".into(),
             title: "ScreenGuard".into(),
+            tooltip: "Status unavailable".into(),
         }
     }
 
@@ -53,21 +55,29 @@ impl TrayState {
                 status: "NeedsAttention".into(),
                 icon_name: "system-lock-screen".into(),
                 title: "Locked".into(),
+                tooltip: "Screen time limit reached".into(),
             },
             "warn" => Self {
                 status: "Active".into(),
                 icon_name: "dialog-warning".into(),
                 title: fmt_remaining(effective),
+                tooltip: format!("Warning — {} remaining", fmt_remaining(effective)),
             },
-            _ => Self {
-                status: "Active".into(),
-                icon_name: "chronometer".into(),
-                title: if effective > 2 * 3600 {
-                    "Unlimited".into()
+            _ => {
+                let (title, tooltip) = if effective > 2 * 3600 {
+                    ("Unlimited".into(), "No time limit today".into())
                 } else {
-                    fmt_remaining(effective)
-                },
-            },
+                    let t = fmt_remaining(effective);
+                    let tip = format!("{t} remaining today");
+                    (t, tip)
+                };
+                Self {
+                    status: "Active".into(),
+                    icon_name: "chronometer".into(),
+                    title,
+                    tooltip,
+                }
+            }
         }
     }
 
@@ -379,6 +389,26 @@ impl Sni {
         OwnedObjectPath::try_from("/StatusNotifierItem/Menu").unwrap()
     }
 
+    #[zbus(property)]
+    fn tool_tip_icon_name(&self) -> &str {
+        "chronometer"
+    }
+
+    #[zbus(property)]
+    fn tool_tip_icon_pixmap(&self) -> Vec<(i32, i32, Vec<u8>)> {
+        vec![]
+    }
+
+    #[zbus(property)]
+    fn tool_tip_title(&self) -> &str {
+        "ScreenGuard"
+    }
+
+    #[zbus(property)]
+    async fn tool_tip_sub_title(&self) -> String {
+        self.state.lock().await.tooltip.clone()
+    }
+
     fn activate(&self, _x: i32, _y: i32) {}
     fn context_menu(&self, _x: i32, _y: i32) {}
     fn secondary_activate(&self, _x: i32, _y: i32) {}
@@ -391,6 +421,9 @@ impl Sni {
 
     #[zbus(signal)]
     async fn new_status(emitter: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn new_tool_tip(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
     async fn x_ayatana_new_label(
@@ -493,6 +526,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 || new_state.title != current.title;
             let status_changed = new_state.status != current.status;
             let title_changed = new_state.title != current.title;
+            let tooltip_changed = new_state.tooltip != current.tooltip;
             *current = new_state;
             drop(current);
 
@@ -505,6 +539,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if status_changed {
                 let _ = Sni::new_status(&emitter, &new_status).await;
+            }
+            if tooltip_changed {
+                let _ = Sni::new_tool_tip(&emitter).await;
             }
         }
     }

@@ -442,14 +442,19 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     mkdir -p "${DATA_DIR}"
 
     if [[ ! -f "${CONFIG_DIR}/agent.toml" ]]; then
+        # Derive web UI URL: same host as server, web UI port.
         if [[ -n $SERVER_URL ]]; then
+            _server_host=$(echo "$SERVER_URL" | sed 's|^[a-z]*://||;s|:.*||;s|/.*||')
+            _webui_port=${WEBUI_PORT:-5000}
             cat > "${CONFIG_DIR}/agent.toml" <<EOF
 server_url = "${SERVER_URL}"
+webui_url = "http://${_server_host}:${_webui_port}"
 EOF
         else
             cat > "${CONFIG_DIR}/agent.toml" <<EOF
 # server_url = "http://192.168.1.100:8080"
 # Leave commented out to use mDNS auto-discovery.
+# webui_url = "http://192.168.1.100:5000"
 EOF
         fi
         info "Created ${CONFIG_DIR}/agent.toml"

@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
     tracing::info!("Connecting to server at {server_url}");
 
     let status_handle = {
-        let http_url = wss_to_http(&server_url);
+        let http_url = cfg.webui_url.clone().unwrap_or_else(|| wss_to_http(&server_url));
         match status_dbus::start(http_url).await {
             Ok(h) => {
                 tracing::info!("Tray D-Bus interface registered");

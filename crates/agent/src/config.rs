@@ -11,6 +11,10 @@ pub struct AgentConfig {
     /// Direct server WSS URL; if set, mDNS discovery is skipped.
     pub server_url: Option<String>,
 
+    /// Web UI URL shown in the tray "Open Admin Page" menu item.
+    /// If unset, derived from server_url (same host, same port).
+    pub webui_url: Option<String>,
+
     #[serde(default = "default_heartbeat_interval")]
     pub heartbeat_interval: u64,
 
@@ -33,6 +37,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             server_url: None,
+            webui_url: None,
             heartbeat_interval: default_heartbeat_interval(),
             user_scan_interval: default_user_scan_interval(),
             cache_ttl_hours: default_cache_ttl_hours(),
