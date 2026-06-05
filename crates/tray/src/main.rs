@@ -396,6 +396,19 @@ impl Sni {
         OwnedObjectPath::try_from("/StatusNotifierItem/Menu").unwrap()
     }
 
+    /// Combined tooltip struct expected by KDE Plasma: (icon_name, icon_pixmaps, title, subtitle)
+    #[zbus(property)]
+    async fn tool_tip(&self) -> (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
+        let state = self.state.lock().await;
+        (
+            "chronometer".to_string(),
+            vec![],
+            "ScreenGuard".to_string(),
+            state.tooltip.clone(),
+        )
+    }
+
+    // Individual properties kept for compatibility with other environments.
     #[zbus(property)]
     fn tool_tip_icon_name(&self) -> &str {
         "chronometer"
