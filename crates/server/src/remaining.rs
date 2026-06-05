@@ -175,13 +175,14 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-fn today_in_timezone(_tz: &str) -> NaiveDate {
-    // TODO: proper timezone conversion when needed; for now use local time.
-    Local::now().date_naive()
+fn today_in_timezone(tz: &str) -> NaiveDate {
+    let tz: chrono_tz::Tz = tz.parse().unwrap_or(chrono_tz::UTC);
+    chrono::Utc::now().with_timezone(&tz).date_naive()
 }
 
-fn current_time_in_timezone(_tz: &str) -> NaiveTime {
-    Local::now().time()
+fn current_time_in_timezone(tz: &str) -> NaiveTime {
+    let tz: chrono_tz::Tz = tz.parse().unwrap_or(chrono_tz::UTC);
+    chrono::Utc::now().with_timezone(&tz).time()
 }
 
 /// Returns (current_window_end, next_window_start) given schedules and current time.

@@ -632,7 +632,17 @@ fn read_machine_id() -> String {
 }
 
 fn local_timezone() -> String {
-    std::fs::read_to_string("/etc/timezone")
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "UTC".to_string())
+    // Debian/Ubuntu style: plain text file.
+    if let Ok(s) = std::fs::read_to_string("/etc/timezone") {
+        let s = s.trim().to_string();
+        if !s.is_empty() { return s; }
+    }
+    // Fedora/RHEL/Arch style: /etc/localtime is a symlink into /usr/share/zoneinfo/.
+    if let Ok(path) = std::fs::read_link("/etc/localtime") {
+        let s = path.to_string_lossy();
+        if let Some(tz) = s.strip_prefix("/usr/share/zoneinfo/") {
+            return tz.to_string();
+        }
+    }
+    "UTC".to_string()
 }
