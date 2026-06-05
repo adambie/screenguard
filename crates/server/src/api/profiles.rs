@@ -70,6 +70,7 @@ pub async fn patch_profile(
     }
     if let Some(lang) = &body.language {
         db::update_profile_language(&state.db, id, lang).map_err(internal)?;
+        bump_and_propagate(&state, id).await.map_err(internal)?;
     }
     Ok(Json(serde_json::json!({ "message": "Profile updated" })))
 }
