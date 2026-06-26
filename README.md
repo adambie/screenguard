@@ -13,6 +13,22 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 - Web UI for administration
 - Static binaries, no runtime dependencies
 
+## Mobile app
+
+A Flutter Android app is included in the `mobile/` directory. It lets you manage profiles, devices, schedules, and daily limits from your phone — no browser needed.
+
+**Download:** grab `screenguard-android-<version>.apk` from the [latest release](https://github.com/adambie/screenguard/releases/latest) and install it (enable *Install unknown apps* in Android settings first).
+
+**Features**
+
+- mDNS auto-discovery — finds the server on your local network automatically
+- Manage profiles: daily limits, schedules, lock now, send messages
+- Manage devices: approve/pair, rename, assign users
+- Usage charts per profile
+- Light/dark theme, 6 UI languages
+
+The app connects directly to the same REST API as the web UI. No extra setup is needed on the server.
+
 ## Architecture
 
 ```
@@ -23,6 +39,10 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 │  screenguard web UI  (Flask)    │        │  (enforces limits,       │
 │                                 │        │   sends notifications)   │
 └─────────────────────────────────┘        └──────────────────────────┘
+         ▲
+         │ REST
+    Android app
+   (mobile/)
 ```
 
 The server and agent can run on the same machine or on separate machines. The agent connects to the server over a persistent WebSocket connection. mDNS (Avahi/Bonjour) is used for automatic discovery on the local network.
