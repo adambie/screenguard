@@ -29,6 +29,14 @@ A Flutter Android app is included in the `mobile/` directory. It lets you manage
 
 The app connects directly to the same REST API as the web UI. No extra setup is needed on the server.
 
+<p align="center">
+  <img src="docs/screenshots/mobile-profiles.png" width="30%" alt="Profiles dashboard" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-profile-detail.png" width="30%" alt="Profile detail with usage chart" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-devices.png" width="30%" alt="Devices list" />
+</p>
+
 ## Architecture
 
 ```
