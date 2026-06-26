@@ -26,7 +26,9 @@ class _ShieldPainter extends CustomPainter {
     final s = size.width / 24.0;
     final paint = Paint()
       ..color = const Color(0xFF1A73E8)
-      ..style = PaintingStyle.fill;
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.07
+      ..strokeJoin = StrokeJoin.round;
 
     // Material Design "shield" filled path (24×24 viewBox)
     // M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z

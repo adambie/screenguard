@@ -118,6 +118,13 @@ class _UsageChartState extends ConsumerState<UsageChart> {
     );
   }
 
+  double _niceInterval(double maxMinutes) {
+    for (final step in [15.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 480.0]) {
+      if (maxMinutes / step <= 4) return step;
+    }
+    return 480.0;
+  }
+
   Widget _buildChart(ColorScheme cs, DateTime weekStart, AppLocalizations l) {
     final today = DateTime.now();
     final usage = _usage ?? [];
@@ -163,16 +170,41 @@ class _UsageChartState extends ConsumerState<UsageChart> {
       );
     });
 
+    // Pick a Y interval that gives ~3 gridlines
+    final double yMax = maxMinutes * 1.2;
+    final double yInterval = _niceInterval(maxMinutes);
+
     return SizedBox(
-      height: 150,
+      height: 160,
       child: BarChart(
         BarChartData(
-          maxY: maxMinutes * 1.2,
+          maxY: yMax,
           barGroups: groups,
-          gridData: FlGridData(show: false),
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: yInterval,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (v) => FlLine(
+              color: cs.outlineVariant.withValues(alpha: 0.4),
+              strokeWidth: 1,
+            ),
+          ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                interval: yInterval,
+                getTitlesWidget: (v, meta) {
+                  if (v == 0 || v > maxMinutes) return const SizedBox.shrink();
+                  return Text(
+                    formatMinutes(v.toInt()),
+                    style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
+                  );
+                },
+              ),
+            ),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(

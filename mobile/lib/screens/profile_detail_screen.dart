@@ -409,7 +409,7 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
                         Text(
                           _adjustPending == 0
                               ? l.adjust
-                              : '${_adjustPending > 0 ? '+' : ''}${formatMinutes(_adjustPending.abs())}',
+                              : '${_adjustPending > 0 ? '+' : '-'}${formatMinutes(_adjustPending.abs())}',
                           style: TextStyle(
                             color: _adjustPending > 0
                                 ? Colors.green
