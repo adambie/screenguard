@@ -674,5 +674,10 @@ fn local_timezone() -> String {
             return tz.to_string();
         }
     }
+    tracing::warn!(
+        "Could not detect system timezone from /etc/timezone or /etc/localtime — \
+         falling back to UTC. Schedule windows will be evaluated in UTC. \
+         Fix with: timedatectl set-timezone <your-timezone>"
+    );
     "UTC".to_string()
 }
