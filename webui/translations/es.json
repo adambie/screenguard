@@ -126,6 +126,10 @@
   "agent.dropdown_unmanaged": "— no gestionado —",
   "agent.btn_link": "Vincular",
   "agent.empty_users": "Sin usuarios descubiertos. El agente reporta usuarios en la primera conexión.",
+  "agent.card_recent_logs": "Registros recientes",
+  "agent.btn_load_logs": "Cargar registros",
+  "agent.btn_refresh_logs": "Actualizar",
+  "agent.logs_offline": "Agente sin conexión",
 
   "flash.session_expired": "Tu sesión ha expirado — inicia sesión de nuevo.",
   "flash.server_unreachable": "No se puede conectar al servidor en {server}",

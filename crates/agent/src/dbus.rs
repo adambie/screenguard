@@ -104,6 +104,7 @@ impl DbusMonitor {
                     let path = args.object_path.clone();
                     let uid = self.get_session_uid(&path).await.unwrap_or(0);
                     if uid > 0 && self.is_graphical_session(&path).await {
+                        tracing::info!("Session started: uid={uid} session={session_id}");
                         let idle = self.get_session_idle(&path).await.unwrap_or(false);
                         let _ = self.tx.send(SessionEvent::SessionStarted {
                             uid,
@@ -128,6 +129,7 @@ impl DbusMonitor {
                     let session_id = args.session_id.to_string();
                     let path = args.object_path.clone();
                     let uid = self.get_session_uid(&path).await.unwrap_or(0);
+                    tracing::info!("Session ended: uid={uid} session={session_id}");
                     let _ = self.tx.send(SessionEvent::SessionEnded { uid, session_id }).await;
                 }
                 Some(signal) = sleep_stream.next() => {
@@ -215,6 +217,7 @@ pub async fn lock_sessions(session_ids: &[String]) -> Result<()> {
                 let _ = session.lock().await;
             }
     }
+    tracing::info!("Locked {} session(s): {:?}", session_ids.len(), session_ids);
     Ok(())
 }
 
@@ -235,6 +238,7 @@ pub async fn unlock_sessions(session_ids: &[String]) -> Result<()> {
                 let _ = session.unlock().await;
             }
     }
+    tracing::info!("Unlocked {} session(s): {:?}", session_ids.len(), session_ids);
     Ok(())
 }
 
@@ -254,6 +258,7 @@ pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
                 let _ = session.terminate().await;
             }
     }
+    tracing::info!("Terminated {} session(s): {:?}", session_ids.len(), session_ids);
     Ok(())
 }
 

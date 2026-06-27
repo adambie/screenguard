@@ -158,4 +158,51 @@
   {% endif %}
 </div>
 
+<!-- ── recent logs ─────────────────────────────────────────────────────── -->
+<div class="card mt-3" id="logs-card">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span>{{ t('agent.card_recent_logs') }}</span>
+    {% if agent.online %}
+    <button class="btn btn-sm btn-outline-secondary" id="logs-btn" onclick="loadLogs()">
+      {{ t('agent.btn_load_logs') }}
+    </button>
+    {% else %}
+    <span style="font-size:12px;color:var(--t2)">{{ t('agent.logs_offline') }}</span>
+    {% endif %}
+  </div>
+  <div class="card-body p-0" id="logs-body" style="display:none">
+    <pre id="logs-pre" style="margin:0;padding:12px 14px;font-size:11.5px;max-height:420px;overflow-y:auto;background:transparent;white-space:pre-wrap;word-break:break-all"></pre>
+  </div>
+</div>
+
+<script>
+function loadLogs() {
+  const btn = document.getElementById('logs-btn');
+  const body = document.getElementById('logs-body');
+  const pre = document.getElementById('logs-pre');
+  btn.disabled = true;
+  btn.textContent = '…';
+  fetch('{{ url_for("agent_logs", agent_id=agent.id) }}')
+    .then(r => r.json())
+    .then(data => {
+      if (data.lines) {
+        pre.textContent = data.lines.join('\n');
+        body.style.display = '';
+        btn.textContent = '{{ t("agent.btn_refresh_logs") }}';
+      } else {
+        pre.textContent = data.error || 'No logs';
+        body.style.display = '';
+        btn.textContent = '{{ t("agent.btn_refresh_logs") }}';
+      }
+      btn.disabled = false;
+    })
+    .catch(() => {
+      pre.textContent = 'Request failed';
+      body.style.display = '';
+      btn.disabled = false;
+      btn.textContent = '{{ t("agent.btn_refresh_logs") }}';
+    });
+}
+</script>
+
 {% endblock %}

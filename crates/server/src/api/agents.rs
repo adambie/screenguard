@@ -163,6 +163,39 @@ pub async fn list_agent_users(
     Ok(Json(serde_json::json!({ "users": users })))
 }
 
+pub async fn fetch_agent_logs(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+
+    if !state.is_online(id).await {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Agent is offline" })),
+        ));
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
+    state.log_requests.write().await.insert(id, tx);
+
+    use common::messages::{FetchLogs, MSG_FETCH_LOGS};
+    use common::protocol::WssMessage;
+    let msg = WssMessage::new(MSG_FETCH_LOGS, &FetchLogs {}).map_err(internal)?;
+    state.send_to_agent_id(id, msg).await;
+
+    match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
+        Ok(Ok(lines)) => Ok(Json(serde_json::json!({ "lines": lines }))),
+        _ => {
+            state.log_requests.write().await.remove(&id);
+            Err((
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(serde_json::json!({ "error": "Agent did not respond in time" })),
+            ))
+        }
+    }
+}
+
 fn generate_token() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];

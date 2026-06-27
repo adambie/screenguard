@@ -126,6 +126,10 @@
   "agent.dropdown_unmanaged": "— não gerido —",
   "agent.btn_link": "Ligar",
   "agent.empty_users": "Nenhum utilizador descoberto. O agente reporta utilizadores na primeira ligação.",
+  "agent.card_recent_logs": "Registos recentes",
+  "agent.btn_load_logs": "Carregar registos",
+  "agent.btn_refresh_logs": "Atualizar",
+  "agent.logs_offline": "Agente offline",
 
   "flash.session_expired": "A sua sessão expirou — por favor inicie sessão novamente.",
   "flash.server_unreachable": "Não é possível contactar o servidor em {server}",

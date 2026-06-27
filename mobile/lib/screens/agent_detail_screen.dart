@@ -16,6 +16,27 @@ class AgentDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
+  List<String>? _logLines;
+  bool _logsLoading = false;
+  String? _logsError;
+
+  Future<void> _fetchLogs() async {
+    setState(() { _logsLoading = true; _logsError = null; });
+    try {
+      final data = await ref.read(apiClientProvider).get('/agents/${widget.agentId}/logs');
+      setState(() {
+        _logLines = List<String>.from(data['lines'] ?? []);
+        _logsLoading = false;
+      });
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      setState(() { _logsError = e.message; _logsLoading = false; });
+    } catch (e) {
+      setState(() { _logsError = e.toString(); _logsLoading = false; });
+    }
+  }
+
   void _refresh() {
     ref.invalidate(agentDetailProvider(widget.agentId));
     ref.invalidate(agentUsersProvider(widget.agentId));
@@ -229,6 +250,8 @@ class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
                   const SizedBox(height: 16),
                 ],
                 _buildUsersCard(context, usersAsync, profilesAsync),
+                const SizedBox(height: 16),
+                _buildLogsCard(context, agent),
                 const SizedBox(height: 32),
               ],
             ),
@@ -396,6 +419,61 @@ class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
                 );
               },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogsCard(BuildContext context, Agent agent) {
+    final l = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(l.recentLogs, style: Theme.of(context).textTheme.titleMedium),
+                if (agent.online)
+                  FilledButton.tonal(
+                    onPressed: _logsLoading ? null : _fetchLogs,
+                    child: Text(_logLines == null ? l.loadLogs : l.refreshLogs),
+                  ),
+              ],
+            ),
+            if (!agent.online) ...[
+              const SizedBox(height: 8),
+              Text(l.agentOfflineLogs, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+            ] else if (_logsLoading) ...[
+              const SizedBox(height: 16),
+              const Center(child: CircularProgressIndicator()),
+            ] else if (_logsError != null) ...[
+              const SizedBox(height: 8),
+              Text(_logsError!, style: TextStyle(color: cs.error)),
+            ] else if (_logLines != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: _logLines!.isEmpty
+                    ? Text(l.logsEmpty, style: TextStyle(color: cs.onSurfaceVariant))
+                    : SingleChildScrollView(
+                        child: SelectableText(
+                          _logLines!.join('\n'),
+                          style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                        ),
+                      ),
+              ),
+            ],
           ],
         ),
       ),

@@ -33,6 +33,8 @@ pub struct AppState {
     pub online: Arc<RwLock<HashMap<String, AgentHandle>>>,
     /// machine_id → PairingHandle for agents waiting for admin accept.
     pub pending: Arc<RwLock<HashMap<String, PairingHandle>>>,
+    /// agent_id → oneshot sender for pending log requests.
+    pub log_requests: Arc<RwLock<HashMap<Uuid, oneshot::Sender<Vec<String>>>>>,
 }
 
 impl AppState {
@@ -43,6 +45,7 @@ impl AppState {
             jwt_expiry_hours,
             online: Arc::new(RwLock::new(HashMap::new())),
             pending: Arc::new(RwLock::new(HashMap::new())),
+            log_requests: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 

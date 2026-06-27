@@ -126,6 +126,10 @@
   "agent.dropdown_unmanaged": "— non géré —",
   "agent.btn_link": "Lier",
   "agent.empty_users": "Aucun utilisateur découvert. L'agent signale les utilisateurs à la première connexion.",
+  "agent.card_recent_logs": "Journaux récents",
+  "agent.btn_load_logs": "Charger les journaux",
+  "agent.btn_refresh_logs": "Actualiser",
+  "agent.logs_offline": "Agent hors ligne",
 
   "flash.session_expired": "Votre session a expiré — veuillez vous reconnecter.",
   "flash.server_unreachable": "Impossible de joindre le serveur à {server}",

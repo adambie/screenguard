@@ -126,6 +126,10 @@
   "agent.dropdown_unmanaged": "— niezarządzany —",
   "agent.btn_link": "Połącz",
   "agent.empty_users": "Brak wykrytych użytkowników. Agent raportuje użytkowników przy pierwszym połączeniu.",
+  "agent.card_recent_logs": "Ostatnie logi",
+  "agent.btn_load_logs": "Załaduj logi",
+  "agent.btn_refresh_logs": "Odśwież",
+  "agent.logs_offline": "Agent offline",
 
   "flash.session_expired": "Twoja sesja wygasła — zaloguj się ponownie.",
   "flash.server_unreachable": "Nie można połączyć się z serwerem pod adresem {server}",

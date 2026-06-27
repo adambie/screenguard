@@ -17,6 +17,9 @@ pub const MSG_CONFIG_RELOAD: &str = "config_reload";
 pub const MSG_NOTIFY_USER: &str = "notify_user";
 pub const MSG_UNPAIR: &str = "unpair";
 
+pub const MSG_FETCH_LOGS: &str = "fetch_logs";
+pub const MSG_LOG_RESPONSE: &str = "log_response";
+
 // ── Agent → Server ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +99,14 @@ pub struct NotifyUser {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unpair {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchLogs {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogResponse {
+    pub lines: Vec<String>,
+}
+
 // ── Typed inbound envelope (server → agent) ───────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -107,5 +118,6 @@ pub enum ServerMessage {
     NotifyUser(NotifyUser),
     ConfigReload,
     Unpair,
+    FetchLogs,
     Unknown(String),
 }

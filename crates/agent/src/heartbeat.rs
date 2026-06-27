@@ -5,6 +5,7 @@ use common::messages::{
     MSG_AGENT_HELLO, MSG_HEARTBEAT, MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
 };
 use common::models::{EnforceAction, LocalUser, UsageEntry};
+use common::protocol::WssMessage;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -422,6 +423,14 @@ impl HeartbeatLoop {
                 tracing::debug!("Unknown message type from server: {t}");
             }
             ServerMessage::PairingAccepted(_) => {}
+            ServerMessage::FetchLogs => {
+                let lines = collect_recent_logs();
+                let msg = WssMessage::new(
+                    common::messages::MSG_LOG_RESPONSE,
+                    &common::messages::LogResponse { lines },
+                )?;
+                self.outbound_tx.send(msg).await?;
+            }
         }
         Ok(())
     }
@@ -446,6 +455,7 @@ impl HeartbeatLoop {
 
         for t in to_notify {
             notified.insert(t);
+            tracing::info!("uid={uid}: warning threshold reached — {remaining}m remaining");
             let title = crate::i18n::notif_warning_title(&language).to_string();
             let body = crate::i18n::notif_warning_body(&language, remaining);
             tokio::spawn(async move {
@@ -680,4 +690,17 @@ fn local_timezone() -> String {
          Fix with: timedatectl set-timezone <your-timezone>"
     );
     "UTC".to_string()
+}
+
+fn collect_recent_logs() -> Vec<String> {
+    let output = std::process::Command::new("journalctl")
+        .args(["-u", "screenguard-agent", "-n", "50", "--no-pager", "--output=short-iso"])
+        .output();
+    match output {
+        Ok(out) => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.to_string())
+            .collect(),
+        Err(e) => vec![format!("Failed to read journal: {e}")],
+    }
 }

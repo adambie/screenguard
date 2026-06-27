@@ -1,9 +1,9 @@
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use common::messages::{
-    AgentHello, Heartbeat, PairingAccepted, PairingRequest, RemainingUpdate, Unpair,
+    AgentHello, Heartbeat, LogResponse, PairingAccepted, PairingRequest, RemainingUpdate, Unpair,
     UsageSync, UserListUpdate, MSG_AGENT_HELLO, MSG_CONFIG_PUSH, MSG_HEARTBEAT,
-    MSG_PAIRING_ACCEPTED, MSG_PAIRING_REQUEST, MSG_REMAINING_UPDATE, MSG_UNPAIR,
+    MSG_LOG_RESPONSE, MSG_PAIRING_ACCEPTED, MSG_PAIRING_REQUEST, MSG_REMAINING_UPDATE, MSG_UNPAIR,
     MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
 };
 use common::protocol::WssMessage;
@@ -298,6 +298,13 @@ async fn handle_agent_message(
                 if let Some(au) = db::get_agent_user(&state.db, agent_id, entry.local_uid)? {
                     db::add_usage_seconds(&state.db, au.id, &date_str, entry.used_seconds as i64)?;
                 }
+            }
+        }
+
+        MSG_LOG_RESPONSE => {
+            let resp: LogResponse = envelope.parse_payload()?;
+            if let Some(tx) = state.log_requests.write().await.remove(&agent_id) {
+                let _ = tx.send(resp.lines);
             }
         }
 

@@ -14,7 +14,7 @@ import requests
 from datetime import date, timedelta, datetime, timezone
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, g, send_from_directory)
+                   session, flash, g, send_from_directory, jsonify)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -286,6 +286,16 @@ def force_delete_agent(agent_id):
     flash(t("flash.agent_removed") if (r and r.ok) else t("flash.force_delete_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("agents"))
+
+
+@app.route("/agents/<agent_id>/logs")
+@require_login
+def agent_logs(agent_id):
+    r = api("GET", f"/agents/{agent_id}/logs")
+    if r and r.ok:
+        return jsonify(r.json())
+    error = r.json().get("error", "Unknown error") if r else "Request failed"
+    return jsonify({"error": error}), (r.status_code if r else 500)
 
 
 @app.route("/agents/<agent_id>/rename", methods=["POST"])

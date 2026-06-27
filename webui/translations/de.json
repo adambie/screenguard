@@ -126,6 +126,10 @@
   "agent.dropdown_unmanaged": "— nicht verwaltet —",
   "agent.btn_link": "Verknüpfen",
   "agent.empty_users": "Noch keine Benutzer erkannt. Der Agent meldet Benutzer bei der ersten Verbindung.",
+  "agent.card_recent_logs": "Aktuelle Protokolle",
+  "agent.btn_load_logs": "Protokolle laden",
+  "agent.btn_refresh_logs": "Aktualisieren",
+  "agent.logs_offline": "Agent offline",
 
   "flash.session_expired": "Ihre Sitzung ist abgelaufen — bitte melden Sie sich erneut an.",
   "flash.server_unreachable": "Server unter {server} nicht erreichbar",

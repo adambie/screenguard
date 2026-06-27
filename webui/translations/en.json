@@ -126,6 +126,10 @@
   "agent.dropdown_unmanaged": "— unmanaged —",
   "agent.btn_link": "Link",
   "agent.empty_users": "No users discovered yet. The agent reports users on first connection.",
+  "agent.card_recent_logs": "Recent logs",
+  "agent.btn_load_logs": "Load logs",
+  "agent.btn_refresh_logs": "Refresh",
+  "agent.logs_offline": "Agent offline",
 
   "flash.session_expired": "Your session has expired — please log in again.",
   "flash.server_unreachable": "Cannot reach server at {server}",
