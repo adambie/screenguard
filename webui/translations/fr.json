@@ -181,6 +181,9 @@
   "settings.label_timezone": "Fuseau horaire",
   "settings.btn_save": "Enregistrer",
   "settings.current_timezone": "Fuseau horaire actuel",
+  "settings.card_display": "Affichage",
+  "settings.show_logs": "Afficher les journaux de l'agent",
+  "settings.show_logs_hint": "Affiche ou masque la carte des journaux sur la page de détail de chaque agent.",
   "flash.settings_saved": "Paramètres enregistrés",
   "flash.settings_error": "Erreur lors de l'enregistrement"
 }

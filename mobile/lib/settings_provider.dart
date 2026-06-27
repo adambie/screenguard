@@ -45,3 +45,23 @@ class LanguageNotifier extends StateNotifier<String?> {
 
 final languageProvider =
     StateNotifierProvider<LanguageNotifier, String?>((ref) => LanguageNotifier());
+
+class ShowLogsNotifier extends StateNotifier<bool> {
+  ShowLogsNotifier() : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('show_agent_logs') ?? true;
+  }
+
+  Future<void> set(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('show_agent_logs', value);
+  }
+}
+
+final showLogsProvider =
+    StateNotifierProvider<ShowLogsNotifier, bool>((ref) => ShowLogsNotifier());

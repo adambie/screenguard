@@ -139,6 +139,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final l = AppLocalizations.of(context);
     final themeMode = ref.watch(themeModeProvider);
     final language = ref.watch(languageProvider);
+    final showLogs = ref.watch(showLogsProvider);
 
     final langOptions = [
       (code: null as String?, name: l.languageAuto),
@@ -195,6 +196,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   .toList(),
               onChanged: (v) => ref.read(languageProvider.notifier).set(v),
             ),
+          ),
+          SwitchListTile(
+            title: Text(l.showAgentLogs),
+            subtitle: Text(l.showAgentLogsHint,
+                style: const TextStyle(fontSize: 12)),
+            value: showLogs,
+            onChanged: (v) => ref.read(showLogsProvider.notifier).set(v),
           ),
           const Divider(),
           Padding(

@@ -181,6 +181,9 @@
   "settings.label_timezone": "Fuso horário",
   "settings.btn_save": "Salvar",
   "settings.current_timezone": "Fuso horário atual",
+  "settings.card_display": "Exibição",
+  "settings.show_logs": "Mostrar registros do agente",
+  "settings.show_logs_hint": "Exibe ou oculta o cartão de registros na página de detalhes de cada agente.",
   "flash.settings_saved": "Configurações salvas",
   "flash.settings_error": "Erro ao salvar as configurações"
 }

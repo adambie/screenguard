@@ -181,6 +181,9 @@
   "settings.label_timezone": "Timezone",
   "settings.btn_save": "Save",
   "settings.current_timezone": "Current timezone",
+  "settings.card_display": "Display",
+  "settings.show_logs": "Show agent logs",
+  "settings.show_logs_hint": "Show or hide the logs card on each agent's detail page.",
   "flash.settings_saved": "Settings saved",
   "flash.settings_error": "Failed to save settings"
 }

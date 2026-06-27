@@ -181,6 +181,9 @@
   "settings.label_timezone": "Strefa czasowa",
   "settings.btn_save": "Zapisz",
   "settings.current_timezone": "Aktualna strefa czasowa",
+  "settings.card_display": "Wyświetlanie",
+  "settings.show_logs": "Pokaż logi agenta",
+  "settings.show_logs_hint": "Pokaż lub ukryj kartę logów na stronie szczegółów każdego agenta.",
   "flash.settings_saved": "Ustawienia zapisane",
   "flash.settings_error": "Błąd zapisu ustawień"
 }

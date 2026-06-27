@@ -176,6 +176,12 @@
 </div>
 
 <script>
+(function() {
+  if (localStorage.getItem('show_agent_logs') === 'false') {
+    document.getElementById('logs-card').style.display = 'none';
+  }
+})();
+
 function loadLogs() {
   const btn = document.getElementById('logs-btn');
   const body = document.getElementById('logs-body');

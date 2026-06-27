@@ -181,6 +181,9 @@
   "settings.label_timezone": "Zona horaria",
   "settings.btn_save": "Guardar",
   "settings.current_timezone": "Zona horaria actual",
+  "settings.card_display": "Pantalla",
+  "settings.show_logs": "Mostrar registros del agente",
+  "settings.show_logs_hint": "Muestra u oculta la tarjeta de registros en la página de detalle de cada agente.",
   "flash.settings_saved": "Configuración guardada",
   "flash.settings_error": "Error al guardar la configuración"
 }

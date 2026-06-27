@@ -173,6 +173,8 @@ class AppLocalizations {
   String get refreshLogs => _t('refreshLogs');
   String get agentOfflineLogs => _t('agentOfflineLogs');
   String get logsEmpty => _t('logsEmpty');
+  String get showAgentLogs => _t('showAgentLogs');
+  String get showAgentLogsHint => _t('showAgentLogsHint');
 
   // Localized time ago
   String timeAgo(int? unixSeconds) {
@@ -303,6 +305,8 @@ class AppLocalizations {
     'recentLogs': 'Recent logs', 'loadLogs': 'Load logs', 'refreshLogs': 'Refresh',
     'agentOfflineLogs': 'Agent is offline — connect it to load logs',
     'logsEmpty': 'No log lines returned',
+    'showAgentLogs': 'Show agent logs',
+    'showAgentLogsHint': 'Show or hide the logs section on each agent\'s detail page',
     'never': 'never', 'justNow': 'just now',
     'minutesAgo': '{n}m ago', 'hoursAgo': '{n}h ago', 'daysAgo': '{n}d ago',
     'day0': 'Mon', 'day1': 'Tue', 'day2': 'Wed', 'day3': 'Thu',
@@ -409,6 +413,8 @@ class AppLocalizations {
     'recentLogs': 'Ostatnie logi', 'loadLogs': 'Załaduj logi', 'refreshLogs': 'Odśwież',
     'agentOfflineLogs': 'Agent jest offline — połącz go, aby załadować logi',
     'logsEmpty': 'Brak wierszy dziennika',
+    'showAgentLogs': 'Pokaż logi agenta',
+    'showAgentLogsHint': 'Pokaż lub ukryj sekcję logów na stronie szczegółów każdego agenta',
     'never': 'nigdy', 'justNow': 'przed chwilą',
     'minutesAgo': '{n} min temu', 'hoursAgo': '{n} h temu', 'daysAgo': '{n} dni temu',
     'day0': 'Pon', 'day1': 'Wt', 'day2': 'Śr', 'day3': 'Czw',
@@ -515,6 +521,8 @@ class AppLocalizations {
     'recentLogs': 'Registros recientes', 'loadLogs': 'Cargar registros', 'refreshLogs': 'Actualizar',
     'agentOfflineLogs': 'El agente está desconectado — conéctalo para cargar registros',
     'logsEmpty': 'No se devolvieron líneas de registro',
+    'showAgentLogs': 'Mostrar registros del agente',
+    'showAgentLogsHint': 'Muestra u oculta la sección de registros en la página de detalle de cada agente',
     'never': 'nunca', 'justNow': 'ahora mismo',
     'minutesAgo': 'hace {n}m', 'hoursAgo': 'hace {n}h', 'daysAgo': 'hace {n}d',
     'day0': 'Lun', 'day1': 'Mar', 'day2': 'Mié', 'day3': 'Jue',
@@ -621,6 +629,8 @@ class AppLocalizations {
     'recentLogs': 'Journaux récents', 'loadLogs': 'Charger les journaux', 'refreshLogs': 'Actualiser',
     'agentOfflineLogs': "L'agent est hors ligne — connectez-le pour charger les journaux",
     'logsEmpty': 'Aucune ligne de journal retournée',
+    'showAgentLogs': "Afficher les journaux de l'agent",
+    'showAgentLogsHint': "Affiche ou masque la section des journaux sur la page de détail de chaque agent",
     'never': 'jamais', 'justNow': "à l'instant",
     'minutesAgo': 'il y a {n}m', 'hoursAgo': 'il y a {n}h', 'daysAgo': 'il y a {n}j',
     'day0': 'Lun', 'day1': 'Mar', 'day2': 'Mer', 'day3': 'Jeu',
@@ -727,6 +737,8 @@ class AppLocalizations {
     'recentLogs': 'Aktuelle Protokolle', 'loadLogs': 'Protokolle laden', 'refreshLogs': 'Aktualisieren',
     'agentOfflineLogs': 'Agent ist offline — verbinden Sie ihn, um Protokolle zu laden',
     'logsEmpty': 'Keine Protokollzeilen zurückgegeben',
+    'showAgentLogs': 'Agentprotokolle anzeigen',
+    'showAgentLogsHint': 'Protokollbereich auf der Detailseite jedes Agenten ein- oder ausblenden',
     'never': 'nie', 'justNow': 'gerade eben',
     'minutesAgo': 'vor {n} Min.', 'hoursAgo': 'vor {n} Std.', 'daysAgo': 'vor {n} Tagen',
     'day0': 'Mo', 'day1': 'Di', 'day2': 'Mi', 'day3': 'Do',
@@ -833,6 +845,8 @@ class AppLocalizations {
     'recentLogs': 'Registos recentes', 'loadLogs': 'Carregar registos', 'refreshLogs': 'Atualizar',
     'agentOfflineLogs': 'O agente está offline — conecte-o para carregar registos',
     'logsEmpty': 'Nenhuma linha de registo devolvida',
+    'showAgentLogs': 'Mostrar registros do agente',
+    'showAgentLogsHint': 'Exibe ou oculta a seção de registros na página de detalhes de cada agente',
     'never': 'nunca', 'justNow': 'agora mesmo',
     'minutesAgo': '{n} min atrás', 'hoursAgo': '{n} h atrás', 'daysAgo': '{n} d atrás',
     'day0': 'Seg', 'day1': 'Ter', 'day2': 'Qua', 'day3': 'Qui',

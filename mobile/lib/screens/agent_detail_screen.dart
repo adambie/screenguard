@@ -6,6 +6,7 @@ import '../auth_provider.dart';
 import '../data_providers.dart';
 import '../l10n.dart';
 import '../models.dart';
+import '../settings_provider.dart';
 
 class AgentDetailScreen extends ConsumerStatefulWidget {
   final String agentId;
@@ -250,8 +251,10 @@ class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
                   const SizedBox(height: 16),
                 ],
                 _buildUsersCard(context, usersAsync, profilesAsync),
-                const SizedBox(height: 16),
-                _buildLogsCard(context, agent),
+                if (ref.watch(showLogsProvider)) ...[
+                  const SizedBox(height: 16),
+                  _buildLogsCard(context, agent),
+                ],
                 const SizedBox(height: 32),
               ],
             ),

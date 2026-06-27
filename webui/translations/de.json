@@ -181,6 +181,9 @@
   "settings.label_timezone": "Zeitzone",
   "settings.btn_save": "Speichern",
   "settings.current_timezone": "Aktuelle Zeitzone",
+  "settings.card_display": "Anzeige",
+  "settings.show_logs": "Agentprotokolle anzeigen",
+  "settings.show_logs_hint": "Protokollkarte auf der Detailseite jedes Agenten ein- oder ausblenden.",
   "flash.settings_saved": "Einstellungen gespeichert",
   "flash.settings_error": "Fehler beim Speichern der Einstellungen"
 }
