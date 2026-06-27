@@ -45,3 +45,4 @@ jobs:
         with:
           files: dist/screenguard-android-*.apk
           generate_release_notes: true
+          make_latest: false
