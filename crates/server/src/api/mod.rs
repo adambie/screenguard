@@ -23,6 +23,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/auth/login", post(auth::login));
 
     let protected = Router::new()
+        // Auth (me)
+        .route("/auth/me", get(auth::get_me).patch(auth::patch_me))
         // Agents
         .route("/agents", get(agents::list_agents))
         .route("/agents/{id}", get(agents::get_agent).patch(agents::patch_agent).delete(agents::delete_agent))
@@ -58,7 +60,7 @@ pub fn router(state: Arc<AppState>) -> Router {
 async fn require_auth(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let token = headers
@@ -69,12 +71,14 @@ async fn require_auth(
             (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Missing token" })))
         })?;
 
-    decode::<auth::Claims>(
+    let claims = decode::<auth::Claims>(
         token,
         &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
         &Validation::default(),
     )
-    .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?
+    .claims;
 
+    req.extensions_mut().insert(claims);
     Ok(next.run(req).await)
 }

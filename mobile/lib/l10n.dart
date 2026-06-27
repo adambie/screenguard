@@ -212,6 +212,12 @@ class AppLocalizations {
   String get languageAuto => _t('languageAuto');
   String get account => _t('account');
 
+  // Admin timezone
+  String get adminTimezone => _t('adminTimezone');
+  String get selectTimezone => _t('selectTimezone');
+  String get search => _t('search');
+  String get notSet => _t('notSet');
+
   // ---------------------------------------------------------------------------
   static const _en = <String, String>{
     'profiles': 'Profiles', 'devices': 'Devices', 'settings': 'Settings',
@@ -313,6 +319,10 @@ class AppLocalizations {
     'appDescription': 'Parental control software for managing screen time and device usage.',
     'author': 'Author', 'version': 'Version',
     'sourceCode': 'Source code', 'licenses': 'Licenses',
+    'adminTimezone': 'Admin timezone',
+    'selectTimezone': 'Select timezone',
+    'search': 'Search...',
+    'notSet': 'Not set',
   };
 
   static const _pl = <String, String>{
@@ -415,6 +425,10 @@ class AppLocalizations {
     'appDescription': 'Oprogramowanie do kontroli rodzicielskiej do zarządzania czasem ekranu i użytkowaniem urządzeń.',
     'author': 'Autor', 'version': 'Wersja',
     'sourceCode': 'Kod źródłowy', 'licenses': 'Licencje',
+    'adminTimezone': 'Strefa czasowa administratora',
+    'selectTimezone': 'Wybierz strefę czasową',
+    'search': 'Szukaj...',
+    'notSet': 'Nie ustawiono',
   };
 
   static const _es = <String, String>{
@@ -517,6 +531,10 @@ class AppLocalizations {
     'appDescription': 'Software de control parental para gestionar el tiempo de pantalla y el uso de dispositivos.',
     'author': 'Autor', 'version': 'Versión',
     'sourceCode': 'Código fuente', 'licenses': 'Licencias',
+    'adminTimezone': 'Zona horaria del administrador',
+    'selectTimezone': 'Seleccionar zona horaria',
+    'search': 'Buscar...',
+    'notSet': 'No configurado',
   };
 
   static const _fr = <String, String>{
@@ -534,29 +552,29 @@ class AppLocalizations {
     'serverAddressHint': '192.168.1.10:8080 ou https://hôte',
     'connectManually': 'Se connecter manuellement',
     'cannotReachAt': 'Impossible de joindre le serveur à {url}',
-    'cannotReachAddr': 'Impossible de joindre le serveur. Vérifiez l’adresse et le port.',
+    'cannotReachAddr': "Impossible de joindre le serveur. Vérifiez l'adresse et le port.",
     'signIn': 'Se connecter', 'createAdmin': 'Créer un compte administrateur',
     'createAdminDesc': 'Créez des identifiants administrateur pour votre serveur.',
     'signInDesc': 'Connectez-vous pour gérer le contrôle parental.',
-    'username': "Nom d’utilisateur", 'password': 'Mot de passe',
+    'username': "Nom d'utilisateur", 'password': 'Mot de passe',
     'createAccount': 'Créer un compte',
     'connectionError': 'Erreur de connexion. Veuillez réessayer.',
     'newProfile': 'Nouveau profil', 'profileNameLabel': 'Nom',
     'noProfilesYet': 'Aucun profil. Appuyez sur + pour en créer un.',
     'locked': 'Verrouillé', 'profileTitle': 'Profil',
-    'devicesWaiting': "{n} appareil(s) en attente d’approbation",
+    'devicesWaiting': "{n} appareil(s) en attente d'approbation",
     'devicesOnline': '{a}/{b} appareils en ligne',
     'usedNoLimit': '{u} utilisé · sans limite',
     'usedWithLimit': '{u} utilisé · {r} restant sur {l}',
-    'today': "Aujourd’hui", 'noLimit': 'Sans limite',
+    'today': "Aujourd'hui", 'noLimit': 'Sans limite',
     'adjust': 'Ajuster', 'reset': 'Réinitialiser', 'apply': 'Appliquer',
     'lockNow': 'Verrouiller maintenant',
     'lockNowConfirmTitle': 'Verrouiller maintenant ?',
-    'lockNowConfirmBody': "Cela remettra à zéro le temps d’écran restant d’aujourd’hui.",
+    'lockNowConfirmBody': "Cela remettra à zéro le temps d'écran restant d'aujourd'hui.",
     'message': 'Message', 'sendMessage': 'Envoyer un message',
-    'messageToUser': "Message à l’utilisateur…",
+    'messageToUser': "Message à l'utilisateur…",
     'messageSent': 'Message envoyé', 'timeAdjusted': 'Temps ajusté',
-    'screenTimeLocked': "Temps d’écran verrouillé",
+    'screenTimeLocked': "Temps d'écran verrouillé",
     'usedOf': '{u} utilisé', 'usedOfLimit': '{u} utilisé sur {l}',
     'timeAdjustmentLabel': 'ajustement {a}',
     'limitsSaved': 'Limites enregistrées', 'scheduleSaved': 'Programme enregistré',
@@ -567,43 +585,43 @@ class AppLocalizations {
     'deleteProfileTitle': 'Supprimer le profil ?',
     'deleteProfileBody': 'Cela supprimera définitivement le profil et tous ses paramètres.',
     'dailyLimits': 'Limites quotidiennes',
-    'dailyLimitsDesc': "Temps d’écran maximum par jour. Laissez vide pour sans limite.",
+    'dailyLimitsDesc': "Temps d'écran maximum par jour. Laissez vide pour sans limite.",
     'saveLimits': 'Enregistrer les limites',
     'noLimitShort': 'Sans limite', 'blocked': 'Bloqué',
     'block': 'Bloquer', 'clear': 'Effacer', 'addLimit': 'Ajouter une limite',
     'timeWindows': 'Plages horaires autorisées',
-    'timeWindowsDesc': "Le temps d’écran n’est autorisé que pendant ces plages.",
+    'timeWindowsDesc': "Le temps d'écran n'est autorisé que pendant ces plages.",
     'noWindows': 'Aucune plage définie — toutes les heures autorisées.',
     'addWindow': 'Ajouter une plage', 'saveWindows': 'Enregistrer les plages',
     'addTimeWindow': 'Ajouter une plage horaire', 'editTimeWindow': 'Modifier la plage horaire',
     'dayLabel': 'Jour', 'start': 'Début', 'end': 'Fin',
     'chartUsage': 'Utilisation',
     'noDevicesYet': 'Aucun appareil enregistré',
-    'noDevicesDesc': "Installez l’agent sur un ordinateur géré pour commencer.",
+    'noDevicesDesc': "Installez l'agent sur un ordinateur géré pour commencer.",
     'userCount': '{n} utilisateur(s)',
     'statusPending': 'En attente', 'statusRemoving': 'Suppression',
     'statusDisabled': 'Désactivé', 'statusOnline': 'En ligne', 'statusOffline': 'Hors ligne',
     'deviceTitle': 'Appareil',
-    'waitingApproval': "En attente d’approbation",
-    'pairingCode': 'Code de jumelage', 'acceptDevice': "Accepter l’appareil",
+    'waitingApproval': "En attente d'approbation",
+    'pairingCode': 'Code de jumelage', 'acceptDevice': "Accepter l'appareil",
     'managedUsers': 'Utilisateurs gérés', 'noUsersYet': 'Aucun utilisateur détecté.',
-    'renameDevice': "Renommer l’appareil",
-    'deleteDeviceTitle': "Supprimer l’appareil ?",
-    'deleteDeviceBody': "L’appareil sera dissocié lors de sa prochaine connexion.",
+    'renameDevice': "Renommer l'appareil",
+    'deleteDeviceTitle': "Supprimer l'appareil ?",
+    'deleteDeviceBody': "L'appareil sera dissocié lors de sa prochaine connexion.",
     'forceRemoveTitle': 'Suppression forcée ?',
-    'forceRemoveBody': "L’enregistrement de l’appareil sera immédiatement supprimé définitivement du serveur.",
+    'forceRemoveBody': "L'enregistrement de l'appareil sera immédiatement supprimé définitivement du serveur.",
     'forceRemoveMenu': 'Suppression forcée',
     'userLinked': 'Utilisateur lié', 'userUnlinked': 'Utilisateur dissocié',
     'deviceAccepted': 'Appareil accepté', 'deletionCancelled': 'Suppression annulée',
     'unmanaged': 'Non géré', 'undoDeletion': 'Annuler la suppression',
     'copiedToClipboard': 'Copié dans le presse-papiers',
     'lastSeen': 'Dernière connexion', 'timezone': 'Fuseau horaire',
-    'agentVersion': 'Version', 'machineId': 'ID machine', 'copyId': "Copier l’ID",
+    'agentVersion': 'Version', 'machineId': 'ID machine', 'copyId': "Copier l'ID",
     'statusPendingApproval': "Approbation en attente", 'statusPendingRemoval': "Suppression en attente",
     'recentLogs': 'Journaux récents', 'loadLogs': 'Charger les journaux', 'refreshLogs': 'Actualiser',
     'agentOfflineLogs': "L'agent est hors ligne — connectez-le pour charger les journaux",
     'logsEmpty': 'Aucune ligne de journal retournée',
-    'never': 'jamais', 'justNow': "à l’instant",
+    'never': 'jamais', 'justNow': "à l'instant",
     'minutesAgo': 'il y a {n}m', 'hoursAgo': 'il y a {n}h', 'daysAgo': 'il y a {n}j',
     'day0': 'Lun', 'day1': 'Mar', 'day2': 'Mer', 'day3': 'Jeu',
     'day4': 'Ven', 'day5': 'Sam', 'day6': 'Dim',
@@ -613,12 +631,16 @@ class AppLocalizations {
     'dayLetter4': 'V', 'dayLetter5': 'S', 'dayLetter6': 'D',
     'settingsTitle': 'Paramètres', 'appearance': 'Apparence', 'theme': 'Thème',
     'themeSystem': 'Système', 'themeLight': 'Clair', 'themeDark': 'Sombre',
-    'language': 'Langue', 'appLanguage': "Langue de l’application",
+    'language': 'Langue', 'appLanguage': "Langue de l'application",
     'languageAuto': 'Système (auto)', 'account': 'Compte',
     'about': 'À propos', 'aboutTitle': 'À propos de ScreenGuard',
     'appDescription': 'Logiciel de contrôle parental pour gérer le temps d\'écran et l\'utilisation des appareils.',
     'author': 'Auteur', 'version': 'Version',
     'sourceCode': 'Code source', 'licenses': 'Licences',
+    'adminTimezone': 'Fuseau horaire administrateur',
+    'selectTimezone': 'Choisir un fuseau horaire',
+    'search': 'Rechercher...',
+    'notSet': 'Non défini',
   };
 
   static const _de = <String, String>{
@@ -721,6 +743,10 @@ class AppLocalizations {
     'appDescription': 'Kindersicherungssoftware zur Verwaltung von Bildschirmzeit und Gerätenutzung.',
     'author': 'Autor', 'version': 'Version',
     'sourceCode': 'Quellcode', 'licenses': 'Lizenzen',
+    'adminTimezone': 'Administrator-Zeitzone',
+    'selectTimezone': 'Zeitzone auswählen',
+    'search': 'Suchen...',
+    'notSet': 'Nicht gesetzt',
   };
 
   static const _pt = <String, String>{
@@ -823,6 +849,10 @@ class AppLocalizations {
     'appDescription': 'Software de controle parental para gerenciar o tempo de tela e o uso de dispositivos.',
     'author': 'Autor', 'version': 'Versão',
     'sourceCode': 'Código-fonte', 'licenses': 'Licenças',
+    'adminTimezone': 'Fuso horário do administrador',
+    'selectTimezone': 'Selecionar fuso horário',
+    'search': 'Pesquisar...',
+    'notSet': 'Não definido',
   };
 
   static const _strings = <String, Map<String, String>>{

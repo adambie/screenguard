@@ -116,6 +116,29 @@ def fmt_mins(m):
 SERVER = os.environ.get("SERVER_URL", "http://localhost:8080").rstrip("/")
 API = f"{SERVER}/api/v1"
 
+COMMON_TIMEZONES = [
+    ("Africa", ["Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi"]),
+    ("America", ["America/Anchorage", "America/Argentina/Buenos_Aires", "America/Bogota",
+                 "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Mexico_City",
+                 "America/New_York", "America/Phoenix", "America/Sao_Paulo", "America/Toronto",
+                 "America/Vancouver"]),
+    ("Asia", ["Asia/Bangkok", "Asia/Colombo", "Asia/Dubai", "Asia/Hong_Kong", "Asia/Jakarta",
+              "Asia/Karachi", "Asia/Kolkata", "Asia/Kuala_Lumpur", "Asia/Seoul",
+              "Asia/Shanghai", "Asia/Singapore", "Asia/Taipei", "Asia/Tokyo"]),
+    ("Atlantic", ["Atlantic/Reykjavik"]),
+    ("Australia", ["Australia/Adelaide", "Australia/Brisbane", "Australia/Melbourne",
+                   "Australia/Perth", "Australia/Sydney"]),
+    ("Europe", ["Europe/Amsterdam", "Europe/Athens", "Europe/Belgrade", "Europe/Berlin",
+                "Europe/Brussels", "Europe/Bucharest", "Europe/Budapest", "Europe/Copenhagen",
+                "Europe/Dublin", "Europe/Helsinki", "Europe/Istanbul", "Europe/Kiev",
+                "Europe/Lisbon", "Europe/London", "Europe/Madrid", "Europe/Moscow",
+                "Europe/Oslo", "Europe/Paris", "Europe/Prague", "Europe/Rome",
+                "Europe/Sofia", "Europe/Stockholm", "Europe/Vienna", "Europe/Warsaw",
+                "Europe/Zurich"]),
+    ("Pacific", ["Pacific/Auckland", "Pacific/Fiji", "Pacific/Honolulu"]),
+    ("UTC", ["UTC"]),
+]
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -521,6 +544,25 @@ def lock_now(profile_id):
     flash(t("flash.locked") if (r and r.ok) else t("flash.lock_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
+
+
+# ── settings ──────────────────────────────────────────────────────────────────
+
+@app.route("/settings", methods=["GET", "POST"])
+@require_login
+def settings():
+    if request.method == "POST":
+        timezone = request.form.get("timezone", "").strip()
+        if timezone:
+            r = api("PATCH", "/auth/me", json={"timezone": timezone})
+            if r and r.ok:
+                flash(t("flash.settings_saved"), "success")
+            else:
+                flash(t("flash.settings_error"), "danger")
+        return redirect(url_for("settings"))
+    r = api("GET", "/auth/me")
+    me = r.json() if r and r.ok else {}
+    return render_template("settings.html", me=me, timezones=COMMON_TIMEZONES)
 
 
 # ── run ───────────────────────────────────────────────────────────────────────

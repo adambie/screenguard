@@ -1,4 +1,4 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::{Extension, State}, http::StatusCode, Json};
 use chrono::Utc;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
@@ -13,13 +13,20 @@ pub struct AuthRequest {
     pub password: String,
 }
 
+#[derive(Deserialize)]
+pub struct SetupBody {
+    pub username: String,
+    pub password: String,
+    pub timezone: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct LoginResponse {
     pub token: String,
     pub expires_at: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // admin user id
     pub exp: usize,
@@ -34,7 +41,7 @@ pub async fn status(
 
 pub async fn setup(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<AuthRequest>,
+    Json(body): Json<SetupBody>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     let count = db::admin_count(&state.db).map_err(internal)?;
     if count > 0 {
@@ -51,7 +58,13 @@ pub async fn setup(
     }
 
     let hash = hash_password(&body.password).map_err(internal)?;
-    db::create_admin(&state.db, &body.username, &hash).map_err(internal)?;
+    let admin_id = db::create_admin(&state.db, &body.username, &hash).map_err(internal)?;
+
+    if let Some(tz) = &body.timezone {
+        if tz.parse::<chrono_tz::Tz>().is_ok() {
+            let _ = db::update_admin_timezone(&state.db, admin_id, tz);
+        }
+    }
 
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "message": "Admin account created" }))))
 }
@@ -108,4 +121,42 @@ pub fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, Json<serde_json::Val
 
 pub fn not_found() -> (StatusCode, Json<serde_json::Value>) {
     (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Not found" })))
+}
+
+pub async fn get_me(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let id: uuid::Uuid = claims.sub.parse()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    let admin = db::get_admin_user_by_id(&state.db, id)
+        .map_err(internal)?
+        .ok_or_else(not_found)?;
+    Ok(Json(serde_json::json!({
+        "id": admin.id,
+        "username": admin.username,
+        "timezone": admin.timezone,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct PatchMeBody {
+    pub timezone: Option<String>,
+}
+
+pub async fn patch_me(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<PatchMeBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let id: uuid::Uuid = claims.sub.parse()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    if let Some(tz) = &body.timezone {
+        if tz.parse::<chrono_tz::Tz>().is_err() {
+            return Err((StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({ "error": "Invalid timezone" }))));
+        }
+        db::update_admin_timezone(&state.db, id, tz).map_err(internal)?;
+    }
+    Ok(Json(serde_json::json!({ "message": "Profile updated" })))
 }

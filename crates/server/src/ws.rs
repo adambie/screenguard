@@ -279,10 +279,12 @@ async fn handle_agent_message(
                 .map(|u| (u.local_uid, u.active_seconds_since_last))
                 .collect();
 
+            let admin_tz = db::get_admin_timezone(&state.db).unwrap_or_else(|_| "UTC".to_string());
             let entries = remaining::calculate_remaining_for_agent(
                 &state.db,
                 agent_id,
                 &agent.timezone,
+                &admin_tz,
                 &hb_input,
             )?;
 

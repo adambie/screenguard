@@ -170,5 +170,17 @@
   "lang.fr": "Français",
   "lang.de": "Deutsch",
   "lang.pt": "Português",
-  "lang.pl": "Polski"
+  "lang.pl": "Polski",
+
+  "nav.settings": "Settings",
+
+  "settings.title": "Settings",
+  "settings.subtitle": "Configure your admin account preferences.",
+  "settings.card_timezone": "Your timezone",
+  "settings.timezone_hint": "Schedule windows are interpreted in your timezone and converted to each device's local time.",
+  "settings.label_timezone": "Timezone",
+  "settings.btn_save": "Save",
+  "settings.current_timezone": "Current timezone",
+  "flash.settings_saved": "Settings saved",
+  "flash.settings_error": "Failed to save settings"
 }

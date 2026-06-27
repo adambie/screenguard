@@ -170,5 +170,17 @@
   "lang.fr": "Français",
   "lang.de": "Deutsch",
   "lang.pt": "Português",
-  "lang.pl": "Polski"
+  "lang.pl": "Polski",
+
+  "nav.settings": "Configuración",
+
+  "settings.title": "Configuración",
+  "settings.subtitle": "Configure las preferencias de su cuenta de administrador.",
+  "settings.card_timezone": "Su zona horaria",
+  "settings.timezone_hint": "Las ventanas de horario se interpretan en su zona horaria y se convierten a la hora local de cada dispositivo.",
+  "settings.label_timezone": "Zona horaria",
+  "settings.btn_save": "Guardar",
+  "settings.current_timezone": "Zona horaria actual",
+  "flash.settings_saved": "Configuración guardada",
+  "flash.settings_error": "Error al guardar la configuración"
 }

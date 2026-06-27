@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Local, NaiveDate, NaiveTime};
+use chrono::{Local, NaiveDate, NaiveTime, TimeZone, Timelike};
 use common::messages::ConfigPush;
 use common::models::{
     DailyLimit as ModelDailyLimit, EnforceAction, RemainingEntry, Schedule as ModelSchedule,
@@ -16,6 +16,7 @@ pub fn calculate_remaining_for_agent(
     pool: &DbPool,
     agent_id: Uuid,
     agent_timezone: &str,
+    admin_timezone: &str,
     heartbeat_users: &[(u32, u32)], // (local_uid, active_seconds_since_last)
 ) -> Result<Vec<RemainingEntry>> {
     let today = today_in_timezone(agent_timezone);
@@ -67,11 +68,28 @@ pub fn calculate_remaining_for_agent(
         // 5. Remaining from limit.
         let mut remaining = (limit_minutes + adjustments - used_minutes).max(0);
 
-        // 6. Schedule window check.
+        // 6. Schedule window check (times converted from admin_tz to agent_tz).
         let schedules = db::get_schedules(pool, profile_id)?;
-        let (window_ends_at, next_window) = check_schedule_windows(&schedules, weekday, now_time);
+        let converted_schedules: Vec<crate::db::Schedule> = schedules.iter().map(|s| {
+            crate::db::Schedule {
+                id: s.id,
+                profile_id: s.profile_id,
+                day_of_week: s.day_of_week,
+                start_time: {
+                    let t = db::parse_time(&s.start_time).unwrap_or(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+                    let converted = schedule_time_in_agent_tz(t, admin_timezone, agent_timezone);
+                    format!("{:02}:{:02}", converted.hour(), converted.minute())
+                },
+                end_time: {
+                    let t = db::parse_time(&s.end_time).unwrap_or(NaiveTime::from_hms_opt(23, 59, 0).unwrap());
+                    let converted = schedule_time_in_agent_tz(t, admin_timezone, agent_timezone);
+                    format!("{:02}:{:02}", converted.hour(), converted.minute())
+                },
+            }
+        }).collect();
+        let (window_ends_at, next_window) = check_schedule_windows(&converted_schedules, weekday, now_time);
 
-        if window_ends_at.is_none() && !schedules.is_empty() {
+        if window_ends_at.is_none() && !converted_schedules.is_empty() {
             // Outside all windows — lock regardless of time remaining.
             entries.push(RemainingEntry {
                 local_uid: *local_uid,
@@ -174,6 +192,22 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Convert a naive schedule time from admin_tz to agent_tz, using today's UTC
+/// date for DST-aware conversion.
+fn schedule_time_in_agent_tz(naive: NaiveTime, admin_tz: &str, agent_tz: &str) -> NaiveTime {
+    if admin_tz == agent_tz {
+        return naive;
+    }
+    let a_tz: chrono_tz::Tz = admin_tz.parse().unwrap_or(chrono_tz::UTC);
+    let b_tz: chrono_tz::Tz = agent_tz.parse().unwrap_or(chrono_tz::UTC);
+    let today = chrono::Utc::now().date_naive();
+    let dt_in_admin = a_tz.from_local_datetime(&today.and_time(naive)).single();
+    match dt_in_admin {
+        Some(dt) => dt.with_timezone(&b_tz).time(),
+        None => naive, // ambiguous time (DST gap) — use as-is
+    }
+}
 
 fn today_in_timezone(tz: &str) -> NaiveDate {
     let tz: chrono_tz::Tz = tz.parse().unwrap_or(chrono_tz::UTC);

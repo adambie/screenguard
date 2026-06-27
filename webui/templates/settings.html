@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ t('settings.title') }} – ScreenGuard{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="h2 fw-bold mb-1">{{ t('settings.title') }}</h1>
+  <p class="text-secondary" style="font-size:13.5px">{{ t('settings.subtitle') }}</p>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">{{ t('settings.card_timezone') }}</div>
+      <div class="card-body">
+        <p class="text-secondary mb-3" style="font-size:13px">{{ t('settings.timezone_hint') }}</p>
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label small fw-medium">{{ t('settings.label_timezone') }}</label>
+            <select name="timezone" class="form-select">
+              {% for region, zones in timezones %}
+                <optgroup label="{{ region }}">
+                  {% for tz in zones %}
+                    <option value="{{ tz }}" {% if me.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">{{ t('settings.btn_save') }}</button>
+        </form>
+        {% if me.timezone %}
+        <p class="mt-2 mb-0 text-secondary" style="font-size:12px">
+          {{ t('settings.current_timezone') }}: <strong>{{ me.timezone }}</strong>
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -170,5 +170,17 @@
   "lang.fr": "Français",
   "lang.de": "Deutsch",
   "lang.pt": "Português",
-  "lang.pl": "Polski"
+  "lang.pl": "Polski",
+
+  "nav.settings": "Ustawienia",
+
+  "settings.title": "Ustawienia",
+  "settings.subtitle": "Skonfiguruj preferencje konta administratora.",
+  "settings.card_timezone": "Twoja strefa czasowa",
+  "settings.timezone_hint": "Okna harmonogramu są interpretowane w Twojej strefie czasowej i konwertowane na czas lokalny każdego urządzenia.",
+  "settings.label_timezone": "Strefa czasowa",
+  "settings.btn_save": "Zapisz",
+  "settings.current_timezone": "Aktualna strefa czasowa",
+  "flash.settings_saved": "Ustawienia zapisane",
+  "flash.settings_error": "Błąd zapisu ustawień"
 }

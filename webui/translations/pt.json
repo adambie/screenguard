@@ -170,5 +170,17 @@
   "lang.fr": "Français",
   "lang.de": "Deutsch",
   "lang.pt": "Português",
-  "lang.pl": "Polski"
+  "lang.pl": "Polski",
+
+  "nav.settings": "Configurações",
+
+  "settings.title": "Configurações",
+  "settings.subtitle": "Configure as preferências da sua conta de administrador.",
+  "settings.card_timezone": "Seu fuso horário",
+  "settings.timezone_hint": "As janelas de horário são interpretadas no seu fuso horário e convertidas para a hora local de cada dispositivo.",
+  "settings.label_timezone": "Fuso horário",
+  "settings.btn_save": "Salvar",
+  "settings.current_timezone": "Fuso horário atual",
+  "flash.settings_saved": "Configurações salvas",
+  "flash.settings_error": "Erro ao salvar as configurações"
 }

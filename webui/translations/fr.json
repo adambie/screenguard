@@ -170,5 +170,17 @@
   "lang.fr": "Français",
   "lang.de": "Deutsch",
   "lang.pt": "Português",
-  "lang.pl": "Polski"
+  "lang.pl": "Polski",
+
+  "nav.settings": "Paramètres",
+
+  "settings.title": "Paramètres",
+  "settings.subtitle": "Configurez les préférences de votre compte administrateur.",
+  "settings.card_timezone": "Votre fuseau horaire",
+  "settings.timezone_hint": "Les plages horaires sont interprétées dans votre fuseau horaire et converties en heure locale de chaque appareil.",
+  "settings.label_timezone": "Fuseau horaire",
+  "settings.btn_save": "Enregistrer",
+  "settings.current_timezone": "Fuseau horaire actuel",
+  "flash.settings_saved": "Paramètres enregistrés",
+  "flash.settings_error": "Erreur lors de l'enregistrement"
 }

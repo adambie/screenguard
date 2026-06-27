@@ -328,7 +328,8 @@ pub async fn bump_and_propagate(state: &AppState, profile_id: Uuid) -> anyhow::R
         if !managed.is_empty() {
             let agent = db::get_agent_by_id(&state.db, au.agent_id)?;
             let tz = agent.as_ref().map(|a| a.timezone.as_str()).unwrap_or("UTC").to_string();
-            let entries = remaining::calculate_remaining_for_agent(&state.db, au.agent_id, &tz, &managed)?;
+            let admin_tz = db::get_admin_timezone(&state.db).unwrap_or_else(|_| "UTC".to_string());
+            let entries = remaining::calculate_remaining_for_agent(&state.db, au.agent_id, &tz, &admin_tz, &managed)?;
             let msg = WssMessage::new(MSG_REMAINING_UPDATE, &RemainingUpdate { users: entries })?;
             state.send_to_agent_id(au.agent_id, msg).await;
         }

@@ -21,6 +21,7 @@ pub fn open(path: &str) -> Result<DbPool> {
     conn.execute_batch(SCHEMA)?;
     migrate_v1(&conn)?;
     migrate_v2(&conn)?;
+    migrate_v3(&conn)?;
     Ok(pool)
 }
 
@@ -69,6 +70,19 @@ fn migrate_v2(conn: &rusqlite::Connection) -> Result<()> {
     )?;
     conn.execute_batch("PRAGMA user_version = 2")?;
     tracing::info!("DB migration v2 applied (profile language)");
+    Ok(())
+}
+
+fn migrate_v3(conn: &rusqlite::Connection) -> Result<()> {
+    let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v >= 3 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "ALTER TABLE admin_users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC';",
+    )?;
+    conn.execute("PRAGMA user_version = 3", [])?;
+    tracing::info!("DB migration v3 applied (admin timezone)");
     Ok(())
 }
 
@@ -190,6 +204,7 @@ pub struct AdminUser {
     pub username: String,
     pub password_hash: String,
     pub created_at: i64,
+    pub timezone: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -281,15 +296,50 @@ pub fn create_admin(pool: &DbPool, username: &str, password_hash: &str) -> Resul
 pub fn get_admin_by_username(pool: &DbPool, username: &str) -> Result<Option<AdminUser>> {
     let conn = pool.get()?;
     conn.query_row(
-        "SELECT id, username, password_hash, created_at FROM admin_users WHERE username=?1",
+        "SELECT id, username, password_hash, created_at, timezone FROM admin_users WHERE username=?1",
         params![username],
         |r| Ok(AdminUser {
             id: r.get::<_, String>(0)?.parse().unwrap_or_default(),
             username: r.get(1)?,
             password_hash: r.get(2)?,
             created_at: r.get(3)?,
+            timezone: r.get(4)?,
         }),
     ).optional().map_err(Into::into)
+}
+
+pub fn get_admin_user_by_id(pool: &DbPool, id: Uuid) -> Result<Option<AdminUser>> {
+    let conn = pool.get()?;
+    conn.query_row(
+        "SELECT id, username, password_hash, created_at, timezone FROM admin_users WHERE id = ?1",
+        params![id.to_string()],
+        |row| Ok(AdminUser {
+            id: row.get::<_, String>(0)?.parse().unwrap_or_default(),
+            username: row.get(1)?,
+            password_hash: row.get(2)?,
+            created_at: row.get(3)?,
+            timezone: row.get(4)?,
+        }),
+    ).optional().map_err(Into::into)
+}
+
+pub fn get_admin_timezone(pool: &DbPool) -> Result<String> {
+    let conn = pool.get()?;
+    let tz: Option<String> = conn.query_row(
+        "SELECT timezone FROM admin_users LIMIT 1",
+        [],
+        |row| row.get(0),
+    ).optional()?;
+    Ok(tz.unwrap_or_else(|| "UTC".to_string()))
+}
+
+pub fn update_admin_timezone(pool: &DbPool, admin_id: Uuid, timezone: &str) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE admin_users SET timezone = ?1 WHERE id = ?2",
+        params![timezone, admin_id.to_string()],
+    )?;
+    Ok(())
 }
 
 // ── agents ────────────────────────────────────────────────────────────────────

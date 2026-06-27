@@ -170,5 +170,17 @@
   "lang.fr": "Français",
   "lang.de": "Deutsch",
   "lang.pt": "Português",
-  "lang.pl": "Polski"
+  "lang.pl": "Polski",
+
+  "nav.settings": "Einstellungen",
+
+  "settings.title": "Einstellungen",
+  "settings.subtitle": "Konfigurieren Sie Ihre Admin-Kontoeinstellungen.",
+  "settings.card_timezone": "Ihre Zeitzone",
+  "settings.timezone_hint": "Zeitfenster werden in Ihrer Zeitzone interpretiert und in die Ortszeit jedes Geräts umgerechnet.",
+  "settings.label_timezone": "Zeitzone",
+  "settings.btn_save": "Speichern",
+  "settings.current_timezone": "Aktuelle Zeitzone",
+  "flash.settings_saved": "Einstellungen gespeichert",
+  "flash.settings_error": "Fehler beim Speichern der Einstellungen"
 }
