@@ -175,6 +175,11 @@ class AppLocalizations {
   String get logsEmpty => _t('logsEmpty');
   String get showAgentLogs => _t('showAgentLogs');
   String get showAgentLogsHint => _t('showAgentLogsHint');
+  String get updateAvailable => _t('updateAvailable');
+  String get updateAgent => _t('updateAgent');
+  String get updateAgentTitle => _t('updateAgentTitle');
+  String get updateAgentBody => _t('updateAgentBody');
+  String get updateTriggered => _t('updateTriggered');
 
   // Localized time ago
   String timeAgo(int? unixSeconds) {
@@ -307,6 +312,11 @@ class AppLocalizations {
     'logsEmpty': 'No log lines returned',
     'showAgentLogs': 'Show agent logs',
     'showAgentLogsHint': 'Show or hide the logs section on each agent\'s detail page',
+    'updateAvailable': 'update available',
+    'updateAgent': 'Update agent',
+    'updateAgentTitle': 'Update agent?',
+    'updateAgentBody': 'The agent will download and install the latest version, then restart. It will be briefly offline.',
+    'updateTriggered': 'Update triggered — agent will restart shortly.',
     'never': 'never', 'justNow': 'just now',
     'minutesAgo': '{n}m ago', 'hoursAgo': '{n}h ago', 'daysAgo': '{n}d ago',
     'day0': 'Mon', 'day1': 'Tue', 'day2': 'Wed', 'day3': 'Thu',
@@ -415,6 +425,11 @@ class AppLocalizations {
     'logsEmpty': 'Brak wierszy dziennika',
     'showAgentLogs': 'Pokaż logi agenta',
     'showAgentLogsHint': 'Pokaż lub ukryj sekcję logów na stronie szczegółów każdego agenta',
+    'updateAvailable': 'dostępna aktualizacja',
+    'updateAgent': 'Aktualizuj agenta',
+    'updateAgentTitle': 'Zaktualizować agenta?',
+    'updateAgentBody': 'Agent pobierze i zainstaluje najnowszą wersję, a następnie uruchomi się ponownie. Przez chwilę będzie niedostępny.',
+    'updateTriggered': 'Aktualizacja uruchomiona — agent wkrótce się uruchomi ponownie.',
     'never': 'nigdy', 'justNow': 'przed chwilą',
     'minutesAgo': '{n} min temu', 'hoursAgo': '{n} h temu', 'daysAgo': '{n} dni temu',
     'day0': 'Pon', 'day1': 'Wt', 'day2': 'Śr', 'day3': 'Czw',
@@ -523,6 +538,11 @@ class AppLocalizations {
     'logsEmpty': 'No se devolvieron líneas de registro',
     'showAgentLogs': 'Mostrar registros del agente',
     'showAgentLogsHint': 'Muestra u oculta la sección de registros en la página de detalle de cada agente',
+    'updateAvailable': 'actualización disponible',
+    'updateAgent': 'Actualizar agente',
+    'updateAgentTitle': '¿Actualizar agente?',
+    'updateAgentBody': 'El agente descargará e instalará la última versión y luego se reiniciará. Estará brevemente fuera de línea.',
+    'updateTriggered': 'Actualización iniciada — el agente se reiniciará en breve.',
     'never': 'nunca', 'justNow': 'ahora mismo',
     'minutesAgo': 'hace {n}m', 'hoursAgo': 'hace {n}h', 'daysAgo': 'hace {n}d',
     'day0': 'Lun', 'day1': 'Mar', 'day2': 'Mié', 'day3': 'Jue',
@@ -631,6 +651,11 @@ class AppLocalizations {
     'logsEmpty': 'Aucune ligne de journal retournée',
     'showAgentLogs': "Afficher les journaux de l'agent",
     'showAgentLogsHint': "Affiche ou masque la section des journaux sur la page de détail de chaque agent",
+    'updateAvailable': 'mise à jour disponible',
+    'updateAgent': "Mettre à jour l'agent",
+    'updateAgentTitle': "Mettre à jour l'agent ?",
+    'updateAgentBody': "L'agent téléchargera et installera la dernière version, puis redémarrera. Il sera brièvement hors ligne.",
+    'updateTriggered': "Mise à jour déclenchée — l'agent redémarrera sous peu.",
     'never': 'jamais', 'justNow': "à l'instant",
     'minutesAgo': 'il y a {n}m', 'hoursAgo': 'il y a {n}h', 'daysAgo': 'il y a {n}j',
     'day0': 'Lun', 'day1': 'Mar', 'day2': 'Mer', 'day3': 'Jeu',
@@ -739,6 +764,11 @@ class AppLocalizations {
     'logsEmpty': 'Keine Protokollzeilen zurückgegeben',
     'showAgentLogs': 'Agentprotokolle anzeigen',
     'showAgentLogsHint': 'Protokollbereich auf der Detailseite jedes Agenten ein- oder ausblenden',
+    'updateAvailable': 'Update verfügbar',
+    'updateAgent': 'Agenten aktualisieren',
+    'updateAgentTitle': 'Agenten aktualisieren?',
+    'updateAgentBody': 'Der Agent lädt die neueste Version herunter, installiert sie und startet dann neu. Er ist kurz offline.',
+    'updateTriggered': 'Update ausgelöst — Agent wird in Kürze neu gestartet.',
     'never': 'nie', 'justNow': 'gerade eben',
     'minutesAgo': 'vor {n} Min.', 'hoursAgo': 'vor {n} Std.', 'daysAgo': 'vor {n} Tagen',
     'day0': 'Mo', 'day1': 'Di', 'day2': 'Mi', 'day3': 'Do',
@@ -847,6 +877,11 @@ class AppLocalizations {
     'logsEmpty': 'Nenhuma linha de registo devolvida',
     'showAgentLogs': 'Mostrar registros do agente',
     'showAgentLogsHint': 'Exibe ou oculta a seção de registros na página de detalhes de cada agente',
+    'updateAvailable': 'atualização disponível',
+    'updateAgent': 'Atualizar agente',
+    'updateAgentTitle': 'Atualizar agente?',
+    'updateAgentBody': 'O agente irá baixar e instalar a versão mais recente e reiniciar. Ficará brevemente offline.',
+    'updateTriggered': 'Atualização iniciada — o agente reiniciará em breve.',
     'never': 'nunca', 'justNow': 'agora mesmo',
     'minutesAgo': '{n} min atrás', 'hoursAgo': '{n} h atrás', 'daysAgo': '{n} d atrás',
     'day0': 'Seg', 'day1': 'Ter', 'day2': 'Qua', 'day3': 'Qui',

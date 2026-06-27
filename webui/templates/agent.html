@@ -28,6 +28,12 @@
         <button class="btn btn-outline-danger">{{ t('agent.btn_force_remove') }}</button>
       </form>
     {% else %}
+      {% if agent.online and agent.upgradeable %}
+      <form method="post" action="{{ url_for('update_agent', agent_id=agent.id) }}"
+            onsubmit='return confirm({{ t("agent.confirm_update") | tojson }})'>
+        <button class="btn btn-warning">{{ t('agent.btn_update') }}</button>
+      </form>
+      {% endif %}
       <form method="post" action="{{ url_for('delete_agent', agent_id=agent.id) }}"
             onsubmit='return confirm({{ t("agent.confirm_delete") | tojson }})'>
         <button class="btn btn-outline-danger">{{ t('agent.btn_delete') }}</button>

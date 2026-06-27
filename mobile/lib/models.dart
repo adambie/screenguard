@@ -258,6 +258,7 @@ class Agent {
   final String? agentVersion;
   final int userCount;
   final String? pairingCode;
+  final bool upgradeable;
 
   const Agent({
     required this.id,
@@ -271,6 +272,7 @@ class Agent {
     this.agentVersion,
     required this.userCount,
     this.pairingCode,
+    this.upgradeable = false,
   });
 
   factory Agent.fromJson(Map<String, dynamic> j) => Agent(
@@ -285,6 +287,7 @@ class Agent {
         agentVersion: j['agent_version'] as String?,
         userCount: (j['user_count'] as int?) ?? 0,
         pairingCode: j['pairing_code'] as String?,
+        upgradeable: (j['upgradeable'] as bool?) ?? false,
       );
 
   String get name => displayName.isNotEmpty ? displayName : hostname;

@@ -187,6 +187,22 @@ class _AgentCard extends StatelessWidget {
                       agent.agentVersion!,
                       style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
                     ),
+                  if (agent.upgradeable)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        l.updateAvailable,
+                        style: TextStyle(
+                            color: Colors.amber.shade900,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(width: 4),

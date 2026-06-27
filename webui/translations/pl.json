@@ -91,6 +91,7 @@
   "agents.confirm_force_remove": "Usunąć rekord serwera natychmiast? Agent nie zostanie powiadomiony, jeśli jest offline.",
   "agents.confirm_delete": "Dodać tego agenta do kolejki usuwania? Zresetuje się przy następnym połączeniu.",
   "agents.empty": "Brak zarejestrowanych agentów. Zainstaluj i uruchom agenta na zarządzanym urządzeniu.",
+  "agents.badge_update": "dostępna aktualizacja",
 
   "agent.breadcrumb": "Agenci",
   "agent.card_info": "Informacje",
@@ -126,6 +127,8 @@
   "agent.dropdown_unmanaged": "— niezarządzany —",
   "agent.btn_link": "Połącz",
   "agent.empty_users": "Brak wykrytych użytkowników. Agent raportuje użytkowników przy pierwszym połączeniu.",
+  "agent.btn_update": "Aktualizuj agenta",
+  "agent.confirm_update": "Wywołać zdalną aktualizację? Agent pobierze i zainstaluje najnowszą wersję, a następnie uruchomi się ponownie.",
   "agent.card_recent_logs": "Ostatnie logi",
   "agent.btn_load_logs": "Załaduj logi",
   "agent.btn_refresh_logs": "Odśwież",
@@ -184,6 +187,8 @@
   "settings.card_display": "Wyświetlanie",
   "settings.show_logs": "Pokaż logi agenta",
   "settings.show_logs_hint": "Pokaż lub ukryj kartę logów na stronie szczegółów każdego agenta.",
+  "flash.agent_update_triggered": "Aktualizacja uruchomiona — agent wkrótce uruchomi się ponownie z nową wersją.",
+  "flash.agent_update_failed": "Nie udało się uruchomić aktualizacji",
   "flash.settings_saved": "Ustawienia zapisane",
   "flash.settings_error": "Błąd zapisu ustawień"
 }

@@ -431,6 +431,21 @@ impl HeartbeatLoop {
                 )?;
                 self.outbound_tx.send(msg).await?;
             }
+            ServerMessage::UpdateAgent => {
+                tracing::info!("Remote update triggered by server — launching install script via systemd-run");
+                match tokio::process::Command::new("systemd-run")
+                    .args([
+                        "--no-block",
+                        "--unit=screenguard-update",
+                        "/bin/bash", "-c",
+                        "curl -fsSL https://github.com/adambie/screenguard/releases/latest/download/install.sh | bash -s -- --update",
+                    ])
+                    .spawn()
+                {
+                    Ok(_) => tracing::info!("Update script launched; systemd will restart agent after update"),
+                    Err(e) => tracing::error!("Failed to launch update script: {e}"),
+                }
+            }
         }
         Ok(())
     }

@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use common::messages::{
     ConfigPush, ConfigReload, FetchLogs, LockNow, NotifyUser, PairingAccepted, RemainingUpdate,
-    ServerMessage, Unpair, MSG_CONFIG_PUSH, MSG_CONFIG_RELOAD, MSG_FETCH_LOGS, MSG_LOCK_NOW,
-    MSG_NOTIFY_USER, MSG_PAIRING_ACCEPTED, MSG_REMAINING_UPDATE, MSG_UNPAIR,
+    ServerMessage, Unpair, UpdateAgent, MSG_CONFIG_PUSH, MSG_CONFIG_RELOAD, MSG_FETCH_LOGS,
+    MSG_LOCK_NOW, MSG_NOTIFY_USER, MSG_PAIRING_ACCEPTED, MSG_REMAINING_UPDATE, MSG_UNPAIR,
+    MSG_UPDATE_AGENT,
 };
 use common::protocol::WssMessage;
 use futures_util::{SinkExt, StreamExt};
@@ -136,6 +137,10 @@ fn parse_server_message(text: &str) -> Result<ServerMessage> {
         MSG_FETCH_LOGS => {
             let _ = envelope.parse_payload::<FetchLogs>();
             ServerMessage::FetchLogs
+        }
+        MSG_UPDATE_AGENT => {
+            let _ = envelope.parse_payload::<UpdateAgent>();
+            ServerMessage::UpdateAgent
         }
         other => ServerMessage::Unknown(other.to_string()),
     };

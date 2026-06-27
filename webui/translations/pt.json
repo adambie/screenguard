@@ -91,6 +91,7 @@
   "agents.confirm_force_remove": "Remover registo do servidor imediatamente? O agente não será notificado se estiver offline.",
   "agents.confirm_delete": "Colocar este agente na fila de eliminação? Irá reiniciar-se quando estiver online.",
   "agents.empty": "Nenhum agente registado. Instale e inicie o agente no dispositivo gerido.",
+  "agents.badge_update": "atualização disponível",
 
   "agent.breadcrumb": "Agentes",
   "agent.card_info": "Informação",
@@ -126,6 +127,8 @@
   "agent.dropdown_unmanaged": "— não gerido —",
   "agent.btn_link": "Ligar",
   "agent.empty_users": "Nenhum utilizador descoberto. O agente reporta utilizadores na primeira ligação.",
+  "agent.btn_update": "Atualizar agente",
+  "agent.confirm_update": "Acionar atualização remota? O agente irá baixar e instalar a versão mais recente e reiniciar.",
   "agent.card_recent_logs": "Registos recentes",
   "agent.btn_load_logs": "Carregar registos",
   "agent.btn_refresh_logs": "Atualizar",
@@ -184,6 +187,8 @@
   "settings.card_display": "Exibição",
   "settings.show_logs": "Mostrar registros do agente",
   "settings.show_logs_hint": "Exibe ou oculta o cartão de registros na página de detalhes de cada agente.",
+  "flash.agent_update_triggered": "Atualização iniciada — o agente reiniciará em breve com a nova versão.",
+  "flash.agent_update_failed": "Falha ao iniciar a atualização",
   "flash.settings_saved": "Configurações salvas",
   "flash.settings_error": "Erro ao salvar as configurações"
 }

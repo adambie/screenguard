@@ -88,6 +88,20 @@ class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
     }
   }
 
+  Future<void> _update(Agent agent) async {
+    final l = AppLocalizations.of(context);
+    final ok = await _confirm(l.updateAgentTitle, l.updateAgentBody);
+    if (!ok) return;
+    try {
+      await ref.read(apiClientProvider).post('/agents/${widget.agentId}/update');
+      if (mounted) _snack(l.updateTriggered);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    }
+  }
+
   Future<void> _forceDelete() async {
     final l = AppLocalizations.of(context);
     final ok = await _confirm(l.forceRemoveTitle, l.forceRemoveBody);
@@ -214,12 +228,15 @@ class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
             data: (agent) => PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'rename') _rename(agent.name);
+                if (v == 'update') _update(agent);
                 if (v == 'delete') _delete();
                 if (v == 'undo') _undoDelete();
                 if (v == 'force') _forceDelete();
               },
               itemBuilder: (_) => [
                 PopupMenuItem(value: 'rename', child: Text(l.rename)),
+                if (agent.upgradeable && agent.online)
+                  PopupMenuItem(value: 'update', child: Text(l.updateAgent)),
                 if (agent.status == 'pending_delete')
                   PopupMenuItem(value: 'undo', child: Text(l.undoDeletion)),
                 if (agent.status == 'pending_delete')

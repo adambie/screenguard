@@ -321,6 +321,18 @@ def agent_logs(agent_id):
     return jsonify({"error": error}), (r.status_code if r else 500)
 
 
+@app.route("/agents/<agent_id>/update", methods=["POST"])
+@require_login
+def update_agent(agent_id):
+    r = api("POST", f"/agents/{agent_id}/update")
+    if r and r.ok:
+        flash(t("flash.agent_update_triggered"), "success")
+    else:
+        error = r.json().get("error", "") if r else ""
+        flash(t("flash.agent_update_failed") + (f": {error}" if error else ""), "danger")
+    return redirect(url_for("agent_detail", agent_id=agent_id))
+
+
 @app.route("/agents/<agent_id>/rename", methods=["POST"])
 @require_login
 def rename_agent(agent_id):

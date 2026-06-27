@@ -47,7 +47,12 @@
               <span class="badge text-bg-secondary">{{ t('agents.status_offline') }}</span>
             {% endif %}
           </td>
-          <td><span style="font-size:12px;color:var(--t2)">{{ a.agent_version or '—' }}</span></td>
+          <td>
+            <span style="font-size:12px;color:var(--t2)">{{ a.agent_version or '—' }}</span>
+            {% if a.upgradeable %}
+              <span class="badge text-bg-warning ms-1" style="font-size:10px">{{ t('agents.badge_update') }}</span>
+            {% endif %}
+          </td>
           <td><span style="font-size:12px;color:var(--t2)">
             {% if a.online %}{{ t('agents.now') }}{% else %}{{ a.last_seen_at | time_ago }}{% endif %}
           </span></td>

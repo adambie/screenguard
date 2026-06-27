@@ -91,6 +91,7 @@
   "agents.confirm_force_remove": "Supprimer immédiatement l'enregistrement serveur ? L'agent ne sera pas notifié s'il est hors ligne.",
   "agents.confirm_delete": "Mettre cet agent en file de suppression ? Il se réinitialisera à la prochaine connexion.",
   "agents.empty": "Aucun agent enregistré. Installez et démarrez l'agent sur la machine gérée.",
+  "agents.badge_update": "mise à jour disponible",
 
   "agent.breadcrumb": "Agents",
   "agent.card_info": "Infos",
@@ -126,6 +127,8 @@
   "agent.dropdown_unmanaged": "— non géré —",
   "agent.btn_link": "Lier",
   "agent.empty_users": "Aucun utilisateur découvert. L'agent signale les utilisateurs à la première connexion.",
+  "agent.btn_update": "Mettre à jour l'agent",
+  "agent.confirm_update": "Déclencher la mise à jour distante ? L'agent téléchargera et installera la dernière version puis redémarrera.",
   "agent.card_recent_logs": "Journaux récents",
   "agent.btn_load_logs": "Charger les journaux",
   "agent.btn_refresh_logs": "Actualiser",
@@ -184,6 +187,8 @@
   "settings.card_display": "Affichage",
   "settings.show_logs": "Afficher les journaux de l'agent",
   "settings.show_logs_hint": "Affiche ou masque la carte des journaux sur la page de détail de chaque agent.",
+  "flash.agent_update_triggered": "Mise à jour déclenchée — l'agent redémarrera sous peu avec la nouvelle version.",
+  "flash.agent_update_failed": "Échec du déclenchement de la mise à jour",
   "flash.settings_saved": "Paramètres enregistrés",
   "flash.settings_error": "Erreur lors de l'enregistrement"
 }

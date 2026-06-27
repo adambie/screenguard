@@ -91,6 +91,7 @@
   "agents.confirm_force_remove": "Servereintrag sofort entfernen? Der Agent wird nicht benachrichtigt, wenn er offline ist.",
   "agents.confirm_delete": "Diesen Agenten zur Löschung vormerken? Er setzt sich beim nächsten Verbindungsaufbau zurück.",
   "agents.empty": "Keine Agenten registriert. Installieren und starten Sie den Agenten auf dem verwalteten Gerät.",
+  "agents.badge_update": "Update verfügbar",
 
   "agent.breadcrumb": "Agenten",
   "agent.card_info": "Info",
@@ -126,6 +127,8 @@
   "agent.dropdown_unmanaged": "— nicht verwaltet —",
   "agent.btn_link": "Verknüpfen",
   "agent.empty_users": "Noch keine Benutzer erkannt. Der Agent meldet Benutzer bei der ersten Verbindung.",
+  "agent.btn_update": "Agenten aktualisieren",
+  "agent.confirm_update": "Remoteaktualisierung auslösen? Der Agent lädt die neueste Version herunter, installiert sie und startet neu.",
   "agent.card_recent_logs": "Aktuelle Protokolle",
   "agent.btn_load_logs": "Protokolle laden",
   "agent.btn_refresh_logs": "Aktualisieren",
@@ -184,6 +187,8 @@
   "settings.card_display": "Anzeige",
   "settings.show_logs": "Agentprotokolle anzeigen",
   "settings.show_logs_hint": "Protokollkarte auf der Detailseite jedes Agenten ein- oder ausblenden.",
+  "flash.agent_update_triggered": "Update ausgelöst — Agent wird in Kürze mit der neuen Version neu gestartet.",
+  "flash.agent_update_failed": "Update konnte nicht ausgelöst werden",
   "flash.settings_saved": "Einstellungen gespeichert",
   "flash.settings_error": "Fehler beim Speichern der Einstellungen"
 }

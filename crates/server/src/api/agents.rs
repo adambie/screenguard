@@ -11,6 +11,8 @@ use crate::api::auth::{internal, not_found};
 use crate::db;
 use crate::state::{AppState, PairingDecision};
 
+const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Serialize)]
 pub struct AgentResponse {
     pub id: Uuid,
@@ -24,6 +26,7 @@ pub struct AgentResponse {
     pub agent_version: Option<String>,
     pub user_count: usize,
     pub pairing_code: Option<String>,
+    pub upgradeable: bool,
 }
 
 pub async fn list_agents(
@@ -38,6 +41,8 @@ pub async fn list_agents(
             .map(|u| u.len())
             .unwrap_or(0);
         let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
+        let upgradeable = a.agent_version.as_deref()
+            .map_or(false, |v| v != SERVER_VERSION);
         result.push(AgentResponse {
             online: online.values().any(|h| h.agent_id == a.id),
             id: a.id,
@@ -50,6 +55,7 @@ pub async fn list_agents(
             agent_version: a.agent_version,
             user_count,
             pairing_code,
+            upgradeable,
         });
     }
     Ok(Json(serde_json::json!({ "agents": result })))
@@ -64,12 +70,14 @@ pub async fn get_agent(
     let pending = state.pending.read().await;
     let user_count = db::list_agent_users(&state.db, a.id).map(|u| u.len()).unwrap_or(0);
     let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
+    let upgradeable = a.agent_version.as_deref()
+        .map_or(false, |v| v != SERVER_VERSION);
     Ok(Json(serde_json::json!(AgentResponse {
         online: online.values().any(|h| h.agent_id == a.id),
         id: a.id, machine_id: a.machine_id, display_name: a.display_name,
         hostname: a.hostname, timezone: a.timezone, status: a.status,
         last_seen_at: a.last_seen_at, agent_version: a.agent_version,
-        user_count, pairing_code,
+        user_count, pairing_code, upgradeable,
     })))
 }
 
@@ -194,6 +202,28 @@ pub async fn fetch_agent_logs(
             ))
         }
     }
+}
+
+pub async fn update_agent(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+
+    if !state.is_online(id).await {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Agent is offline" })),
+        ));
+    }
+
+    use common::messages::{UpdateAgent, MSG_UPDATE_AGENT};
+    use common::protocol::WssMessage;
+    let msg = WssMessage::new(MSG_UPDATE_AGENT, &UpdateAgent {}).map_err(internal)?;
+    state.send_to_agent_id(id, msg).await;
+
+    tracing::info!("Remote update triggered for agent {id}");
+    Ok(Json(serde_json::json!({ "message": "Update triggered" })))
 }
 
 fn generate_token() -> String {

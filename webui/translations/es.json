@@ -91,6 +91,7 @@
   "agents.confirm_force_remove": "¿Eliminar el registro del servidor inmediatamente? El agente no será notificado si está desconectado.",
   "agents.confirm_delete": "¿Poner este agente en cola de eliminación? Se reiniciará cuando se conecte.",
   "agents.empty": "No hay agentes registrados. Instala e inicia el agente en el equipo administrado.",
+  "agents.badge_update": "actualización disponible",
 
   "agent.breadcrumb": "Agentes",
   "agent.card_info": "Información",
@@ -126,6 +127,8 @@
   "agent.dropdown_unmanaged": "— no gestionado —",
   "agent.btn_link": "Vincular",
   "agent.empty_users": "Sin usuarios descubiertos. El agente reporta usuarios en la primera conexión.",
+  "agent.btn_update": "Actualizar agente",
+  "agent.confirm_update": "¿Activar actualización remota? El agente descargará e instalará la última versión y se reiniciará.",
   "agent.card_recent_logs": "Registros recientes",
   "agent.btn_load_logs": "Cargar registros",
   "agent.btn_refresh_logs": "Actualizar",
@@ -184,6 +187,8 @@
   "settings.card_display": "Pantalla",
   "settings.show_logs": "Mostrar registros del agente",
   "settings.show_logs_hint": "Muestra u oculta la tarjeta de registros en la página de detalle de cada agente.",
+  "flash.agent_update_triggered": "Actualización iniciada — el agente se reiniciará en breve con la nueva versión.",
+  "flash.agent_update_failed": "Error al iniciar la actualización",
   "flash.settings_saved": "Configuración guardada",
   "flash.settings_error": "Error al guardar la configuración"
 }

@@ -91,6 +91,7 @@
   "agents.confirm_force_remove": "Remove server record immediately? The agent will not be notified if offline.",
   "agents.confirm_delete": "Queue this agent for deletion? It will reset itself when next online.",
   "agents.empty": "No agents registered yet. Install and start the agent on a managed machine.",
+  "agents.badge_update": "update available",
 
   "agent.breadcrumb": "Agents",
   "agent.card_info": "Info",
@@ -126,6 +127,8 @@
   "agent.dropdown_unmanaged": "— unmanaged —",
   "agent.btn_link": "Link",
   "agent.empty_users": "No users discovered yet. The agent reports users on first connection.",
+  "agent.btn_update": "Update agent",
+  "agent.confirm_update": "Trigger remote update? The agent will download and install the latest version then restart.",
   "agent.card_recent_logs": "Recent logs",
   "agent.btn_load_logs": "Load logs",
   "agent.btn_refresh_logs": "Refresh",
@@ -184,6 +187,8 @@
   "settings.card_display": "Display",
   "settings.show_logs": "Show agent logs",
   "settings.show_logs_hint": "Show or hide the logs card on each agent's detail page.",
+  "flash.agent_update_triggered": "Update triggered — agent will restart shortly with the new version.",
+  "flash.agent_update_failed": "Failed to trigger update",
   "flash.settings_saved": "Settings saved",
   "flash.settings_error": "Failed to save settings"
 }
