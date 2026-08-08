@@ -148,7 +148,7 @@ Sent on startup and whenever local users change (periodic scan).
 Root/system users (UID < 1000 typically) are never reported.
 
 #### `heartbeat`
-Sent every **10 seconds** while any managed user has an active session.
+Sent every **10 seconds** while any managed user has a relevant graphical session.
 
 ```json
 {
@@ -166,9 +166,9 @@ Sent every **10 seconds** while any managed user has an active session.
 }
 ```
 
-- `active_seconds_since_last`: seconds of **non-idle** usage since the previous heartbeat.
-- `idle`: current idle state (from DBus `IdleHint`). When idle, `active_seconds_since_last` is 0.
-- Idle time does NOT count against the quota.
+- `active_seconds_since_last`: seconds since the previous heartbeat during which at least one graphical session was active, unlocked, and non-idle.
+- `idle`: true when the user currently has no qualifying active, unlocked, non-idle graphical session. In that state, `active_seconds_since_last` is 0.
+- Inactive, locked, and idle time do NOT count against the quota.
 
 #### `usage_sync`
 Sent on reconnect after an offline period. Contains accumulated usage during offline period.
@@ -521,19 +521,20 @@ CREATE TABLE agent_state (
    - If paired: connect WSS to stored `server_url` using `auth_token`.
 4. On successful WSS connection: send `agent_hello`, then `user_list_update`.
 5. Receive `config_push` if config version is stale.
-6. Subscribe to DBus logind signals for session changes and idle state.
+6. Subscribe to DBus logind signals for session changes and usage-relevant state.
 7. Begin heartbeat loop.
 
 #### Session Monitoring via DBus
 - Connect to `org.freedesktop.login1` Manager interface.
 - Listen for signals: `SessionNew`, `SessionRemoved`, `PrepareForSleep`.
-- For each session: monitor `IdleHint` property changes.
+- For each graphical session: monitor `Active`, `LockedHint`, and `IdleHint` property changes.
 - Track active sessions in `active_sessions` table.
-- Multiple sessions for the same user count time only **once** — if any session is non-idle, the user is considered active.
+- A session counts only when it is active, unlocked, and non-idle. Unknown property values fail closed and do not count.
+- Multiple sessions for the same user count time only **once** — the UID counts if at least one session qualifies.
 
 #### Heartbeat Loop (every 10 seconds)
-1. For each managed user with ≥1 active non-idle session:
-   - Calculate `active_seconds_since_last` (10s if continuously active, less if became idle mid-interval).
+1. For each managed user with ≥1 relevant graphical session:
+   - Calculate `active_seconds_since_last` (10s if continuously active, unlocked, and non-idle; less if it stopped qualifying mid-interval).
 2. Send `heartbeat` message to server.
 3. Receive `remaining_update` in response.
 4. Store in `server_remaining` table.

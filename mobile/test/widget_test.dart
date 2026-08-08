@@ -24,4 +24,13 @@ void main() {
 
     expect(profile.preserveTasksOnLock, isTrue);
   });
+
+  test('unlock reverses the current negative net adjustment', () {
+    expect(unlockAdjustmentFor(-90), 90);
+  });
+
+  test('unlock is unavailable without a negative net adjustment', () {
+    expect(unlockAdjustmentFor(0), 0);
+    expect(unlockAdjustmentFor(30), 0);
+  });
 }
