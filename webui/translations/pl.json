@@ -72,6 +72,10 @@
   "profile.card_usage": "Użycie",
   "profile.card_language": "Język powiadomień",
   "profile.btn_save_language": "Zapisz",
+  "profile.card_lock_behavior": "Sposób blokowania",
+  "profile.keep_tasks_running": "Pozostaw aplikacje i zadania uruchomione podczas blokady",
+  "profile.keep_tasks_running_hint": "Po wyczerpaniu czasu ScreenGuard utrzymuje ekran logowania zablokowany, ale nie kończy sesji. Dostępny czas nadal jest zerowany.",
+  "profile.btn_save_lock_behavior": "Zapisz sposób blokowania",
 
   "agents.heading": "Agenci",
   "agents.col_name": "Nazwa",
@@ -164,6 +168,7 @@
   "flash.message_empty": "Wiadomość nie może być pusta.",
   "flash.locked": "Dzisiejszy limit wyzerowany.",
   "flash.lock_failed": "Błąd.",
+  "flash.lock_behavior_saved": "Sposób blokowania zapisany.",
   "flash.profile_deleted": "Profil usunięty.",
   "flash.profile_delete_failed": "Usunięcie nie powiodło się.",
   "flash.language_saved": "Preferencja języka zapisana.",

@@ -1008,3 +1008,93 @@ pub fn weekday_for_date(date: &str) -> u8 {
 pub fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M").ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::models::LocalUser;
+
+    fn test_pool_before_v4() -> DbPool {
+        let manager = SqliteConnectionManager::memory();
+        let pool = Pool::builder().max_size(1).build(manager).unwrap();
+        let conn = pool.get().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        migrate_v1(&conn).unwrap();
+        migrate_v2(&conn).unwrap();
+        migrate_v3(&conn).unwrap();
+        drop(conn);
+        pool
+    }
+
+    fn test_pool() -> DbPool {
+        let pool = test_pool_before_v4();
+        migrate_v4(&pool.get().unwrap()).unwrap();
+        pool
+    }
+
+    #[test]
+    fn new_profiles_default_preserve_tasks_to_false() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test profile").unwrap();
+
+        assert!(!get_enforcement_settings(&pool, profile.id).unwrap().preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn migration_defaults_existing_profiles_to_false() {
+        let pool = test_pool_before_v4();
+        let id = Uuid::new_v4();
+        let conn = pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO user_profiles (id, display_name, created_at, updated_at, language)
+             VALUES (?1, 'Existing profile', 1, 1, 'en')",
+            params![id.to_string()],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO enforcement_settings (profile_id) VALUES (?1)",
+            params![id.to_string()],
+        ).unwrap();
+        migrate_v4(&conn).unwrap();
+        drop(conn);
+
+        assert!(!get_enforcement_settings(&pool, id).unwrap().preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn stores_and_retrieves_preserve_tasks_setting() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test profile").unwrap();
+
+        set_preserve_tasks_on_lock(&pool, profile.id, true).unwrap();
+        assert!(get_enforcement_settings(&pool, profile.id).unwrap().preserve_tasks_on_lock);
+
+        set_preserve_tasks_on_lock(&pool, profile.id, false).unwrap();
+        assert!(!get_enforcement_settings(&pool, profile.id).unwrap().preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn config_propagation_includes_preserve_tasks_setting() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test profile").unwrap();
+        set_preserve_tasks_on_lock(&pool, profile.id, true).unwrap();
+        let agent_id = Uuid::new_v4();
+        pool.get().unwrap().execute(
+            "INSERT INTO agents
+             (id, machine_id, display_name, hostname, timezone, status, agent_version, created_at)
+             VALUES (?1, 'machine', 'host', 'host', 'UTC', 'paired', 'test', 1)",
+            params![agent_id.to_string()],
+        ).unwrap();
+        upsert_agent_users(&pool, agent_id, &[LocalUser {
+            local_uid: 1000,
+            username: "test".to_string(),
+            display_name: "Test User".to_string(),
+        }]).unwrap();
+        let agent_user = get_agent_user(&pool, agent_id, 1000).unwrap().unwrap();
+        update_agent_user(&pool, agent_user.id, Some(profile.id), Some("managed")).unwrap();
+
+        let config = crate::remaining::build_config_push(&pool, agent_id, 2).unwrap();
+
+        assert_eq!(config.users.len(), 1);
+        assert!(config.users[0].preserve_tasks_on_lock);
+    }
+}

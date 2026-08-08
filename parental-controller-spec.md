@@ -232,6 +232,7 @@ Sent after `agent_hello` if agent's config version is stale, and whenever config
         ],
         "adjustments_today": 0,
         "lockout_grace_minutes": 5,
+        "preserve_tasks_on_lock": false,
         "warning_thresholds_minutes": [15, 5, 1]
       }
     ]
@@ -243,6 +244,7 @@ Sent after `agent_hello` if agent's config version is stale, and whenever config
 - `daily_limits`: if absent for a day, that day is unlimited (still bound by schedule).
 - `schedules`: if none defined for a user, all times are allowed.
 - `adjustments_today`: net sum of all time adjustments for today (minutes, can be negative).
+- `preserve_tasks_on_lock`: optional for backwards compatibility and defaults to `false` when absent.
 
 #### `remaining_update`
 Sent in response to each heartbeat and after usage_sync. Pushed to **all agents** linked to the same profile.
@@ -270,7 +272,7 @@ Sent in response to each heartbeat and after usage_sync. Pushed to **all agents*
 - `enforce`: one of `"allow"`, `"warn"`, `"lock"`.
   - `allow`: user may continue.
   - `warn`: remaining time is within a warning threshold — agent should notify the user.
-  - `lock`: remaining time is 0 or user is outside schedule — agent must lock/terminate session.
+  - `lock`: remaining time is 0 or user is outside schedule — agent must lock the session and either preserve or terminate it according to `preserve_tasks_on_lock`.
 - `current_window_ends_at`: when the current schedule window closes (null if no schedule / unlimited).
 - `next_window_starts_at`: next allowed window today (null if none remain).
 
@@ -337,6 +339,7 @@ pub struct UserConfig {
     pub daily_limits: Vec<DailyLimit>,
     pub adjustments_today: i32,
     pub lockout_grace_minutes: u32,
+    pub preserve_tasks_on_lock: bool, // serde default: false
     pub warning_thresholds_minutes: Vec<u32>,
 }
 
@@ -469,6 +472,7 @@ CREATE TABLE cached_enforcement (
     local_uid       INTEGER NOT NULL REFERENCES managed_users(local_uid) ON DELETE CASCADE,
     lockout_grace_minutes   INTEGER NOT NULL DEFAULT 5,
     warning_thresholds      TEXT NOT NULL DEFAULT '15,5,1',  -- comma-separated minutes
+    preserve_tasks_on_lock  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (local_uid)
 );
 
@@ -548,7 +552,7 @@ CREATE TABLE agent_state (
 #### Enforcement Actions
 - **Allow**: no action.
 - **Warn**: (future) send desktop notification to the user. For now, log it.
-- **Lock**: lock the user's session via DBus `org.freedesktop.login1.Session.Lock()`. If session does not lock within `lockout_grace_minutes`, terminate it via `org.freedesktop.login1.Session.Terminate()`.
+- **Lock**: lock the user's session via DBus `org.freedesktop.login1.Session.Lock()`. With preserve tasks off (the default), terminate the graphical session after `lockout_grace_minutes`. With preserve tasks on, keep re-locking while blocked and do not terminate the session.
 
 #### Local User Scanning
 - Every `user_scan_interval` seconds (default 300), read `/etc/passwd` or use `getent passwd`.
@@ -722,7 +726,8 @@ CREATE TABLE time_adjustments (
 CREATE TABLE enforcement_settings (
     profile_id              UUID PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
     lockout_grace_minutes   INTEGER NOT NULL DEFAULT 5,
-    warning_thresholds      TEXT NOT NULL DEFAULT '15,5,1'   -- comma-separated minutes
+    warning_thresholds      TEXT NOT NULL DEFAULT '15,5,1',  -- comma-separated minutes
+    preserve_tasks_on_lock  BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Daily usage per agent_user (granular: per device)
@@ -897,8 +902,8 @@ All endpoints except `/api/v1/auth/*` require JWT in `Authorization: Bearer <tok
 |--------|------|-------------|
 | `GET` | `/profiles` | List all profiles |
 | `POST` | `/profiles` | Create a profile |
-| `GET` | `/profiles/:id` | Get profile with schedules, limits, linked agent_users |
-| `PATCH` | `/profiles/:id` | Update profile (display_name) |
+| `GET` | `/profiles/:id` | Get profile with schedules, limits, linked agent_users, and lock behavior |
+| `PATCH` | `/profiles/:id` | Update profile (`display_name`, `language`, or optional `preserve_tasks_on_lock`) |
 | `DELETE` | `/profiles/:id` | Delete profile |
 
 #### Agent Users (per-agent local users)
@@ -1246,10 +1251,10 @@ fn evaluate_enforcement(user, now, timezone) -> EnforceAction:
 
 ### 9.2 Lock Execution
 
-1. Send desktop notification: "Your session will be locked in {grace} minutes." (future; log for now).
-2. Wait `lockout_grace_minutes`.
-3. Call DBus: `org.freedesktop.login1.Session.Lock()` on all sessions for the user.
-4. If session still active after 30 seconds: call `org.freedesktop.login1.Session.Terminate()`.
+The per-profile `preserve_tasks_on_lock` setting defaults to **off**, preserving existing ScreenGuard behavior. Both modes lock immediately when access is blocked and Lock now continues to zero the remaining allowance.
+
+- **Preserve tasks off (default):** call DBus `org.freedesktop.login1.Session.Lock()` for all of the user's sessions, wait `lockout_grace_minutes`, then call `org.freedesktop.login1.Session.Terminate()` for graphical sessions that remain active.
+- **Preserve tasks on:** lock the sessions and continue re-locking them while access remains blocked. Do not terminate the graphical session. Applications and unsaved work remain running; once access is restored, the user returns to the existing session.
 
 ### 9.3 Unlock / Session Resume
 

@@ -72,6 +72,10 @@
   "profile.card_usage": "Nutzung",
   "profile.card_language": "Benachrichtigungssprache",
   "profile.btn_save_language": "Speichern",
+  "profile.card_lock_behavior": "Sperrverhalten",
+  "profile.keep_tasks_running": "Apps und Aufgaben während der Sperre weiterlaufen lassen",
+  "profile.keep_tasks_running_hint": "Wenn die Zeit abgelaufen ist, hält ScreenGuard den Anmeldebildschirm gesperrt, beendet die Sitzung aber nicht. Die verfügbare Zeit wird trotzdem auf null gesetzt.",
+  "profile.btn_save_lock_behavior": "Sperrverhalten speichern",
 
   "agents.heading": "Agenten",
   "agents.col_name": "Name",
@@ -164,6 +168,7 @@
   "flash.message_empty": "Nachricht darf nicht leer sein.",
   "flash.locked": "Heutige Nutzungszeit auf null gesetzt.",
   "flash.lock_failed": "Fehler.",
+  "flash.lock_behavior_saved": "Sperrverhalten gespeichert.",
   "flash.profile_deleted": "Profil gelöscht.",
   "flash.profile_delete_failed": "Löschen fehlgeschlagen.",
   "flash.language_saved": "Spracheinstellung gespeichert.",

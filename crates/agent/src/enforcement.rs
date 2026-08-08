@@ -101,7 +101,21 @@ fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::from_hms_opt(h, m, 0)
 }
 
-/// Execute a lock for a UID: DBus lock → wait grace period → DBus terminate if still active.
+#[derive(Debug, PartialEq, Eq)]
+enum LockBehavior {
+    TerminateAfterGrace,
+    PreserveAndRelock,
+}
+
+fn lock_behavior(preserve_tasks_on_lock: bool) -> LockBehavior {
+    if preserve_tasks_on_lock {
+        LockBehavior::PreserveAndRelock
+    } else {
+        LockBehavior::TerminateAfterGrace
+    }
+}
+
+/// Execute a lock for a UID, preserving or terminating the session according to cached config.
 pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<bool> {
     let (session_ids, grace_minutes, language, preserve_tasks) = {
         let db = db.lock().await;
@@ -125,7 +139,7 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<bool> {
     tracing::info!("Locking sessions for uid={uid}: {:?}", session_ids);
     crate::dbus::lock_sessions(&session_ids).await?;
 
-    if preserve_tasks {
+    if lock_behavior(preserve_tasks) == LockBehavior::PreserveAndRelock {
         tracing::info!("Keeping sessions running while uid={uid} remains locked");
         return Ok(false);
     }
@@ -144,6 +158,21 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lock_behavior, LockBehavior};
+
+    #[test]
+    fn preserve_off_terminates_after_grace() {
+        assert_eq!(lock_behavior(false), LockBehavior::TerminateAfterGrace);
+    }
+
+    #[test]
+    fn preserve_on_keeps_session_armed_for_relocking() {
+        assert_eq!(lock_behavior(true), LockBehavior::PreserveAndRelock);
+    }
 }
 
 /// Midnight handler: called when the calendar date changes.

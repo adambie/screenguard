@@ -62,6 +62,11 @@ pub struct PatchProfileBody {
     pub preserve_tasks_on_lock: Option<bool>,
 }
 
+fn lock_now_adjustment(limit: i32, adjustments: i32, used_minutes: i32) -> i32 {
+    let remaining = (limit + adjustments - used_minutes).max(0);
+    -remaining - adjustments
+}
+
 pub async fn patch_profile(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
@@ -218,9 +223,8 @@ pub async fn lock_now(
         .unwrap_or(1440);
     let adj = db::sum_adjustments_for_date(&state.db, id, &today).map_err(internal)?;
     let used_min = (used_secs / 60) as i32;
-    let remaining = (limit + adj - used_min).max(0);
     // Insert a negative adjustment to zero out remaining time.
-    let needed = -remaining - adj;
+    let needed = lock_now_adjustment(limit, adj, used_min);
     let adj_id = db::create_adjustment(&state.db, id, &today, needed, Some("lock_now"), None)
         .map_err(internal)?;
 
@@ -344,4 +348,29 @@ pub async fn bump_and_propagate(state: &AppState, profile_id: Uuid) -> anyhow::R
     }
 
     Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lock_now_adjustment, PatchProfileBody};
+
+    #[test]
+    fn older_patch_body_leaves_preserve_tasks_unchanged() {
+        let body: PatchProfileBody = serde_json::from_str(r#"{"display_name":"Renamed"}"#).unwrap();
+
+        assert!(body.preserve_tasks_on_lock.is_none());
+    }
+
+    #[test]
+    fn lock_now_zeroes_allowance_for_both_lock_modes() {
+        let limit = 120;
+        let adjustments = 20;
+        let used = 30;
+
+        for _preserve_tasks_on_lock in [false, true] {
+            let added_adjustment = lock_now_adjustment(limit, adjustments, used);
+            let remaining = (limit + adjustments + added_adjustment - used).max(0);
+            assert_eq!(remaining, 0);
+        }
+    }
 }
