@@ -99,6 +99,9 @@ class AppLocalizations {
   String get scheduleSaved => _t('scheduleSaved');
   String get languageSaved => _t('languageSaved');
   String get notifLanguage => _t('notifLanguage');
+  String get keepTasksRunning => _t('keepTasksRunning');
+  String get keepTasksRunningHint => _t('keepTasksRunningHint');
+  String get lockBehaviorSaved => _t('lockBehaviorSaved');
   String get linkedAccounts => _t('linkedAccounts');
   String get renameProfile => _t('renameProfile');
   String get deleteProfileTitle => _t('deleteProfileTitle');
@@ -269,6 +272,9 @@ class AppLocalizations {
     'limitsSaved': 'Limits saved', 'scheduleSaved': 'Schedule saved',
     'languageSaved': 'Language saved',
     'notifLanguage': 'Notification language',
+    'keepTasksRunning': 'Keep apps and tasks running while locked',
+    'keepTasksRunningHint': 'Keeps the login screen locked without ending the session.',
+    'lockBehaviorSaved': 'Lock behavior saved',
     'linkedAccounts': 'Linked accounts',
     'renameProfile': 'Rename profile',
     'deleteProfileTitle': 'Delete profile?',
@@ -382,6 +388,9 @@ class AppLocalizations {
     'limitsSaved': 'Limity zapisane', 'scheduleSaved': 'Harmonogram zapisany',
     'languageSaved': 'Język zapisany',
     'notifLanguage': 'Język powiadomień',
+    'keepTasksRunning': 'Pozostaw aplikacje i zadania uruchomione podczas blokady',
+    'keepTasksRunningHint': 'Utrzymuje ekran logowania zablokowany bez kończenia sesji.',
+    'lockBehaviorSaved': 'Sposób blokowania zapisany',
     'linkedAccounts': 'Powiązane konta',
     'renameProfile': 'Zmień nazwę profilu',
     'deleteProfileTitle': 'Usunąć profil?',
@@ -495,6 +504,9 @@ class AppLocalizations {
     'limitsSaved': 'Límites guardados', 'scheduleSaved': 'Horario guardado',
     'languageSaved': 'Idioma guardado',
     'notifLanguage': 'Idioma de notificaciones',
+    'keepTasksRunning': 'Mantener las aplicaciones y tareas en ejecución mientras está bloqueado',
+    'keepTasksRunningHint': 'Mantiene bloqueada la pantalla de inicio de sesión sin finalizar la sesión.',
+    'lockBehaviorSaved': 'Comportamiento del bloqueo guardado',
     'linkedAccounts': 'Cuentas vinculadas',
     'renameProfile': 'Renombrar perfil',
     'deleteProfileTitle': '¿Eliminar perfil?',
@@ -608,6 +620,9 @@ class AppLocalizations {
     'limitsSaved': 'Limites enregistrées', 'scheduleSaved': 'Programme enregistré',
     'languageSaved': 'Langue enregistrée',
     'notifLanguage': 'Langue des notifications',
+    'keepTasksRunning': 'Laisser les applications et les tâches en cours pendant le verrouillage',
+    'keepTasksRunningHint': 'Maintient l’écran de connexion verrouillé sans mettre fin à la session.',
+    'lockBehaviorSaved': 'Comportement du verrouillage enregistré',
     'linkedAccounts': 'Comptes liés',
     'renameProfile': 'Renommer le profil',
     'deleteProfileTitle': 'Supprimer le profil ?',
@@ -721,6 +736,9 @@ class AppLocalizations {
     'limitsSaved': 'Limits gespeichert', 'scheduleSaved': 'Zeitplan gespeichert',
     'languageSaved': 'Sprache gespeichert',
     'notifLanguage': 'Benachrichtigungssprache',
+    'keepTasksRunning': 'Apps und Aufgaben während der Sperre weiterlaufen lassen',
+    'keepTasksRunningHint': 'Hält den Anmeldebildschirm gesperrt, ohne die Sitzung zu beenden.',
+    'lockBehaviorSaved': 'Sperrverhalten gespeichert',
     'linkedAccounts': 'Verknüpfte Konten',
     'renameProfile': 'Profil umbenennen',
     'deleteProfileTitle': 'Profil löschen?',
@@ -834,6 +852,9 @@ class AppLocalizations {
     'limitsSaved': 'Limites salvos', 'scheduleSaved': 'Agenda salva',
     'languageSaved': 'Idioma salvo',
     'notifLanguage': 'Idioma das notificações',
+    'keepTasksRunning': 'Manter aplicativos e tarefas em execução durante o bloqueio',
+    'keepTasksRunningHint': 'Mantém a tela de login bloqueada sem encerrar a sessão.',
+    'lockBehaviorSaved': 'Comportamento do bloqueio salvo',
     'linkedAccounts': 'Contas vinculadas',
     'renameProfile': 'Renomear perfil',
     'deleteProfileTitle': 'Excluir perfil?',

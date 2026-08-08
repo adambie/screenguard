@@ -341,8 +341,8 @@ impl HeartbeatLoop {
                                 );
                             }
 
-                            // First lock: full flow — notify, lock screen, then terminate after grace.
-                            // Remove the uid from the set when done so a new session can be re-locked.
+                            // First lock: notify and lock, then follow the configured session behavior.
+                            // Terminating mode rearms after the grace period; preserving mode stays armed.
                             let locked_uids = self.locked_uids.clone();
                             let db = self.db.clone();
                             tokio::spawn(async move {
@@ -358,10 +358,10 @@ impl HeartbeatLoop {
                                 }
                             });
                         } else {
-                            // Grace period already running — silently re-lock in case the user
-                            // bypassed the lock screen without resetting the grace timer.
+                            // Lock flow already armed — silently re-lock in case the user bypassed
+                            // the lock screen, without resetting a grace timer that may be running.
                             let uid = entry.local_uid;
-                            tracing::info!("Re-locking uid={uid}: session still active during grace period");
+                            tracing::info!("Re-locking uid={uid}: session remains active while blocked");
                             let db = self.db.clone();
                             tokio::spawn(async move {
                                 let session_ids = db.lock().await

@@ -6,6 +6,7 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 
 - Daily time limits and weekly schedules per user profile
 - Hard enforcement — locks all graphical sessions when time runs out
+- Optional session preservation keeps applications and unsaved work running behind the lock screen
 - Desktop notifications: warns at 15 / 10 / 5 / 1 minute before lockout
 - Admin can send arbitrary text messages to any managed user's desktop
 - Time adjustments (add or remove minutes) with optional reason shown to the user
@@ -118,6 +119,15 @@ sudo firewall-cmd --reload
    Accept the code in the web UI to pair the agent with the server.
 
 4. **Assign users**: on the agent detail page, assign each local user account to a profile.
+
+## Locking modes
+
+Each profile has two locking modes. The setting defaults to **off**, preserving ScreenGuard's existing behavior.
+
+- **Default (preserve tasks off):** when access is blocked, ScreenGuard locks the login session and terminates the graphical session after the configured grace period.
+- **Preserve tasks on:** when access is blocked, ScreenGuard locks and continues re-locking the login session without terminating it. Applications and unsaved work remain running. Once access is restored, the user returns to the existing session.
+
+In both modes, **Lock now** zeroes the user's remaining allowance. The preserve-tasks setting changes only what happens to the graphical session while access remains blocked.
 
 ## Configuration
 

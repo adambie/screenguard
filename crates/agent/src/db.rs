@@ -577,3 +577,63 @@ impl Db {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Db;
+    use common::models::{UserConfig, UserStatus};
+    use rusqlite::Connection;
+    use uuid::Uuid;
+
+    fn user_config(uid: u32, preserve_tasks_on_lock: bool) -> UserConfig {
+        UserConfig {
+            local_uid: uid,
+            profile_id: Uuid::new_v4(),
+            status: UserStatus::Managed,
+            schedules: Vec::new(),
+            daily_limits: Vec::new(),
+            adjustments_today: 0,
+            adjustment_message: None,
+            lockout_grace_minutes: 5,
+            preserve_tasks_on_lock,
+            warning_thresholds_minutes: vec![15, 5, 1],
+            language: "en".to_string(),
+        }
+    }
+
+    #[test]
+    fn cached_enforcement_defaults_preserve_tasks_to_false() {
+        let db = Db::open(Some(":memory:")).unwrap();
+
+        assert!(!db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn migration_defaults_existing_cached_enforcement_to_false() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cached_enforcement (
+                local_uid INTEGER PRIMARY KEY,
+                lockout_grace_minutes INTEGER NOT NULL DEFAULT 5,
+                warning_thresholds TEXT NOT NULL DEFAULT '15,5,1'
+             );
+             INSERT INTO cached_enforcement (local_uid) VALUES (1000);",
+        ).unwrap();
+        let db = Db { conn };
+
+        db.migrate().unwrap();
+
+        assert!(!db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn config_push_caches_preserve_tasks_setting() {
+        let db = Db::open(Some(":memory:")).unwrap();
+
+        db.apply_config_push(&[user_config(1000, true)]).unwrap();
+        assert!(db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+
+        db.apply_config_push(&[user_config(1000, false)]).unwrap();
+        assert!(!db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+    }
+}

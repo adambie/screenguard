@@ -131,6 +131,21 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
     }
   }
 
+  Future<void> _savePreserveTasksOnLock(bool preserve) async {
+    try {
+      await ref.read(apiClientProvider).patch(
+        '/profiles/${widget.profileId}',
+        {'preserve_tasks_on_lock': preserve},
+      );
+      ref.invalidate(profileDetailProvider(widget.profileId));
+      if (mounted) _snack(AppLocalizations.of(context).lockBehaviorSaved);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    }
+  }
+
   Future<void> _rename(String newName) async {
     try {
       await ref.read(apiClientProvider).patch(
@@ -318,6 +333,8 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
                       initialSchedules: profile.schedules,
                       onSave: _saveSchedules,
                     ),
+                    const SizedBox(height: 16),
+                    _buildLockBehaviorCard(context, profile),
                     const SizedBox(height: 16),
                     _buildLanguageCard(context, profile),
                     const SizedBox(height: 16),
@@ -541,6 +558,18 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
             }),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLockBehaviorCard(BuildContext context, Profile profile) {
+    final l = AppLocalizations.of(context);
+    return Card(
+      child: SwitchListTile(
+        title: Text(l.keepTasksRunning),
+        subtitle: Text(l.keepTasksRunningHint),
+        value: profile.preserveTasksOnLock,
+        onChanged: _savePreserveTasksOnLock,
       ),
     );
   }

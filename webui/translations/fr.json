@@ -72,6 +72,10 @@
   "profile.card_usage": "Utilisation",
   "profile.card_language": "Langue des notifications",
   "profile.btn_save_language": "Enregistrer",
+  "profile.card_lock_behavior": "Comportement du verrouillage",
+  "profile.keep_tasks_running": "Laisser les applications et les tâches en cours pendant le verrouillage",
+  "profile.keep_tasks_running_hint": "Lorsque le temps est écoulé, ScreenGuard maintient l’écran de connexion verrouillé, mais ne met pas fin à la session. Le temps disponible est tout de même remis à zéro.",
+  "profile.btn_save_lock_behavior": "Enregistrer le comportement du verrouillage",
 
   "agents.heading": "Agents",
   "agents.col_name": "Nom",
@@ -164,6 +168,7 @@
   "flash.message_empty": "Le message ne peut pas être vide.",
   "flash.locked": "Temps disponible aujourd'hui annulé.",
   "flash.lock_failed": "Échec.",
+  "flash.lock_behavior_saved": "Comportement du verrouillage enregistré.",
   "flash.profile_deleted": "Profil supprimé.",
   "flash.profile_delete_failed": "Échec de la suppression.",
   "flash.language_saved": "Préférence de langue enregistrée.",
