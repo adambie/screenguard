@@ -312,6 +312,7 @@ async fn send_config_push(
             adjustments_today: 0,
             adjustment_message: None,
             lockout_grace_minutes: 5,
+            preserve_tasks_on_lock: false,
             warning_thresholds_minutes: vec![15, 5, 1],
             language: "en".to_string(),
         })

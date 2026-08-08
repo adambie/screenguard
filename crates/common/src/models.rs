@@ -25,6 +25,8 @@ pub struct UserConfig {
     pub adjustments_today: i32,
     pub adjustment_message: Option<String>,
     pub lockout_grace_minutes: u32,
+    #[serde(default)]
+    pub preserve_tasks_on_lock: bool,
     pub warning_thresholds_minutes: Vec<u32>,
     #[serde(default = "default_lang")]
     pub language: String,

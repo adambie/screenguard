@@ -440,6 +440,7 @@ def profile_detail(profile_id):
                            limits=data.get("daily_limits", []),
                            agent_users=data.get("agent_users", []),
                            status=status,
+                           preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
                            week_bars=week_bars,
                            week_max=chart_max,
                            week_offset=week_offset,
@@ -474,6 +475,16 @@ def set_profile_language(profile_id):
         lang = "en"
     r = api("PATCH", f"/profiles/{profile_id}", json={"language": lang})
     flash(t("flash.language_saved") if (r and r.ok) else t("flash.lock_failed"),
+          "success" if (r and r.ok) else "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id))
+
+@app.route("/profiles/<profile_id>/lock-behavior", methods=["POST"])
+@require_login
+def set_lock_behavior(profile_id):
+    preserve = request.form.get("preserve_tasks_on_lock") == "on"
+    r = api("PATCH", f"/profiles/{profile_id}",
+            json={"preserve_tasks_on_lock": preserve})
+    flash(t("flash.lock_behavior_saved") if (r and r.ok) else t("flash.lock_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
