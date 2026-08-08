@@ -36,6 +36,9 @@ impl Db {
         let _ = self.conn.execute_batch(
             "ALTER TABLE cached_enforcement ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
         );
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE cached_enforcement ADD COLUMN preserve_tasks_on_lock INTEGER NOT NULL DEFAULT 0",
+        );
         Ok(())
     }
 
@@ -89,6 +92,7 @@ impl Db {
                 local_uid               INTEGER NOT NULL REFERENCES managed_users(local_uid) ON DELETE CASCADE,
                 lockout_grace_minutes   INTEGER NOT NULL DEFAULT 5,
                 warning_thresholds      TEXT NOT NULL DEFAULT '15,5,1',
+                preserve_tasks_on_lock  INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (local_uid)
             );
 
@@ -259,8 +263,9 @@ impl Db {
             }
 
             tx.execute(
-                "INSERT OR REPLACE INTO cached_enforcement (local_uid, lockout_grace_minutes, warning_thresholds, language)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT OR REPLACE INTO cached_enforcement
+                 (local_uid, lockout_grace_minutes, warning_thresholds, language, preserve_tasks_on_lock)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     u.local_uid,
                     u.lockout_grace_minutes,
@@ -270,6 +275,7 @@ impl Db {
                         .collect::<Vec<_>>()
                         .join(","),
                     &u.language,
+                    u.preserve_tasks_on_lock,
                 ],
             )?;
         }
@@ -496,6 +502,7 @@ pub struct CachedEnforcement {
     pub lockout_grace_minutes: u32,
     pub warning_thresholds: Vec<u32>,
     pub language: String,
+    pub preserve_tasks_on_lock: bool,
 }
 
 impl Default for CachedEnforcement {
@@ -504,6 +511,7 @@ impl Default for CachedEnforcement {
             lockout_grace_minutes: 5,
             warning_thresholds: vec![15, 5, 1],
             language: "en".to_string(),
+            preserve_tasks_on_lock: false,
         }
     }
 }
@@ -550,11 +558,11 @@ impl Db {
     }
 
     pub fn get_cached_enforcement(&self, uid: u32) -> Result<CachedEnforcement> {
-        let (grace, thresholds_str, language): (u32, String, String) = self.conn.query_row(
-            "SELECT lockout_grace_minutes, warning_thresholds, language FROM cached_enforcement WHERE local_uid = ?1",
+        let (grace, thresholds_str, language, preserve_tasks): (u32, String, String, bool) = self.conn.query_row(
+            "SELECT lockout_grace_minutes, warning_thresholds, language, preserve_tasks_on_lock FROM cached_enforcement WHERE local_uid = ?1",
             params![uid],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).unwrap_or((5, "15,5,1".to_string(), "en".to_string()));
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).unwrap_or((5, "15,5,1".to_string(), "en".to_string(), false));
 
         let thresholds = thresholds_str
             .split(',')
@@ -565,6 +573,7 @@ impl Db {
             lockout_grace_minutes: grace,
             warning_thresholds: thresholds,
             language,
+            preserve_tasks_on_lock: preserve_tasks,
         })
     }
 }

@@ -346,6 +346,28 @@
 
 <!-- ── notifications language ────────────────────────────────────────── -->
 <div class="card mb-4">
+  <div class="card-header">{{ t('profile.card_lock_behavior') }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('set_lock_behavior', profile_id=profile.id) }}">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch"
+               id="preserveTasksOnLock" name="preserve_tasks_on_lock"
+               {% if preserve_tasks_on_lock %}checked{% endif %}>
+        <label class="form-check-label" for="preserveTasksOnLock">
+          {{ t('profile.keep_tasks_running') }}
+        </label>
+      </div>
+      <p class="text-secondary small mt-2 mb-3">
+        {{ t('profile.keep_tasks_running_hint') }}
+      </p>
+      <button class="btn btn-primary btn-sm">
+        {{ t('profile.btn_save_lock_behavior') }}
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
   <div class="card-header">{{ t('profile.card_language') }}</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('set_profile_language', profile_id=profile.id) }}"

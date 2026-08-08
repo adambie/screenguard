@@ -102,16 +102,16 @@ fn parse_time(s: &str) -> Option<NaiveTime> {
 }
 
 /// Execute a lock for a UID: DBus lock → wait grace period → DBus terminate if still active.
-pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
-    let (session_ids, grace_minutes, language) = {
+pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<bool> {
+    let (session_ids, grace_minutes, language, preserve_tasks) = {
         let db = db.lock().await;
         let sessions = db.get_all_session_ids(uid)?;
         let enforcement = db.get_cached_enforcement(uid)?;
-        (sessions, enforcement.lockout_grace_minutes, enforcement.language)
+        (sessions, enforcement.lockout_grace_minutes, enforcement.language, enforcement.preserve_tasks_on_lock)
     };
 
     if session_ids.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
 
     // Final warning before the screen locks.
@@ -124,6 +124,11 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
 
     tracing::info!("Locking sessions for uid={uid}: {:?}", session_ids);
     crate::dbus::lock_sessions(&session_ids).await?;
+
+    if preserve_tasks {
+        tracing::info!("Keeping sessions running while uid={uid} remains locked");
+        return Ok(false);
+    }
 
     // Wait grace period, then terminate any still-active sessions.
     tokio::time::sleep(std::time::Duration::from_secs(grace_minutes as u64 * 60)).await;
@@ -138,7 +143,7 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<()> {
         crate::dbus::terminate_sessions(&still_active).await?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Midnight handler: called when the calendar date changes.

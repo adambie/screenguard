@@ -346,10 +346,16 @@ impl HeartbeatLoop {
                             let locked_uids = self.locked_uids.clone();
                             let db = self.db.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = execute_lock(uid, &db).await {
-                                    tracing::error!("Lock failed for uid={uid}: {e}");
+                                let rearm = match execute_lock(uid, &db).await {
+                                    Ok(rearm) => rearm,
+                                    Err(e) => {
+                                        tracing::error!("Lock failed for uid={uid}: {e}");
+                                        true
+                                    }
+                                };
+                                if rearm {
+                                    locked_uids.lock().await.remove(&uid);
                                 }
-                                locked_uids.lock().await.remove(&uid);
                             });
                         } else {
                             // Grace period already running — silently re-lock in case the user

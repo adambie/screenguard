@@ -45,11 +45,13 @@ pub async fn get_profile(
     let schedules = db::get_schedules(&state.db, id).map_err(internal)?;
     let limits = db::get_daily_limits(&state.db, id).map_err(internal)?;
     let users = db::get_agent_users_for_profile(&state.db, id).map_err(internal)?;
+    let enforcement = db::get_enforcement_settings(&state.db, id).map_err(internal)?;
     Ok(Json(serde_json::json!({
         "profile": profile,
         "schedules": schedules,
         "daily_limits": limits,
         "agent_users": users,
+        "preserve_tasks_on_lock": enforcement.preserve_tasks_on_lock,
     })))
 }
 
@@ -57,6 +59,7 @@ pub async fn get_profile(
 pub struct PatchProfileBody {
     pub display_name: Option<String>,
     pub language: Option<String>,
+    pub preserve_tasks_on_lock: Option<bool>,
 }
 
 pub async fn patch_profile(
@@ -70,6 +73,10 @@ pub async fn patch_profile(
     }
     if let Some(lang) = &body.language {
         db::update_profile_language(&state.db, id, lang).map_err(internal)?;
+        bump_and_propagate(&state, id).await.map_err(internal)?;
+    }
+    if let Some(preserve) = body.preserve_tasks_on_lock {
+        db::set_preserve_tasks_on_lock(&state.db, id, preserve).map_err(internal)?;
         bump_and_propagate(&state, id).await.map_err(internal)?;
     }
     Ok(Json(serde_json::json!({ "message": "Profile updated" })))

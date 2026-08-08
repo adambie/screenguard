@@ -23,6 +23,7 @@ pub fn open(path: &str) -> Result<DbPool> {
     migrate_v2(&conn)?;
     migrate_v3(&conn)?;
     migrate_v4(&conn)?;
+    migrate_v5(&conn)?;
     Ok(pool)
 }
 
@@ -114,6 +115,20 @@ fn migrate_v4(conn: &rusqlite::Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_v5(conn: &rusqlite::Connection) -> Result<()> {
+    let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v >= 5 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "ALTER TABLE enforcement_settings
+         ADD COLUMN preserve_tasks_on_lock INTEGER NOT NULL DEFAULT 0;",
+    )?;
+    conn.execute("PRAGMA user_version = 5", [])?;
+    tracing::info!("DB migration v5 applied (preserve tasks on lock)");
+    Ok(())
+}
+
 const SCHEMA: &str = "
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -190,7 +205,8 @@ CREATE TABLE IF NOT EXISTS time_adjustments (
 CREATE TABLE IF NOT EXISTS enforcement_settings (
     profile_id              TEXT PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
     lockout_grace_minutes   INTEGER NOT NULL DEFAULT 5,
-    warning_thresholds      TEXT NOT NULL DEFAULT '15,5,1'
+    warning_thresholds      TEXT NOT NULL DEFAULT '15,5,1',
+    preserve_tasks_on_lock  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS daily_usage (
@@ -301,6 +317,7 @@ pub struct TimeAdjustment {
 #[derive(Debug, Clone)]
 pub struct EnforcementSettings {
     pub lockout_grace_minutes: i32,
+    pub preserve_tasks_on_lock: bool,
     pub warning_thresholds: Vec<i32>,
 }
 
@@ -855,13 +872,27 @@ pub fn create_adjustment(
 
 pub fn get_enforcement_settings(pool: &DbPool, profile_id: Uuid) -> Result<EnforcementSettings> {
     let conn = pool.get()?;
-    let (grace, thresholds_str): (i32, String) = conn.query_row(
-        "SELECT lockout_grace_minutes, warning_thresholds FROM enforcement_settings WHERE profile_id=?1",
+    let (grace, thresholds_str, preserve_tasks): (i32, String, bool) = conn.query_row(
+        "SELECT lockout_grace_minutes, warning_thresholds, preserve_tasks_on_lock
+         FROM enforcement_settings WHERE profile_id=?1",
         params![profile_id.to_string()],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    ).unwrap_or((5, "15,5,1".to_string()));
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).unwrap_or((5, "15,5,1".to_string(), false));
     let thresholds = thresholds_str.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-    Ok(EnforcementSettings { lockout_grace_minutes: grace, warning_thresholds: thresholds })
+    Ok(EnforcementSettings {
+        lockout_grace_minutes: grace,
+        preserve_tasks_on_lock: preserve_tasks,
+        warning_thresholds: thresholds,
+    })
+}
+
+pub fn set_preserve_tasks_on_lock(pool: &DbPool, profile_id: Uuid, preserve: bool) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE enforcement_settings SET preserve_tasks_on_lock=?1 WHERE profile_id=?2",
+        params![preserve, profile_id.to_string()],
+    )?;
+    Ok(())
 }
 
 // ── daily_usage ───────────────────────────────────────────────────────────────
