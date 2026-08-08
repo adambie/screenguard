@@ -428,14 +428,6 @@ impl Db {
         Ok(ids)
     }
 
-    pub fn count_active_sessions(&self, uid: u32) -> Result<u32> {
-        let count: u32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM active_sessions WHERE local_uid = ?1 AND is_idle = 0",
-            params![uid],
-            |row| row.get(0),
-        )?;
-        Ok(count)
-    }
 }
 
 // ── agent_state ───────────────────────────────────────────────────────────────

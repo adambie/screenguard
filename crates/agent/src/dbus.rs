@@ -8,8 +8,27 @@ use zbus::{Connection, proxy};
 pub enum SessionEvent {
     SessionStarted { uid: u32, session_id: String },
     SessionEnded { uid: u32, session_id: String },
-    IdleChanged { uid: u32, session_id: String, idle: bool },
+    StateChanged { uid: u32, session_id: String, state: SessionUsageState },
     PrepareForSleep { suspend: bool },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SessionUsageState {
+    pub active: Option<bool>,
+    pub locked: Option<bool>,
+    pub idle: Option<bool>,
+}
+
+pub(crate) fn session_counts_usage(state: &SessionUsageState) -> bool {
+    state.active == Some(true)
+        && state.locked == Some(false)
+        && state.idle == Some(false)
+}
+
+pub(crate) fn uid_counts_usage<'a>(
+    states: impl IntoIterator<Item = &'a SessionUsageState>,
+) -> bool {
+    states.into_iter().any(session_counts_usage)
 }
 
 #[proxy(
@@ -43,6 +62,12 @@ trait Login1Session {
     #[zbus(property)]
     fn idle_hint(&self) -> zbus::Result<bool>;
 
+    #[zbus(property)]
+    fn active(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn locked_hint(&self) -> zbus::Result<bool>;
+
     #[zbus(property, name = "Type")]
     fn session_type(&self) -> zbus::Result<String>;
 
@@ -66,28 +91,30 @@ impl DbusMonitor {
 
     pub async fn run(self) -> Result<()> {
         let manager = Login1ManagerProxy::new(&self.conn).await?;
+        let mut session_uids = HashMap::new();
 
-        // Emit events for graphical sessions already active at startup.
+        // Emit events for graphical sessions already present at startup.
         // TTY/SSH sessions are excluded — they are never idle and must not count as screen time.
         if let Ok(sessions) = manager.list_sessions().await {
             for (session_id, uid, _user, _seat, path) in sessions {
                 if !self.is_graphical_session(&path).await {
                     continue;
                 }
-                let idle = self.get_session_idle(&path).await.unwrap_or(false);
+                session_uids.insert(session_id.clone(), uid);
+                let state = self.get_session_state(&path, uid, &session_id).await;
                 let _ = self.tx.send(SessionEvent::SessionStarted {
                     uid,
                     session_id: session_id.clone(),
                 }).await;
-                let _ = self.tx.send(SessionEvent::IdleChanged {
+                let _ = self.tx.send(SessionEvent::StateChanged {
                     uid,
                     session_id: session_id.clone(),
-                    idle,
+                    state,
                 }).await;
                 let tx = self.tx.clone();
                 let conn = self.conn.clone();
                 tokio::spawn(async move {
-                    let _ = watch_idle(conn, path, uid, session_id, tx).await;
+                    let _ = watch_session_state(conn, path, uid, session_id, tx).await;
                 });
             }
         }
@@ -105,7 +132,8 @@ impl DbusMonitor {
                     let uid = self.get_session_uid(&path).await.unwrap_or(0);
                     if uid > 0 && self.is_graphical_session(&path).await {
                         tracing::info!("Session started: uid={uid} session={session_id}");
-                        let idle = self.get_session_idle(&path).await.unwrap_or(false);
+                        session_uids.insert(session_id.clone(), uid);
+                        let state = self.get_session_state(&path, uid, &session_id).await;
                         let _ = self.tx.send(SessionEvent::SessionStarted {
                             uid,
                             session_id: session_id.clone(),
@@ -115,12 +143,12 @@ impl DbusMonitor {
                         let sid = session_id.clone();
                         let p = path.clone();
                         tokio::spawn(async move {
-                            let _ = watch_idle(conn, p, uid, sid, tx).await;
+                            let _ = watch_session_state(conn, p, uid, sid, tx).await;
                         });
-                        let _ = self.tx.send(SessionEvent::IdleChanged {
+                        let _ = self.tx.send(SessionEvent::StateChanged {
                             uid,
                             session_id,
-                            idle,
+                            state,
                         }).await;
                     }
                 }
@@ -128,7 +156,10 @@ impl DbusMonitor {
                     let args = signal.args()?;
                     let session_id = args.session_id.to_string();
                     let path = args.object_path.clone();
-                    let uid = self.get_session_uid(&path).await.unwrap_or(0);
+                    let uid = match session_uids.remove(&session_id) {
+                        Some(uid) => uid,
+                        None => self.get_session_uid(&path).await.unwrap_or(0),
+                    };
                     tracing::info!("Session ended: uid={uid} session={session_id}");
                     let _ = self.tx.send(SessionEvent::SessionEnded { uid, session_id }).await;
                 }
@@ -151,12 +182,21 @@ impl DbusMonitor {
         Ok(uid)
     }
 
-    async fn get_session_idle(&self, path: &zbus::zvariant::OwnedObjectPath) -> Result<bool> {
-        let session = Login1SessionProxy::builder(&self.conn)
-            .path(path.as_ref())?
-            .build()
-            .await?;
-        Ok(session.idle_hint().await?)
+    async fn get_session_state(
+        &self,
+        path: &zbus::zvariant::OwnedObjectPath,
+        uid: u32,
+        session_id: &str,
+    ) -> SessionUsageState {
+        let Ok(builder) = Login1SessionProxy::builder(&self.conn).path(path.as_ref()) else {
+            tracing::warn!("Cannot monitor state for uid={uid} session={session_id}: invalid object path");
+            return SessionUsageState::default();
+        };
+        let Ok(session) = builder.build().await else {
+            tracing::warn!("Cannot monitor state for uid={uid} session={session_id}: proxy unavailable");
+            return SessionUsageState::default();
+        };
+        read_session_state(&session, uid, session_id).await
     }
 
     /// Returns true only for graphical sessions (x11 or wayland).
@@ -176,7 +216,7 @@ impl DbusMonitor {
     }
 }
 
-async fn watch_idle(
+async fn watch_session_state(
     conn: Connection,
     path: zbus::zvariant::OwnedObjectPath,
     uid: u32,
@@ -188,17 +228,50 @@ async fn watch_idle(
         .build()
         .await?;
 
-    let mut stream = session.receive_idle_hint_changed().await;
-    while let Some(change) = stream.next().await {
-        if let Ok(idle) = change.get().await {
-            let _ = tx.send(SessionEvent::IdleChanged {
-                uid,
-                session_id: session_id.clone(),
-                idle,
-            }).await;
+    let mut active_stream = session.receive_active_changed().await;
+    let mut locked_stream = session.receive_locked_hint_changed().await;
+    let mut idle_stream = session.receive_idle_hint_changed().await;
+    let state = read_session_state(&session, uid, &session_id).await;
+    let _ = tx.send(SessionEvent::StateChanged {
+        uid,
+        session_id: session_id.clone(),
+        state,
+    }).await;
+    loop {
+        tokio::select! {
+            Some(_) = active_stream.next() => {}
+            Some(_) = locked_stream.next() => {}
+            Some(_) = idle_stream.next() => {}
+            else => break,
         }
+        let state = read_session_state(&session, uid, &session_id).await;
+        let _ = tx.send(SessionEvent::StateChanged {
+            uid,
+            session_id: session_id.clone(),
+            state,
+        }).await;
     }
     Ok(())
+}
+
+async fn read_session_state(
+    session: &Login1SessionProxy<'_>,
+    uid: u32,
+    session_id: &str,
+) -> SessionUsageState {
+    let active = session.active().await.map_err(|e| {
+        tracing::warn!("Cannot read Active for uid={uid} session={session_id}: {e}");
+        e
+    }).ok();
+    let locked = session.locked_hint().await.map_err(|e| {
+        tracing::warn!("Cannot read LockedHint for uid={uid} session={session_id}: {e}");
+        e
+    }).ok();
+    let idle = session.idle_hint().await.map_err(|e| {
+        tracing::warn!("Cannot read IdleHint for uid={uid} session={session_id}: {e}");
+        e
+    }).ok();
+    SessionUsageState { active, locked, idle }
 }
 
 /// Lock all sessions in the given list via DBus.
@@ -344,4 +417,75 @@ trait Notifications {
         hints: HashMap<&str, zbus::zvariant::Value<'_>>,
         expire_timeout: i32,
     ) -> zbus::Result<u32>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{session_counts_usage, uid_counts_usage, SessionUsageState};
+
+    fn state(active: bool, locked: bool, idle: bool) -> SessionUsageState {
+        SessionUsageState {
+            active: Some(active),
+            locked: Some(locked),
+            idle: Some(idle),
+        }
+    }
+
+    #[test]
+    fn active_unlocked_non_idle_session_counts() {
+        assert!(session_counts_usage(&state(true, false, false)));
+    }
+
+    #[test]
+    fn active_locked_non_idle_session_does_not_count() {
+        assert!(!session_counts_usage(&state(true, true, false)));
+    }
+
+    #[test]
+    fn inactive_unlocked_non_idle_session_does_not_count() {
+        assert!(!session_counts_usage(&state(false, false, false)));
+    }
+
+    #[test]
+    fn active_unlocked_idle_session_does_not_count() {
+        assert!(!session_counts_usage(&state(true, false, true)));
+    }
+
+    #[test]
+    fn inactive_locked_non_idle_session_does_not_count() {
+        assert!(!session_counts_usage(&state(false, true, false)));
+    }
+
+    #[test]
+    fn locked_idle_session_does_not_count() {
+        assert!(!session_counts_usage(&state(true, true, true)));
+    }
+
+    #[test]
+    fn one_qualifying_session_makes_uid_count() {
+        let states = [state(false, false, false), state(true, false, false)];
+        assert!(uid_counts_usage(&states));
+    }
+
+    #[test]
+    fn no_qualifying_sessions_make_uid_not_count() {
+        let states = [state(true, true, false), state(false, false, false)];
+        assert!(!uid_counts_usage(&states));
+    }
+
+    #[test]
+    fn multiple_qualifying_sessions_still_make_one_uid_count() {
+        let states = [state(true, false, false), state(true, false, false)];
+        assert!(uid_counts_usage(&states));
+    }
+
+    #[test]
+    fn unknown_property_fails_closed() {
+        let states = [SessionUsageState {
+            active: Some(true),
+            locked: None,
+            idle: Some(false),
+        }];
+        assert!(!uid_counts_usage(&states));
+    }
 }

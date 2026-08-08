@@ -204,6 +204,9 @@ class TodayStatus {
       );
 }
 
+int unlockAdjustmentFor(int adjustmentsMinutes) =>
+    adjustmentsMinutes < 0 ? -adjustmentsMinutes : 0;
+
 class AgentOnlineStatus {
   final String agentId;
   final String agentName;

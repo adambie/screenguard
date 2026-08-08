@@ -85,12 +85,16 @@ class AppLocalizations {
   String get lockNow => _t('lockNow');
   String get lockNowConfirmTitle => _t('lockNowConfirmTitle');
   String get lockNowConfirmBody => _t('lockNowConfirmBody');
+  String get unlock => _t('unlock');
+  String get unlockConfirmTitle => _t('unlockConfirmTitle');
+  String get unlockConfirmBody => _t('unlockConfirmBody');
   String get message => _t('message');
   String get sendMessage => _t('sendMessage');
   String get messageToUser => _t('messageToUser');
   String get messageSent => _t('messageSent');
   String get timeAdjusted => _t('timeAdjusted');
   String get screenTimeLocked => _t('screenTimeLocked');
+  String get screenTimeUnlocked => _t('screenTimeUnlocked');
   String usedOf(String u) => _t('usedOf').replaceAll('{u}', u);
   String usedOfLimit(String u, String l) =>
       _t('usedOfLimit').replaceAll('{u}', u).replaceAll('{l}', l);
@@ -263,10 +267,14 @@ class AppLocalizations {
     'lockNow': 'Lock now',
     'lockNowConfirmTitle': 'Lock now?',
     'lockNowConfirmBody': "This will zero out today's remaining screen time.",
+    'unlock': 'Unlock',
+    'unlockConfirmTitle': 'Unlock screen time?',
+    'unlockConfirmBody': 'Restore today’s normal time limit?',
     'message': 'Message', 'sendMessage': 'Send message',
     'messageToUser': 'Message to user…',
     'messageSent': 'Message sent', 'timeAdjusted': 'Time adjusted',
     'screenTimeLocked': 'Screen time locked',
+    'screenTimeUnlocked': 'Screen time unlocked',
     'usedOf': '{u} used', 'usedOfLimit': '{u} used of {l}',
     'timeAdjustmentLabel': '{a} adjustment',
     'limitsSaved': 'Limits saved', 'scheduleSaved': 'Schedule saved',
@@ -379,10 +387,14 @@ class AppLocalizations {
     'lockNow': 'Zablokuj teraz',
     'lockNowConfirmTitle': 'Zablokować teraz?',
     'lockNowConfirmBody': 'Spowoduje to wyzerowanie dzisiejszego pozostałego czasu ekranu.',
+    'unlock': 'Odblokuj',
+    'unlockConfirmTitle': 'Odblokować czas ekranu?',
+    'unlockConfirmBody': 'Przywrócić normalny limit czasu na dziś?',
     'message': 'Wiadomość', 'sendMessage': 'Wyślij wiadomość',
     'messageToUser': 'Wiadomość do użytkownika…',
     'messageSent': 'Wiadomość wysłana', 'timeAdjusted': 'Czas dostosowany',
     'screenTimeLocked': 'Czas ekranu zablokowany',
+    'screenTimeUnlocked': 'Czas ekranu odblokowany',
     'usedOf': 'użyto {u}', 'usedOfLimit': 'użyto {u} z {l}',
     'timeAdjustmentLabel': 'korekta {a}',
     'limitsSaved': 'Limity zapisane', 'scheduleSaved': 'Harmonogram zapisany',
@@ -495,10 +507,14 @@ class AppLocalizations {
     'lockNow': 'Bloquear ahora',
     'lockNowConfirmTitle': '¿Bloquear ahora?',
     'lockNowConfirmBody': 'Esto pondrá a cero el tiempo de pantalla restante de hoy.',
+    'unlock': 'Desbloquear',
+    'unlockConfirmTitle': '¿Desbloquear el tiempo de pantalla?',
+    'unlockConfirmBody': '¿Restaurar el límite de tiempo normal de hoy?',
     'message': 'Mensaje', 'sendMessage': 'Enviar mensaje',
     'messageToUser': 'Mensaje al usuario…',
     'messageSent': 'Mensaje enviado', 'timeAdjusted': 'Tiempo ajustado',
     'screenTimeLocked': 'Tiempo de pantalla bloqueado',
+    'screenTimeUnlocked': 'Tiempo de pantalla desbloqueado',
     'usedOf': '{u} usado', 'usedOfLimit': '{u} usado de {l}',
     'timeAdjustmentLabel': 'ajuste {a}',
     'limitsSaved': 'Límites guardados', 'scheduleSaved': 'Horario guardado',
@@ -611,10 +627,14 @@ class AppLocalizations {
     'lockNow': 'Verrouiller maintenant',
     'lockNowConfirmTitle': 'Verrouiller maintenant ?',
     'lockNowConfirmBody': "Cela remettra à zéro le temps d'écran restant d'aujourd'hui.",
+    'unlock': 'Débloquer',
+    'unlockConfirmTitle': "Débloquer le temps d'écran ?",
+    'unlockConfirmBody': "Restaurer la limite de temps normale d'aujourd'hui ?",
     'message': 'Message', 'sendMessage': 'Envoyer un message',
     'messageToUser': "Message à l'utilisateur…",
     'messageSent': 'Message envoyé', 'timeAdjusted': 'Temps ajusté',
     'screenTimeLocked': "Temps d'écran verrouillé",
+    'screenTimeUnlocked': "Temps d'écran débloqué",
     'usedOf': '{u} utilisé', 'usedOfLimit': '{u} utilisé sur {l}',
     'timeAdjustmentLabel': 'ajustement {a}',
     'limitsSaved': 'Limites enregistrées', 'scheduleSaved': 'Programme enregistré',
@@ -727,10 +747,14 @@ class AppLocalizations {
     'lockNow': 'Jetzt sperren',
     'lockNowConfirmTitle': 'Jetzt sperren?',
     'lockNowConfirmBody': 'Damit wird die verbleibende Bildschirmzeit von heute auf null gesetzt.',
+    'unlock': 'Entsperren',
+    'unlockConfirmTitle': 'Bildschirmzeit entsperren?',
+    'unlockConfirmBody': 'Normales Tageszeitlimit wiederherstellen?',
     'message': 'Nachricht', 'sendMessage': 'Nachricht senden',
     'messageToUser': 'Nachricht an Benutzer…',
     'messageSent': 'Nachricht gesendet', 'timeAdjusted': 'Zeit angepasst',
     'screenTimeLocked': 'Bildschirmzeit gesperrt',
+    'screenTimeUnlocked': 'Bildschirmzeit entsperrt',
     'usedOf': '{u} genutzt', 'usedOfLimit': '{u} genutzt von {l}',
     'timeAdjustmentLabel': 'Anpassung {a}',
     'limitsSaved': 'Limits gespeichert', 'scheduleSaved': 'Zeitplan gespeichert',
@@ -843,10 +867,14 @@ class AppLocalizations {
     'lockNow': 'Bloquear agora',
     'lockNowConfirmTitle': 'Bloquear agora?',
     'lockNowConfirmBody': 'Isso zerará o tempo de tela restante de hoje.',
+    'unlock': 'Desbloquear',
+    'unlockConfirmTitle': 'Desbloquear o tempo de tela?',
+    'unlockConfirmBody': 'Restaurar o limite de tempo normal de hoje?',
     'message': 'Mensagem', 'sendMessage': 'Enviar mensagem',
     'messageToUser': 'Mensagem para o usuário…',
     'messageSent': 'Mensagem enviada', 'timeAdjusted': 'Tempo ajustado',
     'screenTimeLocked': 'Tempo de tela bloqueado',
+    'screenTimeUnlocked': 'Tempo de tela desbloqueado',
     'usedOf': '{u} usado', 'usedOfLimit': '{u} usado de {l}',
     'timeAdjustmentLabel': 'ajuste {a}',
     'limitsSaved': 'Limites salvos', 'scheduleSaved': 'Agenda salva',
