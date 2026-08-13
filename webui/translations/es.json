@@ -72,6 +72,10 @@
   "profile.card_usage": "Uso",
   "profile.card_language": "Idioma de notificaciones",
   "profile.btn_save_language": "Guardar",
+  "profile.card_lock_behavior": "Comportamiento del bloqueo",
+  "profile.keep_tasks_running": "Mantener las aplicaciones y tareas en ejecución mientras está bloqueado",
+  "profile.keep_tasks_running_hint": "Cuando se agota el tiempo, ScreenGuard mantiene bloqueada la pantalla de inicio de sesión, pero no finaliza la sesión. El tiempo disponible se sigue poniendo a cero.",
+  "profile.btn_save_lock_behavior": "Guardar comportamiento del bloqueo",
 
   "agents.heading": "Agentes",
   "agents.col_name": "Nombre",
@@ -164,6 +168,7 @@
   "flash.message_empty": "El mensaje no puede estar vacío.",
   "flash.locked": "Tiempo de hoy anulado.",
   "flash.lock_failed": "Error.",
+  "flash.lock_behavior_saved": "Comportamiento del bloqueo guardado.",
   "flash.profile_deleted": "Perfil eliminado.",
   "flash.profile_delete_failed": "Error al eliminar.",
   "flash.language_saved": "Preferencia de idioma guardada.",

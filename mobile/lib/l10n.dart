@@ -85,12 +85,16 @@ class AppLocalizations {
   String get lockNow => _t('lockNow');
   String get lockNowConfirmTitle => _t('lockNowConfirmTitle');
   String get lockNowConfirmBody => _t('lockNowConfirmBody');
+  String get unlock => _t('unlock');
+  String get unlockConfirmTitle => _t('unlockConfirmTitle');
+  String get unlockConfirmBody => _t('unlockConfirmBody');
   String get message => _t('message');
   String get sendMessage => _t('sendMessage');
   String get messageToUser => _t('messageToUser');
   String get messageSent => _t('messageSent');
   String get timeAdjusted => _t('timeAdjusted');
   String get screenTimeLocked => _t('screenTimeLocked');
+  String get screenTimeUnlocked => _t('screenTimeUnlocked');
   String usedOf(String u) => _t('usedOf').replaceAll('{u}', u);
   String usedOfLimit(String u, String l) =>
       _t('usedOfLimit').replaceAll('{u}', u).replaceAll('{l}', l);
@@ -99,6 +103,9 @@ class AppLocalizations {
   String get scheduleSaved => _t('scheduleSaved');
   String get languageSaved => _t('languageSaved');
   String get notifLanguage => _t('notifLanguage');
+  String get keepTasksRunning => _t('keepTasksRunning');
+  String get keepTasksRunningHint => _t('keepTasksRunningHint');
+  String get lockBehaviorSaved => _t('lockBehaviorSaved');
   String get linkedAccounts => _t('linkedAccounts');
   String get renameProfile => _t('renameProfile');
   String get deleteProfileTitle => _t('deleteProfileTitle');
@@ -260,15 +267,22 @@ class AppLocalizations {
     'lockNow': 'Lock now',
     'lockNowConfirmTitle': 'Lock now?',
     'lockNowConfirmBody': "This will zero out today's remaining screen time.",
+    'unlock': 'Unlock',
+    'unlockConfirmTitle': 'Unlock screen time?',
+    'unlockConfirmBody': 'Restore today’s normal time limit?',
     'message': 'Message', 'sendMessage': 'Send message',
     'messageToUser': 'Message to user…',
     'messageSent': 'Message sent', 'timeAdjusted': 'Time adjusted',
     'screenTimeLocked': 'Screen time locked',
+    'screenTimeUnlocked': 'Screen time unlocked',
     'usedOf': '{u} used', 'usedOfLimit': '{u} used of {l}',
     'timeAdjustmentLabel': '{a} adjustment',
     'limitsSaved': 'Limits saved', 'scheduleSaved': 'Schedule saved',
     'languageSaved': 'Language saved',
     'notifLanguage': 'Notification language',
+    'keepTasksRunning': 'Keep apps and tasks running while locked',
+    'keepTasksRunningHint': 'Keeps the login screen locked without ending the session.',
+    'lockBehaviorSaved': 'Lock behavior saved',
     'linkedAccounts': 'Linked accounts',
     'renameProfile': 'Rename profile',
     'deleteProfileTitle': 'Delete profile?',
@@ -373,15 +387,22 @@ class AppLocalizations {
     'lockNow': 'Zablokuj teraz',
     'lockNowConfirmTitle': 'Zablokować teraz?',
     'lockNowConfirmBody': 'Spowoduje to wyzerowanie dzisiejszego pozostałego czasu ekranu.',
+    'unlock': 'Odblokuj',
+    'unlockConfirmTitle': 'Odblokować czas ekranu?',
+    'unlockConfirmBody': 'Przywrócić normalny limit czasu na dziś?',
     'message': 'Wiadomość', 'sendMessage': 'Wyślij wiadomość',
     'messageToUser': 'Wiadomość do użytkownika…',
     'messageSent': 'Wiadomość wysłana', 'timeAdjusted': 'Czas dostosowany',
     'screenTimeLocked': 'Czas ekranu zablokowany',
+    'screenTimeUnlocked': 'Czas ekranu odblokowany',
     'usedOf': 'użyto {u}', 'usedOfLimit': 'użyto {u} z {l}',
     'timeAdjustmentLabel': 'korekta {a}',
     'limitsSaved': 'Limity zapisane', 'scheduleSaved': 'Harmonogram zapisany',
     'languageSaved': 'Język zapisany',
     'notifLanguage': 'Język powiadomień',
+    'keepTasksRunning': 'Pozostaw aplikacje i zadania uruchomione podczas blokady',
+    'keepTasksRunningHint': 'Utrzymuje ekran logowania zablokowany bez kończenia sesji.',
+    'lockBehaviorSaved': 'Sposób blokowania zapisany',
     'linkedAccounts': 'Powiązane konta',
     'renameProfile': 'Zmień nazwę profilu',
     'deleteProfileTitle': 'Usunąć profil?',
@@ -486,15 +507,22 @@ class AppLocalizations {
     'lockNow': 'Bloquear ahora',
     'lockNowConfirmTitle': '¿Bloquear ahora?',
     'lockNowConfirmBody': 'Esto pondrá a cero el tiempo de pantalla restante de hoy.',
+    'unlock': 'Desbloquear',
+    'unlockConfirmTitle': '¿Desbloquear el tiempo de pantalla?',
+    'unlockConfirmBody': '¿Restaurar el límite de tiempo normal de hoy?',
     'message': 'Mensaje', 'sendMessage': 'Enviar mensaje',
     'messageToUser': 'Mensaje al usuario…',
     'messageSent': 'Mensaje enviado', 'timeAdjusted': 'Tiempo ajustado',
     'screenTimeLocked': 'Tiempo de pantalla bloqueado',
+    'screenTimeUnlocked': 'Tiempo de pantalla desbloqueado',
     'usedOf': '{u} usado', 'usedOfLimit': '{u} usado de {l}',
     'timeAdjustmentLabel': 'ajuste {a}',
     'limitsSaved': 'Límites guardados', 'scheduleSaved': 'Horario guardado',
     'languageSaved': 'Idioma guardado',
     'notifLanguage': 'Idioma de notificaciones',
+    'keepTasksRunning': 'Mantener las aplicaciones y tareas en ejecución mientras está bloqueado',
+    'keepTasksRunningHint': 'Mantiene bloqueada la pantalla de inicio de sesión sin finalizar la sesión.',
+    'lockBehaviorSaved': 'Comportamiento del bloqueo guardado',
     'linkedAccounts': 'Cuentas vinculadas',
     'renameProfile': 'Renombrar perfil',
     'deleteProfileTitle': '¿Eliminar perfil?',
@@ -599,15 +627,22 @@ class AppLocalizations {
     'lockNow': 'Verrouiller maintenant',
     'lockNowConfirmTitle': 'Verrouiller maintenant ?',
     'lockNowConfirmBody': "Cela remettra à zéro le temps d'écran restant d'aujourd'hui.",
+    'unlock': 'Débloquer',
+    'unlockConfirmTitle': "Débloquer le temps d'écran ?",
+    'unlockConfirmBody': "Restaurer la limite de temps normale d'aujourd'hui ?",
     'message': 'Message', 'sendMessage': 'Envoyer un message',
     'messageToUser': "Message à l'utilisateur…",
     'messageSent': 'Message envoyé', 'timeAdjusted': 'Temps ajusté',
     'screenTimeLocked': "Temps d'écran verrouillé",
+    'screenTimeUnlocked': "Temps d'écran débloqué",
     'usedOf': '{u} utilisé', 'usedOfLimit': '{u} utilisé sur {l}',
     'timeAdjustmentLabel': 'ajustement {a}',
     'limitsSaved': 'Limites enregistrées', 'scheduleSaved': 'Programme enregistré',
     'languageSaved': 'Langue enregistrée',
     'notifLanguage': 'Langue des notifications',
+    'keepTasksRunning': 'Laisser les applications et les tâches en cours pendant le verrouillage',
+    'keepTasksRunningHint': 'Maintient l’écran de connexion verrouillé sans mettre fin à la session.',
+    'lockBehaviorSaved': 'Comportement du verrouillage enregistré',
     'linkedAccounts': 'Comptes liés',
     'renameProfile': 'Renommer le profil',
     'deleteProfileTitle': 'Supprimer le profil ?',
@@ -712,15 +747,22 @@ class AppLocalizations {
     'lockNow': 'Jetzt sperren',
     'lockNowConfirmTitle': 'Jetzt sperren?',
     'lockNowConfirmBody': 'Damit wird die verbleibende Bildschirmzeit von heute auf null gesetzt.',
+    'unlock': 'Entsperren',
+    'unlockConfirmTitle': 'Bildschirmzeit entsperren?',
+    'unlockConfirmBody': 'Normales Tageszeitlimit wiederherstellen?',
     'message': 'Nachricht', 'sendMessage': 'Nachricht senden',
     'messageToUser': 'Nachricht an Benutzer…',
     'messageSent': 'Nachricht gesendet', 'timeAdjusted': 'Zeit angepasst',
     'screenTimeLocked': 'Bildschirmzeit gesperrt',
+    'screenTimeUnlocked': 'Bildschirmzeit entsperrt',
     'usedOf': '{u} genutzt', 'usedOfLimit': '{u} genutzt von {l}',
     'timeAdjustmentLabel': 'Anpassung {a}',
     'limitsSaved': 'Limits gespeichert', 'scheduleSaved': 'Zeitplan gespeichert',
     'languageSaved': 'Sprache gespeichert',
     'notifLanguage': 'Benachrichtigungssprache',
+    'keepTasksRunning': 'Apps und Aufgaben während der Sperre weiterlaufen lassen',
+    'keepTasksRunningHint': 'Hält den Anmeldebildschirm gesperrt, ohne die Sitzung zu beenden.',
+    'lockBehaviorSaved': 'Sperrverhalten gespeichert',
     'linkedAccounts': 'Verknüpfte Konten',
     'renameProfile': 'Profil umbenennen',
     'deleteProfileTitle': 'Profil löschen?',
@@ -825,15 +867,22 @@ class AppLocalizations {
     'lockNow': 'Bloquear agora',
     'lockNowConfirmTitle': 'Bloquear agora?',
     'lockNowConfirmBody': 'Isso zerará o tempo de tela restante de hoje.',
+    'unlock': 'Desbloquear',
+    'unlockConfirmTitle': 'Desbloquear o tempo de tela?',
+    'unlockConfirmBody': 'Restaurar o limite de tempo normal de hoje?',
     'message': 'Mensagem', 'sendMessage': 'Enviar mensagem',
     'messageToUser': 'Mensagem para o usuário…',
     'messageSent': 'Mensagem enviada', 'timeAdjusted': 'Tempo ajustado',
     'screenTimeLocked': 'Tempo de tela bloqueado',
+    'screenTimeUnlocked': 'Tempo de tela desbloqueado',
     'usedOf': '{u} usado', 'usedOfLimit': '{u} usado de {l}',
     'timeAdjustmentLabel': 'ajuste {a}',
     'limitsSaved': 'Limites salvos', 'scheduleSaved': 'Agenda salva',
     'languageSaved': 'Idioma salvo',
     'notifLanguage': 'Idioma das notificações',
+    'keepTasksRunning': 'Manter aplicativos e tarefas em execução durante o bloqueio',
+    'keepTasksRunningHint': 'Mantém a tela de login bloqueada sem encerrar a sessão.',
+    'lockBehaviorSaved': 'Comportamento do bloqueio salvo',
     'linkedAccounts': 'Contas vinculadas',
     'renameProfile': 'Renomear perfil',
     'deleteProfileTitle': 'Excluir perfil?',

@@ -183,6 +183,7 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             adjustments_today: today_adj,
             adjustment_message,
             lockout_grace_minutes: enforcement.lockout_grace_minutes as u32,
+            preserve_tasks_on_lock: enforcement.preserve_tasks_on_lock,
             warning_thresholds_minutes: enforcement.warning_thresholds.iter().map(|&t| t as u32).collect(),
             language,
         });

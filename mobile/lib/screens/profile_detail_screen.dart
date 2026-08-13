@@ -23,6 +23,7 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
   int _adjustPending = 0;
   bool _applyingAdj = false;
   bool _locking = false;
+  bool _unlocking = false;
 
   void _refresh() {
     ref.invalidate(profileStatusProvider(widget.profileId));
@@ -70,6 +71,33 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
       if (mounted) _snack(e.message, error: true);
     } finally {
       if (mounted) setState(() => _locking = false);
+    }
+  }
+
+  Future<void> _unlock(TodayStatus today) async {
+    final minutes = unlockAdjustmentFor(today.adjustmentsMinutes);
+    if (minutes == 0) return;
+    final l = AppLocalizations.of(context);
+    final ok = await _confirm(l.unlockConfirmTitle, l.unlockConfirmBody);
+    if (!ok) return;
+    setState(() => _unlocking = true);
+    try {
+      await ref.read(apiClientProvider).post(
+        '/profiles/${widget.profileId}/adjustments',
+        {
+          'target_date': today.date,
+          'adjustment_minutes': minutes,
+          'reason': 'unlock',
+        },
+      );
+      _refresh();
+      if (mounted) _snack(AppLocalizations.of(context).screenTimeUnlocked);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _unlocking = false);
     }
   }
 
@@ -124,6 +152,21 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
       );
       ref.invalidate(profileDetailProvider(widget.profileId));
       if (mounted) _snack(AppLocalizations.of(context).languageSaved);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    }
+  }
+
+  Future<void> _savePreserveTasksOnLock(bool preserve) async {
+    try {
+      await ref.read(apiClientProvider).patch(
+        '/profiles/${widget.profileId}',
+        {'preserve_tasks_on_lock': preserve},
+      );
+      ref.invalidate(profileDetailProvider(widget.profileId));
+      if (mounted) _snack(AppLocalizations.of(context).lockBehaviorSaved);
     } on UnauthorizedException {
       ref.read(authProvider.notifier).relogin();
     } on ApiException catch (e) {
@@ -319,6 +362,8 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
                       onSave: _saveSchedules,
                     ),
                     const SizedBox(height: 16),
+                    _buildLockBehaviorCard(context, profile),
+                    const SizedBox(height: 16),
                     _buildLanguageCard(context, profile),
                     const SizedBox(height: 16),
                     _buildLinkedUsersCard(context, profile),
@@ -349,6 +394,7 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
             final today = status.today;
             final isLocked = today.enforce == 'lock';
             final hasLimit = today.limitMinutes != null;
+            final canUnlock = unlockAdjustmentFor(today.adjustmentsMinutes) > 0;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,12 +529,35 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _showMessageDialog,
-                        icon: const Icon(Icons.message_outlined),
-                        label: Text(l.message),
+                        onPressed: canUnlock && !_unlocking
+                            ? () => _unlock(today)
+                            : null,
+                        icon: _unlocking
+                            ? const SizedBox(
+                                height: 14,
+                                width: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.lock_open_outlined),
+                        label: Text(l.unlock),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.green,
+                          disabledForegroundColor: cs.onSurfaceVariant,
+                          side: BorderSide(
+                            color: canUnlock ? Colors.green : cs.outlineVariant,
+                          ),
+                        ),
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _showMessageDialog,
+                    icon: const Icon(Icons.message_outlined),
+                    label: Text(l.message),
+                  ),
                 ),
               ],
             );
@@ -541,6 +610,18 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
             }),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLockBehaviorCard(BuildContext context, Profile profile) {
+    final l = AppLocalizations.of(context);
+    return Card(
+      child: SwitchListTile(
+        title: Text(l.keepTasksRunning),
+        subtitle: Text(l.keepTasksRunningHint),
+        value: profile.preserveTasksOnLock,
+        onChanged: _savePreserveTasksOnLock,
       ),
     );
   }

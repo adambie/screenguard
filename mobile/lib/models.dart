@@ -35,6 +35,7 @@ class Profile {
   final String id;
   final String displayName;
   final String language;
+  final bool preserveTasksOnLock;
   final List<Schedule> schedules;
   final List<DailyLimit> dailyLimits;
   final List<AgentUser> agentUsers;
@@ -43,6 +44,7 @@ class Profile {
     required this.id,
     required this.displayName,
     required this.language,
+    required this.preserveTasksOnLock,
     required this.schedules,
     required this.dailyLimits,
     required this.agentUsers,
@@ -54,6 +56,7 @@ class Profile {
       id: p['id'] as String,
       displayName: p['display_name'] as String,
       language: (p['language'] as String?) ?? 'en',
+      preserveTasksOnLock: (j['preserve_tasks_on_lock'] as bool?) ?? false,
       schedules: ((j['schedules'] as List?) ?? [])
           .map((s) => Schedule.fromJson(s as Map<String, dynamic>))
           .toList(),
@@ -200,6 +203,9 @@ class TodayStatus {
         enforce: (j['enforce'] as String?) ?? 'allow',
       );
 }
+
+int unlockAdjustmentFor(int adjustmentsMinutes) =>
+    adjustmentsMinutes < 0 ? -adjustmentsMinutes : 0;
 
 class AgentOnlineStatus {
   final String agentId;

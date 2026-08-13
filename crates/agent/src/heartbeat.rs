@@ -12,10 +12,38 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::db::{AgentMode, Db};
-use crate::dbus::SessionEvent;
+use crate::dbus::{SessionEvent, SessionUsageState, uid_counts_usage};
 use crate::enforcement::{evaluate_enforcement, execute_lock, handle_midnight};
 use crate::users::{diff_users, scan_local_users, users_to_map};
 use crate::ws_client::{self, ConnectionEvent};
+
+type SessionStates = HashMap<u32, HashMap<String, SessionUsageState>>;
+
+fn uid_is_counting(session_states: &SessionStates, uid: u32) -> bool {
+    session_states.get(&uid)
+        .map(|states| uid_counts_usage(states.values()))
+        .unwrap_or(false)
+}
+
+fn update_usage_timer(
+    uid: u32,
+    was_counting: bool,
+    is_counting: bool,
+    active_since: &mut HashMap<u32, Option<Instant>>,
+) {
+    match (was_counting, is_counting) {
+        (false, true) => {
+            active_since.insert(uid, Some(Instant::now()));
+        }
+        (true, false) => {
+            active_since.insert(uid, None);
+        }
+        (false, false) => {
+            active_since.entry(uid).or_insert(None);
+        }
+        (true, true) => {}
+    }
+}
 
 pub struct HeartbeatLoop {
     db: Arc<Mutex<Db>>,
@@ -70,6 +98,7 @@ impl HeartbeatLoop {
         let mut last_date: NaiveDate = Local::now().date_naive();
 
         let mut active_since: HashMap<u32, Option<Instant>> = HashMap::new();
+        let mut session_states: SessionStates = HashMap::new();
         let mut known_users: HashMap<u32, LocalUser> = {
             let users = scan_local_users(self.min_uid).unwrap_or_default();
             users_to_map(&users)
@@ -82,7 +111,7 @@ impl HeartbeatLoop {
                 }
 
                 Some(event) = self.session_rx.recv() => {
-                    self.handle_session_event(event, &mut active_since).await;
+                    self.handle_session_event(event, &mut session_states, &mut active_since).await;
                 }
 
                 Some(msg) = self.inbound_rx.recv() => {
@@ -105,7 +134,12 @@ impl HeartbeatLoop {
                     };
 
                     self.check_cache_ttl_warning().await;
-                    self.send_heartbeat(&mut active_since, online, &today.to_string()).await?;
+                    self.send_heartbeat(
+                        &session_states,
+                        &mut active_since,
+                        online,
+                        &today.to_string(),
+                    ).await?;
                 }
 
                 _ = user_scan_ticker.tick() => {
@@ -139,34 +173,53 @@ impl HeartbeatLoop {
     async fn handle_session_event(
         &self,
         event: SessionEvent,
+        session_states: &mut SessionStates,
         active_since: &mut HashMap<u32, Option<Instant>>,
     ) {
         match event {
             SessionEvent::SessionStarted { uid, session_id } => {
+                let was_counting = uid_is_counting(session_states, uid);
                 let db = self.db.lock().await;
-                let _ = db.upsert_session(uid, &session_id, false);
-                active_since.entry(uid).or_insert(Some(Instant::now()));
+                let _ = db.upsert_session(uid, &session_id, true);
+                drop(db);
+                session_states.entry(uid).or_default()
+                    .insert(session_id, SessionUsageState::default());
+                let is_counting = uid_is_counting(session_states, uid);
+                update_usage_timer(uid, was_counting, is_counting, active_since);
             }
             SessionEvent::SessionEnded { uid, session_id } => {
+                let was_counting = uid_is_counting(session_states, uid);
                 let db = self.db.lock().await;
                 let _ = db.remove_session(uid, &session_id);
-                if db.count_active_sessions(uid).unwrap_or(0) == 0 {
-                    active_since.remove(&uid);
-                }
-            }
-            SessionEvent::IdleChanged { uid, session_id, idle } => {
-                let db = self.db.lock().await;
-                let _ = db.upsert_session(uid, &session_id, idle);
-                if idle {
-                    active_since.insert(uid, None);
-                } else {
-                    // or_insert won't update an existing None entry, so we must
-                    // explicitly set it when transitioning idle→active.
-                    let ts = active_since.entry(uid).or_insert(None);
-                    if ts.is_none() {
-                        *ts = Some(Instant::now());
+                drop(db);
+                if let Some(states) = session_states.get_mut(&uid) {
+                    states.remove(&session_id);
+                    if states.is_empty() {
+                        session_states.remove(&uid);
                     }
                 }
+                if !session_states.contains_key(&uid) {
+                    active_since.remove(&uid);
+                } else {
+                    let is_counting = uid_is_counting(session_states, uid);
+                    update_usage_timer(uid, was_counting, is_counting, active_since);
+                }
+            }
+            SessionEvent::StateChanged { uid, session_id, state } => {
+                let known = session_states.get(&uid)
+                    .map(|states| states.contains_key(&session_id))
+                    .unwrap_or(false);
+                if !known {
+                    tracing::debug!("Ignoring state update for ended session uid={uid} session={session_id}");
+                    return;
+                }
+                let was_counting = uid_is_counting(session_states, uid);
+                let db = self.db.lock().await;
+                let _ = db.upsert_session(uid, &session_id, state.idle != Some(false));
+                drop(db);
+                session_states.entry(uid).or_default().insert(session_id, state);
+                let is_counting = uid_is_counting(session_states, uid);
+                update_usage_timer(uid, was_counting, is_counting, active_since);
             }
             SessionEvent::PrepareForSleep { suspend: true } => {
                 for val in active_since.values_mut() {
@@ -174,10 +227,10 @@ impl HeartbeatLoop {
                 }
             }
             SessionEvent::PrepareForSleep { suspend: false } => {
-                for val in active_since.values_mut() {
-                    if val.is_none() {
-                        *val = Some(Instant::now());
-                    }
+                active_since.clear();
+                for (&uid, states) in session_states.iter() {
+                    let since = uid_counts_usage(states.values()).then(Instant::now);
+                    active_since.insert(uid, since);
                 }
             }
         }
@@ -341,21 +394,27 @@ impl HeartbeatLoop {
                                 );
                             }
 
-                            // First lock: full flow — notify, lock screen, then terminate after grace.
-                            // Remove the uid from the set when done so a new session can be re-locked.
+                            // First lock: notify and lock, then follow the configured session behavior.
+                            // Terminating mode rearms after the grace period; preserving mode stays armed.
                             let locked_uids = self.locked_uids.clone();
                             let db = self.db.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = execute_lock(uid, &db).await {
-                                    tracing::error!("Lock failed for uid={uid}: {e}");
+                                let rearm = match execute_lock(uid, &db).await {
+                                    Ok(rearm) => rearm,
+                                    Err(e) => {
+                                        tracing::error!("Lock failed for uid={uid}: {e}");
+                                        true
+                                    }
+                                };
+                                if rearm {
+                                    locked_uids.lock().await.remove(&uid);
                                 }
-                                locked_uids.lock().await.remove(&uid);
                             });
                         } else {
-                            // Grace period already running — silently re-lock in case the user
-                            // bypassed the lock screen without resetting the grace timer.
+                            // Lock flow already armed — silently re-lock in case the user bypassed
+                            // the lock screen, without resetting a grace timer that may be running.
                             let uid = entry.local_uid;
-                            tracing::info!("Re-locking uid={uid}: session still active during grace period");
+                            tracing::info!("Re-locking uid={uid}: session remains active while blocked");
                             let db = self.db.clone();
                             tokio::spawn(async move {
                                 let session_ids = db.lock().await
@@ -488,6 +547,7 @@ impl HeartbeatLoop {
 
     async fn send_heartbeat(
         &self,
+        session_states: &SessionStates,
         active_since: &mut HashMap<u32, Option<Instant>>,
         online: bool,
         today: &str,
@@ -502,10 +562,9 @@ impl HeartbeatLoop {
 
         for uid in &managed_uids {
             let uid = *uid;
-            let session_count = {
-                let db = self.db.lock().await;
-                db.count_active_sessions(uid)?
-            };
+            let session_count = session_states.get(&uid)
+                .map(|states| states.len() as u32)
+                .unwrap_or(0);
 
             if session_count == 0 {
                 continue;

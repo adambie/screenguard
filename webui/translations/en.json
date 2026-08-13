@@ -72,6 +72,10 @@
   "profile.card_usage": "Usage",
   "profile.card_language": "Notifications language",
   "profile.btn_save_language": "Save",
+  "profile.card_lock_behavior": "Lock behavior",
+  "profile.keep_tasks_running": "Keep apps and tasks running while locked",
+  "profile.keep_tasks_running_hint": "When time runs out, ScreenGuard keeps the login screen locked but does not terminate the session. The allowance is still zeroed out.",
+  "profile.btn_save_lock_behavior": "Save lock behavior",
 
   "agents.heading": "Agents",
   "agents.col_name": "Name",
@@ -164,6 +168,7 @@
   "flash.message_empty": "Message cannot be empty.",
   "flash.locked": "Today’s allowance zeroed out.",
   "flash.lock_failed": "Failed.",
+  "flash.lock_behavior_saved": "Lock behavior saved.",
   "flash.profile_deleted": "Profile deleted.",
   "flash.profile_delete_failed": "Delete failed.",
   "flash.language_saved": "Language preference saved.",
