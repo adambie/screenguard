@@ -65,8 +65,11 @@ pub async fn resolve_server_url(configured_url: Option<&str>) -> Result<Option<S
 }
 
 fn ensure_ws_path(url: &str) -> String {
+    let url = url
+        .replacen("https://", "wss://", 1)
+        .replacen("http://", "ws://", 1);
     if url.ends_with("/ws") {
-        url.to_string()
+        url
     } else {
         format!("{}/ws", url.trim_end_matches('/'))
     }
