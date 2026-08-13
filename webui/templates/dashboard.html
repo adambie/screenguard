@@ -35,7 +35,11 @@
 
           <div class="mb-3">
             {% if p.limit_minutes is not none %}
-              {% set pct = [(p.used_minutes / p.limit_minutes * 100) | int, 100] | min %}
+              {% if p.limit_minutes > 0 %}
+                {% set pct = [(p.used_minutes / p.limit_minutes * 100) | int, 100] | min %}
+              {% else %}
+                {% set pct = 100 %}
+              {% endif %}
               <div class="progress mb-2" style="height:4px;border-radius:99px">
                 <div class="progress-bar
                   {% if pct >= 90 %}bg-danger{% elif pct >= 70 %}bg-warning{% else %}bg-success{% endif %}"
