@@ -22,6 +22,7 @@ pub fn open(path: &str) -> Result<DbPool> {
     migrate_v1(&conn)?;
     migrate_v2(&conn)?;
     migrate_v3(&conn)?;
+    migrate_v4(&conn)?;
     Ok(pool)
 }
 
@@ -86,6 +87,33 @@ fn migrate_v3(conn: &rusqlite::Connection) -> Result<()> {
     Ok(())
 }
 
+// Migration 4: allow allowed_minutes = 0 (blocked day).
+// The old CHECK (allowed_minutes > 0) rejected zero, causing 500 on block/set-to-zero.
+fn migrate_v4(conn: &rusqlite::Connection) -> Result<()> {
+    let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v >= 4 {
+        return Ok(());
+    }
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+    conn.execute_batch("
+        BEGIN;
+        CREATE TABLE daily_limits_v4 (
+            profile_id      TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+            day_of_week     INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+            allowed_minutes INTEGER NOT NULL CHECK (allowed_minutes >= 0),
+            PRIMARY KEY (profile_id, day_of_week)
+        );
+        INSERT INTO daily_limits_v4 SELECT * FROM daily_limits;
+        DROP TABLE daily_limits;
+        ALTER TABLE daily_limits_v4 RENAME TO daily_limits;
+        COMMIT;
+    ")?;
+    conn.execute("PRAGMA user_version = 4", [])?;
+    conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    tracing::info!("DB migration v4 applied (allow zero daily_limits)");
+    Ok(())
+}
+
 const SCHEMA: &str = "
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -144,7 +172,7 @@ CREATE TABLE IF NOT EXISTS schedules (
 CREATE TABLE IF NOT EXISTS daily_limits (
     profile_id      TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
     day_of_week     INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
-    allowed_minutes INTEGER NOT NULL CHECK (allowed_minutes > 0),
+    allowed_minutes INTEGER NOT NULL CHECK (allowed_minutes >= 0),
     PRIMARY KEY (profile_id, day_of_week)
 );
 
