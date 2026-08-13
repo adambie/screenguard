@@ -87,6 +87,56 @@ curl -fsSL https://github.com/adambie/screenguard/releases/latest/download/insta
 
 You will be asked separately whether to remove the config directory and the database.
 
+## Running the server in Docker
+
+`docker-compose.yml` is included at the root of the repository and covers both the server and the web UI. The **agent always runs natively** on the managed (child) machine — it interacts with the desktop session via DBus and cannot run inside a container.
+
+### Host networking (recommended)
+
+The default compose file uses `network_mode: host`. Both containers share the host's network stack, so mDNS auto-discovery works normally — agents on the LAN find the server without any manual configuration.
+
+```bash
+# 1. Clone the repo (or download docker-compose.yml + deploy/ separately)
+git clone https://github.com/adambie/screenguard.git
+cd screenguard
+
+# 2. Set a strong secret key for the web UI session
+#    Edit docker-compose.yml and replace "change-me-in-production"
+
+# 3. Start
+docker compose up -d
+
+# 4. Open the admin UI
+#    http://<server-ip>:5000
+```
+
+The database is stored in a named Docker volume (`screenguard-data`) and survives container restarts and image updates.
+
+To pin a specific release instead of always pulling `latest`, set the `VERSION` build arg in `docker-compose.yml`:
+
+```yaml
+args:
+  VERSION: v0.8.4
+```
+
+### Bridge networking
+
+If host networking is not an option (rootless Podman, non-Linux Docker host, strict isolation), the `docker-compose.yml` file contains a commented-out bridge-mode configuration. The key difference: **mDNS auto-discovery does not work in bridge mode** because Docker bridges block multicast. You must configure the server address manually on every managed machine:
+
+```toml
+# /etc/screenguard/agent.toml on each managed machine
+server_url = "ws://<server-host-ip>:8080"
+```
+
+### Updating
+
+```bash
+docker compose pull   # if using pre-built images
+# or
+docker compose build --no-cache   # to rebuild from the latest release binary
+docker compose up -d
+```
+
 ## Firewall
 
 If the server and agents run on **different machines**, the agents need to reach the server's port (default **8080**) over TCP.

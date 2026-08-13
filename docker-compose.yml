@@ -1,0 +1,98 @@
+# ScreenGuard — Docker Compose
+#
+# Default: host networking (recommended for LAN use)
+# ─────────────────────────────────────────────────
+# Both containers share the host network stack, so:
+#   • mDNS auto-discovery works — agents on the LAN find the server without
+#     any manual configuration.
+#   • The web UI reaches the server via localhost, no extra wiring needed.
+#   • Ports 8080 (server) and 5000 (web UI) are exposed on the host directly;
+#     no `ports:` mapping is required.
+#
+# The agent always runs natively on the managed (child) machine — never in Docker.
+#
+# Quickstart:
+#   1. Copy the SECRET_KEY line in the webui service and set a real secret.
+#   2. docker compose up -d
+#   3. Open http://<server-ip>:5000 and create an admin account.
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.server
+      args:
+        VERSION: latest   # pin to e.g. "v0.8.4" for reproducible deploys
+    image: screenguard-server
+    network_mode: host
+    volumes:
+      - screenguard-data:/data
+    environment:
+      SCREENGUARD_SERVER_DB: /data/server.db
+    restart: unless-stopped
+
+  webui:
+    build:
+      context: ./webui
+      dockerfile: ../deploy/Dockerfile.webui
+    image: screenguard-webui
+    network_mode: host
+    environment:
+      SERVER_URL: http://127.0.0.1:8080   # server is on the same host network
+      SECRET_KEY: change-me-in-production  # set a strong random value
+      UI_PORT: "5000"
+    restart: unless-stopped
+    depends_on:
+      - server
+
+volumes:
+  screenguard-data:
+
+
+# ── Bridge networking (alternative) ───────────────────────────────────────────
+#
+# Use bridge mode if host networking is not an option (e.g. rootless Podman,
+# non-Linux Docker hosts, or strict network isolation requirements).
+#
+# IMPORTANT — mDNS auto-discovery does NOT work in bridge mode.
+# Agents on the LAN cannot receive multicast UDP from inside a bridge network.
+# You must set the server address manually in /etc/screenguard/agent.toml on
+# every managed machine:
+#
+#   server_url = "ws://<server-host-ip>:8080"
+#
+# To switch to bridge mode, replace the services block above with this:
+#
+# services:
+#   server:
+#     build:
+#       context: .
+#       dockerfile: deploy/Dockerfile.server
+#       args:
+#         VERSION: latest
+#     image: screenguard-server
+#     ports:
+#       - "8080:8080"    # agents connect here from the LAN
+#     volumes:
+#       - screenguard-data:/data
+#     environment:
+#       SCREENGUARD_SERVER_DB: /data/server.db
+#     restart: unless-stopped
+#
+#   webui:
+#     build:
+#       context: ./webui
+#       dockerfile: ../deploy/Dockerfile.webui
+#     image: screenguard-webui
+#     ports:
+#       - "5000:5000"    # admin web UI
+#     environment:
+#       SERVER_URL: http://server:8080   # Docker service name resolves inside bridge network
+#       SECRET_KEY: change-me-in-production
+#       UI_PORT: "5000"
+#     restart: unless-stopped
+#     depends_on:
+#       - server
+#
+# volumes:
+#   screenguard-data:

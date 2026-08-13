@@ -1,0 +1,31 @@
+# ── Stage 1: fetch the pre-built musl binary from GitHub Releases ─────────────
+FROM alpine AS fetch
+ARG TARGETARCH
+ARG VERSION=latest
+
+RUN apk add --no-cache curl
+
+RUN set -e; \
+    ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64"); \
+    if [ "$VERSION" = "latest" ]; then \
+        URL="https://github.com/adambie/screenguard/releases/latest/download/screenguard-server-${ARCH}"; \
+    else \
+        URL="https://github.com/adambie/screenguard/releases/download/${VERSION}/screenguard-server-${ARCH}"; \
+    fi; \
+    curl -fsSL "$URL" -o /screenguard-server; \
+    chmod +x /screenguard-server
+
+# ── Stage 2: minimal runtime image ────────────────────────────────────────────
+# The binary is a static musl build — no libc or other runtime deps needed.
+# alpine is used instead of scratch to keep a working shell for debugging.
+FROM alpine
+
+COPY --from=fetch /screenguard-server /usr/local/bin/screenguard-server
+
+# Database is stored here; mount a named volume so it survives container restarts.
+ENV SCREENGUARD_SERVER_DB=/data/server.db
+VOLUME /data
+
+EXPOSE 8080
+
+ENTRYPOINT ["screenguard-server"]
