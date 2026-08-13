@@ -1043,21 +1043,33 @@ mod tests {
     use super::*;
     use common::models::LocalUser;
 
-    fn test_pool_before_v4() -> DbPool {
+    fn test_pool_before_v5() -> DbPool {
         let manager = SqliteConnectionManager::memory();
         let pool = Pool::builder().max_size(1).build(manager).unwrap();
         let conn = pool.get().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
+        // Simulate a pre-v5 database: recreate enforcement_settings without the new column.
+        conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+        conn.execute_batch("
+            DROP TABLE enforcement_settings;
+            CREATE TABLE enforcement_settings (
+                profile_id TEXT PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
+                lockout_grace_minutes INTEGER NOT NULL DEFAULT 5,
+                warning_thresholds TEXT NOT NULL DEFAULT '15,5,1'
+            );
+        ").unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
         migrate_v1(&conn).unwrap();
         migrate_v2(&conn).unwrap();
         migrate_v3(&conn).unwrap();
+        migrate_v4(&conn).unwrap();
         drop(conn);
         pool
     }
 
     fn test_pool() -> DbPool {
-        let pool = test_pool_before_v4();
-        migrate_v4(&pool.get().unwrap()).unwrap();
+        let pool = test_pool_before_v5();
+        migrate_v5(&pool.get().unwrap()).unwrap();
         pool
     }
 
@@ -1071,7 +1083,7 @@ mod tests {
 
     #[test]
     fn migration_defaults_existing_profiles_to_false() {
-        let pool = test_pool_before_v4();
+        let pool = test_pool_before_v5();
         let id = Uuid::new_v4();
         let conn = pool.get().unwrap();
         conn.execute(
@@ -1083,7 +1095,7 @@ mod tests {
             "INSERT INTO enforcement_settings (profile_id) VALUES (?1)",
             params![id.to_string()],
         ).unwrap();
-        migrate_v4(&conn).unwrap();
+        migrate_v5(&conn).unwrap();
         drop(conn);
 
         assert!(!get_enforcement_settings(&pool, id).unwrap().preserve_tasks_on_lock);
