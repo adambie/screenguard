@@ -120,10 +120,18 @@ fn migrate_v5(conn: &rusqlite::Connection) -> Result<()> {
     if v >= 5 {
         return Ok(());
     }
-    conn.execute_batch(
-        "ALTER TABLE enforcement_settings
-         ADD COLUMN preserve_tasks_on_lock INTEGER NOT NULL DEFAULT 0;",
-    )?;
+    // Fresh databases already have this column from SCHEMA; only add it for existing ones.
+    let col_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('enforcement_settings') WHERE name='preserve_tasks_on_lock'",
+        [],
+        |r| r.get::<_, i32>(0),
+    ).unwrap_or(0) > 0;
+    if !col_exists {
+        conn.execute_batch(
+            "ALTER TABLE enforcement_settings
+             ADD COLUMN preserve_tasks_on_lock INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     conn.execute("PRAGMA user_version = 5", [])?;
     tracing::info!("DB migration v5 applied (preserve tasks on lock)");
     Ok(())
