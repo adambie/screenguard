@@ -6,6 +6,7 @@ const DEFAULT_CONFIG_PATH: &str = "/etc/screenguard/server.toml";
 const CONFIG_PATH_ENV: &str = "SCREENGUARD_SERVER_CONFIG";
 const DEFAULT_DB_PATH: &str = "/var/lib/screenguard/server.db";
 const DB_PATH_ENV: &str = "SCREENGUARD_SERVER_DB";
+const JWT_SECRET_ENV: &str = "SCREENGUARD_SERVER_JWT_SECRET";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -61,9 +62,11 @@ pub fn load(path: Option<&str>) -> Result<ServerConfig> {
         ServerConfig::default()
     };
 
-    // PARENTAL_SERVER_DB overrides db_path from config.
     if let Ok(db) = std::env::var(DB_PATH_ENV) {
         config.db_path = db;
+    }
+    if let Ok(secret) = std::env::var(JWT_SECRET_ENV) {
+        config.jwt_secret = Some(secret);
     }
 
     Ok(config)

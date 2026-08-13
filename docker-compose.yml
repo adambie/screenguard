@@ -12,7 +12,7 @@
 # The agent always runs natively on the managed (child) machine — never in Docker.
 #
 # Quickstart:
-#   1. Copy the SECRET_KEY line in the webui service and set a real secret.
+#   1. Set strong secrets for SCREENGUARD_SERVER_JWT_SECRET and SECRET_KEY below.
 #   2. docker compose up -d
 #   3. Open http://<server-ip>:5000 and create an admin account.
 
@@ -29,6 +29,7 @@ services:
       - screenguard-data:/data
     environment:
       SCREENGUARD_SERVER_DB: /data/server.db
+      SCREENGUARD_SERVER_JWT_SECRET: change-me-in-production  # set a strong random value
     restart: unless-stopped
 
   webui:
@@ -77,6 +78,7 @@ volumes:
 #       - screenguard-data:/data
 #     environment:
 #       SCREENGUARD_SERVER_DB: /data/server.db
+#       SCREENGUARD_SERVER_JWT_SECRET: change-me-in-production
 #     restart: unless-stopped
 #
 #   webui:
