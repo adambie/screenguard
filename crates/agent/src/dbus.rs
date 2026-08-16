@@ -7,6 +7,7 @@ use zbus::{Connection, proxy};
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
+    StartupSnapshot { sessions: Vec<(u32, String)> },
     SessionStarted { uid: u32, session_id: String },
     SessionEnded { uid: u32, session_id: String },
     StateChanged { uid: u32, session_id: String, state: SessionUsageState },
@@ -97,10 +98,21 @@ impl DbusMonitor {
         // Emit events for graphical sessions already present at startup.
         // TTY/SSH sessions are excluded — they are never idle and must not count as screen time.
         if let Ok(sessions) = manager.list_sessions().await {
+            let mut graphical_sessions = Vec::new();
             for (session_id, uid, _user, _seat, path) in sessions {
                 if !self.is_graphical_session(&path).await {
                     continue;
                 }
+                graphical_sessions.push((session_id, uid, path));
+            }
+            let _ = self.tx.send(SessionEvent::StartupSnapshot {
+                sessions: graphical_sessions
+                    .iter()
+                    .map(|(session_id, uid, _)| (*uid, session_id.clone()))
+                    .collect(),
+            }).await;
+
+            for (session_id, uid, path) in graphical_sessions {
                 session_uids.insert(session_id.clone(), uid);
                 let state = self.get_session_state(&path, uid, &session_id).await;
                 let _ = self.tx.send(SessionEvent::SessionStarted {

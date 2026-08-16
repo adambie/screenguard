@@ -387,13 +387,41 @@ impl Db {
 impl Db {
     pub fn upsert_session(&self, uid: u32, session_id: &str, is_idle: bool) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM active_sessions WHERE session_id = ?1 AND local_uid != ?2",
+            params![session_id, uid],
+        )?;
+        tx.execute(
             "INSERT INTO active_sessions (local_uid, session_id, started_at, last_heartbeat, is_idle)
              VALUES (?1, ?2, ?3, ?3, ?4)
              ON CONFLICT(local_uid, session_id) DO UPDATE
              SET last_heartbeat = ?3, is_idle = ?4",
             params![uid, session_id, now, is_idle as i32],
         )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn reconcile_sessions(&self, live_sessions: &[(u32, String)]) -> Result<()> {
+        let live_sessions: std::collections::HashSet<(&u32, &String)> =
+            live_sessions.iter().map(|(uid, session_id)| (uid, session_id)).collect();
+        let tx = self.conn.unchecked_transaction()?;
+        let stale_sessions = {
+            let mut stmt = tx.prepare("SELECT local_uid, session_id FROM active_sessions")?;
+            stmt.query_map([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        for (uid, session_id) in stale_sessions {
+            if !live_sessions.contains(&(&uid, &session_id)) {
+                tx.execute(
+                    "DELETE FROM active_sessions WHERE local_uid = ?1 AND session_id = ?2",
+                    params![uid, session_id],
+                )?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -627,5 +655,71 @@ mod tests {
 
         db.apply_config_push(&[user_config(1000, false)]).unwrap();
         assert!(!db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+    }
+
+    fn active_sessions(db: &Db) -> Vec<(u32, String)> {
+        let mut stmt = db.conn.prepare(
+            "SELECT local_uid, session_id FROM active_sessions ORDER BY local_uid, session_id",
+        ).unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn reused_session_id_replaces_old_owner() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c9", false).unwrap();
+        db.upsert_session(1002, "c9", false).unwrap();
+
+        assert_eq!(active_sessions(&db), vec![(1002, "c9".to_string())]);
+    }
+
+    #[test]
+    fn reconciliation_removes_absent_session() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c9", false).unwrap();
+
+        db.reconcile_sessions(&[]).unwrap();
+
+        assert!(active_sessions(&db).is_empty());
+    }
+
+    #[test]
+    fn reconciliation_keeps_exact_live_pair() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c2", false).unwrap();
+
+        db.reconcile_sessions(&[(1001, "c2".to_string())]).unwrap();
+
+        assert_eq!(active_sessions(&db), vec![(1001, "c2".to_string())]);
+    }
+
+    #[test]
+    fn reconciliation_distinguishes_owner() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c9", false).unwrap();
+
+        db.reconcile_sessions(&[(1002, "c9".to_string())]).unwrap();
+
+        assert!(active_sessions(&db).is_empty());
+    }
+
+    #[test]
+    fn multiple_sessions_same_uid_survive() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c2", false).unwrap();
+        db.upsert_session(1001, "c7", false).unwrap();
+
+        db.reconcile_sessions(&[
+            (1001, "c2".to_string()),
+            (1001, "c7".to_string()),
+        ]).unwrap();
+
+        assert_eq!(
+            active_sessions(&db),
+            vec![(1001, "c2".to_string()), (1001, "c7".to_string())]
+        );
     }
 }
