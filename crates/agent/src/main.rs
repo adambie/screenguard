@@ -41,6 +41,12 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
 
+    // Handle --lock-cinnamon: lock through Cinnamon as the current session user and exit.
+    // The root agent starts this helper with the target user's credentials and session bus.
+    if args.get(1).map(String::as_str) == Some("--lock-cinnamon") {
+        std::process::exit(crate::dbus::lock_cinnamon_as_current_user().await);
+    }
+
     // Handle --notify <summary> <body>: send a desktop notification as the current user and exit.
     // The agent spawns itself under the target uid, so at this point we are already that user.
     if args.get(1).map(String::as_str) == Some("--notify") {
