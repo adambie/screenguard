@@ -137,7 +137,7 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<bool> {
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
 
     tracing::info!("Locking sessions for uid={uid}: {:?}", session_ids);
-    crate::dbus::lock_sessions(&session_ids).await?;
+    crate::dbus::lock_sessions(uid, &session_ids).await?;
 
     if lock_behavior(preserve_tasks) == LockBehavior::PreserveAndRelock {
         tracing::info!("Keeping sessions running while uid={uid} remains locked");
@@ -154,7 +154,7 @@ pub async fn execute_lock(uid: u32, db: &Arc<Mutex<Db>>) -> Result<bool> {
 
     if !still_active.is_empty() {
         tracing::warn!("Sessions still active after grace period for uid={uid}, terminating");
-        crate::dbus::terminate_sessions(&still_active).await?;
+        crate::dbus::terminate_sessions(uid, &still_active).await?;
     }
 
     Ok(true)

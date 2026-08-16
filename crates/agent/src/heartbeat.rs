@@ -421,7 +421,7 @@ impl HeartbeatLoop {
                                     .get_all_session_ids(uid)
                                     .unwrap_or_default();
                                 if !session_ids.is_empty() {
-                                    if let Err(e) = crate::dbus::lock_sessions(&session_ids).await {
+                                    if let Err(e) = crate::dbus::lock_sessions(uid, &session_ids).await {
                                         tracing::warn!("Re-lock failed for uid={uid}: {e}");
                                     }
                                 }
@@ -437,7 +437,7 @@ impl HeartbeatLoop {
                                     .get_all_session_ids(uid)
                                     .unwrap_or_default();
                                 if !session_ids.is_empty() {
-                                    if let Err(e) = crate::dbus::unlock_sessions(&session_ids).await {
+                                    if let Err(e) = crate::dbus::unlock_sessions(uid, &session_ids).await {
                                         tracing::warn!("Unlock failed for uid={uid}: {e}");
                                     } else {
                                         tracing::info!("Unlocked sessions for uid={uid} (time granted)");

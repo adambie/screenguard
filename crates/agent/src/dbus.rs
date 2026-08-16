@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use std::collections::HashMap;
@@ -274,64 +275,169 @@ async fn read_session_state(
     SessionUsageState { active, locked, idle }
 }
 
-/// Lock all sessions in the given list via DBus.
-pub async fn lock_sessions(session_ids: &[String]) -> Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionTarget {
+    Valid,
+    StaleOwnership,
+    Missing,
+}
+
+fn classify_session(
+    expected_uid: u32,
+    requested_sid: &str,
+    live_session: Option<(&str, u32)>,
+) -> SessionTarget {
+    let Some((live_sid, live_uid)) = live_session else {
+        return SessionTarget::Missing;
+    };
+
+    if requested_sid != live_sid {
+        return SessionTarget::Missing;
+    }
+
+    if expected_uid != live_uid {
+        return SessionTarget::StaleOwnership;
+    }
+
+    SessionTarget::Valid
+}
+
+/// Lock all requested sessions via DBus, but only when the live session owner
+/// still matches the UID that ScreenGuard expects.
+pub async fn lock_sessions(expected_uid: u32, session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
     let sessions = manager.list_sessions().await?;
 
-    for (sid, _uid, _user, _seat, path) in &sessions {
-        if session_ids.contains(sid)
-            && let Ok(session) = Login1SessionProxy::builder(&conn)
-                .path(path.as_ref())?
-                .build()
-                .await
-            {
-                let _ = session.lock().await;
+    let mut found = std::collections::HashSet::new();
+    let mut locked = 0usize;
+
+    for (sid, uid, _user, _seat, path) in &sessions {
+        if !session_ids.contains(sid) {
+            continue;
+        }
+
+        match classify_session(expected_uid, sid, Some((sid, *uid))) {
+            SessionTarget::StaleOwnership => {
+                found.insert(sid.as_str());
+                tracing::warn!(
+                    "refusing session={sid}: cached session ID is stale/reused \
+                     (expected uid={expected_uid}, live uid={uid}); skipping lock"
+                );
+                continue;
             }
+            SessionTarget::Missing => continue,
+            SessionTarget::Valid => {}
+        }
+
+        found.insert(sid.as_str());
+
+        if let Ok(session) = Login1SessionProxy::builder(&conn)
+            .path(path.as_ref())?
+            .build()
+            .await
+        {
+            if session.lock().await.is_ok() {
+                locked += 1;
+            }
+        }
     }
-    tracing::info!("Locked {} session(s): {:?}", session_ids.len(), session_ids);
+
+    for session_id in session_ids {
+        if !found.contains(session_id.as_str()) {
+            tracing::debug!(
+                "Requested session={session_id} disappeared before it could be locked"
+            );
+        }
+    }
+
+    tracing::info!(
+        "Locked {locked} session(s) for uid={expected_uid}: {:?}",
+        session_ids
+    );
     Ok(())
 }
 
 /// Unlock all sessions in the given list via DBus.
 /// Called when enforcement is lifted (e.g. admin grants more time).
-pub async fn unlock_sessions(session_ids: &[String]) -> Result<()> {
+pub async fn unlock_sessions(expected_uid: u32, session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
     let sessions = manager.list_sessions().await?;
 
-    for (sid, _uid, _user, _seat, path) in &sessions {
-        if session_ids.contains(sid)
-            && let Ok(session) = Login1SessionProxy::builder(&conn)
-                .path(path.as_ref())?
-                .build()
-                .await
-            {
-                let _ = session.unlock().await;
+    let mut found = HashSet::new();
+    let mut succeeded = Vec::new();
+    for (sid, live_uid, _user, _seat, path) in &sessions {
+        if !session_ids.contains(sid) {
+            continue;
+        }
+        match classify_session(expected_uid, sid, Some((sid, *live_uid))) {
+            SessionTarget::StaleOwnership => {
+                found.insert(sid.as_str());
+                tracing::warn!(
+                    "refusing session={sid}: cached session ID is stale/reused \
+                     (expected uid={expected_uid}, live uid={live_uid}); skipping unlock"
+                );
+                continue;
             }
+            SessionTarget::Missing => continue,
+            SessionTarget::Valid => found.insert(sid.as_str()),
+        };
+        let Ok(builder) = Login1SessionProxy::builder(&conn).path(path.as_ref()) else {
+            continue;
+        };
+        let Ok(session) = builder.build().await else {
+            continue;
+        };
+        if session.unlock().await.is_ok() {
+            succeeded.push(sid.clone());
+        }
     }
-    tracing::info!("Unlocked {} session(s): {:?}", session_ids.len(), session_ids);
+    for session_id in session_ids.iter().filter(|sid| !found.contains(sid.as_str())) {
+        tracing::debug!("Requested session={session_id} disappeared before it could be unlocked");
+    }
+    tracing::info!("Unlocked {} session(s): {:?}", succeeded.len(), succeeded);
     Ok(())
 }
 
 /// Terminate all sessions in the given list via DBus.
-pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
+pub async fn terminate_sessions(expected_uid: u32, session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
     let sessions = manager.list_sessions().await?;
 
-    for (sid, _uid, _user, _seat, path) in &sessions {
-        if session_ids.contains(sid)
-            && let Ok(session) = Login1SessionProxy::builder(&conn)
-                .path(path.as_ref())?
-                .build()
-                .await
-            {
-                let _ = session.terminate().await;
+    let mut found = HashSet::new();
+    let mut succeeded = Vec::new();
+    for (sid, live_uid, _user, _seat, path) in &sessions {
+        if !session_ids.contains(sid) {
+            continue;
+        }
+        match classify_session(expected_uid, sid, Some((sid, *live_uid))) {
+            SessionTarget::StaleOwnership => {
+                found.insert(sid.as_str());
+                tracing::warn!(
+                    "refusing session={sid}: cached session ID is stale/reused \
+                     (expected uid={expected_uid}, live uid={live_uid}); skipping terminate"
+                );
+                continue;
             }
+            SessionTarget::Missing => continue,
+            SessionTarget::Valid => found.insert(sid.as_str()),
+        };
+        let Ok(builder) = Login1SessionProxy::builder(&conn).path(path.as_ref()) else {
+            continue;
+        };
+        let Ok(session) = builder.build().await else {
+            continue;
+        };
+        if session.terminate().await.is_ok() {
+            succeeded.push(sid.clone());
+        }
     }
-    tracing::info!("Terminated {} session(s): {:?}", session_ids.len(), session_ids);
+    for session_id in session_ids.iter().filter(|sid| !found.contains(sid.as_str())) {
+        tracing::debug!("Requested session={session_id} disappeared before it could be terminated");
+    }
+    tracing::info!("Terminated {} session(s): {:?}", succeeded.len(), succeeded);
     Ok(())
 }
 
@@ -421,7 +527,10 @@ trait Notifications {
 
 #[cfg(test)]
 mod tests {
-    use super::{session_counts_usage, uid_counts_usage, SessionUsageState};
+use super::{
+        classify_session, session_counts_usage, uid_counts_usage, SessionTarget,
+        SessionUsageState,
+    };
 
     fn state(active: bool, locked: bool, idle: bool) -> SessionUsageState {
         SessionUsageState {
@@ -471,6 +580,27 @@ mod tests {
     fn no_qualifying_sessions_make_uid_not_count() {
         let states = [state(true, true, false), state(false, false, false)];
         assert!(!uid_counts_usage(&states));
+    }
+
+    #[test]
+    fn reused_session_id_is_classified_as_stale_ownership() {
+        assert_eq!(
+            classify_session(1001, "c9", Some(("c9", 1002))),
+            SessionTarget::StaleOwnership
+        );
+    }
+
+    #[test]
+    fn matching_session_id_and_uid_is_a_valid_target() {
+        assert_eq!(
+            classify_session(1001, "c2", Some(("c2", 1001))),
+            SessionTarget::Valid
+        );
+    }
+
+    #[test]
+    fn absent_requested_session_is_classified_as_missing() {
+        assert_eq!(classify_session(1001, "c9", None), SessionTarget::Missing);
     }
 
     #[test]
