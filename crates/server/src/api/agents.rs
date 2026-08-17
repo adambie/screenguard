@@ -13,6 +13,18 @@ use crate::state::{AppState, PairingDecision};
 
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+fn parse_semver(v: &str) -> Option<(u32, u32, u32)> {
+    let mut p = v.split('.');
+    Some((p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.parse().ok()?))
+}
+
+fn agent_needs_update(agent_version: &str, server_version: &str) -> bool {
+    match (parse_semver(agent_version), parse_semver(server_version)) {
+        (Some(a), Some(s)) => a < s,
+        _ => agent_version != server_version,
+    }
+}
+
 #[derive(Serialize)]
 pub struct AgentResponse {
     pub id: Uuid,
@@ -43,7 +55,7 @@ pub async fn list_agents(
             .unwrap_or(0);
         let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
         let upgradeable = a.agent_version.as_deref()
-            .map_or(false, |v| v != SERVER_VERSION);
+            .map_or(false, |v| agent_needs_update(v, SERVER_VERSION));
         result.push(AgentResponse {
             online: online.values().any(|h| h.agent_id == a.id),
             id: a.id,
