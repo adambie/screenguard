@@ -36,7 +36,10 @@ confirm() {
     local prompt="$1" default="${2:-y}"
     local yn
     [[ $default == y ]] && prompt+=" [Y/n] " || prompt+=" [y/N] "
-    read -rp "$prompt" yn </dev/tty
+    # Non-interactive (e.g. systemd-run has no /dev/tty): silently use default.
+    if ! read -rp "$prompt" yn </dev/tty 2>/dev/null; then
+        yn="$default"
+    fi
     yn="${yn:-$default}"
     [[ $yn =~ ^[Yy] ]]
 }
@@ -240,7 +243,12 @@ if [[ $MODE == update ]]; then
         cp "${TMP}/screenguard-agent" "${INSTALL_DIR}/screenguard-agent"
         cp "${TMP}/screenguard-agent.service" "${SYSTEMD_DIR}/screenguard-agent.service"
         info "Updated screenguard-agent"
-        cp "${TMP}/screenguard-tray" "${INSTALL_DIR}/screenguard-tray"
+        # screenguard-tray runs as a desktop autostart (not a systemd unit), so stop
+        # any running instance before replacing the binary to avoid ETXTBSY.
+        pkill -x screenguard-tray 2>/dev/null || true
+        # Use `install` (which creates a new inode via rename) instead of cp so the
+        # copy is atomic and safe even if a stale instance is still shutting down.
+        install -m 755 "${TMP}/screenguard-tray" "${INSTALL_DIR}/screenguard-tray"
         cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
         mkdir -p /etc/dbus-1/system.d
         cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
