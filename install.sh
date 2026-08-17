@@ -246,10 +246,10 @@ if [[ $MODE == update ]]; then
         cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
         systemctl reload dbus 2>/dev/null || true
         info "Updated screenguard-tray"
-        if grep -qE '^hosts:.*\bresolve\b' /etc/nsswitch.conf; then
+        if grep -qE '^hosts:.*( resolve | resolve$)' /etc/nsswitch.conf; then
             mkdir -p "${CONFIG_DIR}"
             grep '^hosts:' /etc/nsswitch.conf > "${CONFIG_DIR}/.nsswitch_hosts_orig"
-            sed -i -E 's/\bresolve(\s+\[[^]]*\])?//g' /etc/nsswitch.conf
+            sed -i -E 's/ resolve(\s+\[[^]]*\])?//' /etc/nsswitch.conf
             sed -i -E 's/  +/ /g' /etc/nsswitch.conf
             info "Removed nss-resolve from /etc/nsswitch.conf (required for web filtering)"
         fi
@@ -463,12 +463,12 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     # getaddrinfo() sends UDP DNS packets (interceptable by nftables per-UID
     # DNAT) instead of going via D-Bus to systemd-resolved, which bypasses
     # the web filter entirely.
-    if grep -qE '^hosts:.*\bresolve\b' /etc/nsswitch.conf; then
+    if grep -qE '^hosts:.*( resolve | resolve$)' /etc/nsswitch.conf; then
         # Save the original hosts line so uninstall can restore it exactly.
         mkdir -p "${CONFIG_DIR}"
         grep '^hosts:' /etc/nsswitch.conf > "${CONFIG_DIR}/.nsswitch_hosts_orig"
         # Strip 'resolve' and any immediately following bracketed flags like [!UNAVAIL=return]
-        sed -i -E 's/\bresolve(\s+\[[^]]*\])?//g' /etc/nsswitch.conf
+        sed -i -E 's/ resolve(\s+\[[^]]*\])?//' /etc/nsswitch.conf
         # Collapse any double-spaces left behind
         sed -i -E 's/  +/ /g' /etc/nsswitch.conf
         info "Removed nss-resolve from /etc/nsswitch.conf (required for web filtering)"
