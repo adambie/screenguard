@@ -68,7 +68,7 @@ final blockedDomainsProvider =
   final client = ref.watch(apiClientProvider);
   final data =
       await client.get('/profiles/$profileId/blocked-domains') as Map<String, dynamic>;
-  return ((data['domains'] as List?) ?? [])
+  return ((data['blocked_domains'] as List?) ?? [])
       .map((d) => BlockedDomain.fromJson(d as Map<String, dynamic>))
       .toList();
 });

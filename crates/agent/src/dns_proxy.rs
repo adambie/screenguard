@@ -145,7 +145,7 @@ async fn handle_query(
     }
     match parse_qname(query) {
         Some(ref qname) if is_blocked(qname, blocked) => {
-            tracing::debug!("DNS: blocking {qname}");
+            tracing::info!("DNS: blocked {qname}");
             Some(make_nxdomain(query))
         }
         _ => forward_udp(query, upstream).await,

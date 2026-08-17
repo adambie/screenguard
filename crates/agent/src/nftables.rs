@@ -83,11 +83,14 @@ pub fn build_ruleset(uid_port_pairs: &[(u32, u16)]) -> String {
     s.push_str(" }\n    }\n");
 
     // NAT chain: redirect DNS queries from managed UIDs to their per-UID proxy port.
+    // DNAT to 127.0.0.1 explicitly rather than using `redirect` — `redirect` in the
+    // output chain sends to the outbound interface's primary IP, which breaks when the
+    // system resolver is a non-loopback address (e.g. a LAN nameserver at 192.168.x.x).
     s.push_str("    chain dns_redirect {\n");
     s.push_str("        type nat hook output priority -100; policy accept;\n");
     for (uid, port) in uid_port_pairs {
-        s.push_str(&format!("        meta skuid {uid} udp dport 53 redirect to :{port}\n"));
-        s.push_str(&format!("        meta skuid {uid} tcp dport 53 redirect to :{port}\n"));
+        s.push_str(&format!("        meta skuid {uid} udp dport 53 dnat to 127.0.0.1:{port}\n"));
+        s.push_str(&format!("        meta skuid {uid} tcp dport 53 dnat to 127.0.0.1:{port}\n"));
     }
     s.push_str("    }\n");
 
@@ -131,10 +134,10 @@ mod tests {
     #[test]
     fn ruleset_contains_uid_and_port() {
         let rules = build_ruleset(&[(1000, 5354), (1001, 5355)]);
-        assert!(rules.contains("meta skuid 1000 udp dport 53 redirect to :5354"));
-        assert!(rules.contains("meta skuid 1000 tcp dport 53 redirect to :5354"));
-        assert!(rules.contains("meta skuid 1001 udp dport 53 redirect to :5355"));
-        assert!(rules.contains("meta skuid 1001 tcp dport 53 redirect to :5355"));
+        assert!(rules.contains("meta skuid 1000 udp dport 53 dnat to 127.0.0.1:5354"));
+        assert!(rules.contains("meta skuid 1000 tcp dport 53 dnat to 127.0.0.1:5354"));
+        assert!(rules.contains("meta skuid 1001 udp dport 53 dnat to 127.0.0.1:5355"));
+        assert!(rules.contains("meta skuid 1001 tcp dport 53 dnat to 127.0.0.1:5355"));
     }
 
     #[test]
@@ -175,7 +178,7 @@ mod tests {
     fn multiple_uids_each_get_own_rules() {
         let rules = build_ruleset(&[(1000, 5354), (1001, 5355), (1002, 5356)]);
         for (uid, port) in [(1000, 5354), (1001, 5355), (1002, 5356)] {
-            assert!(rules.contains(&format!("meta skuid {uid} udp dport 53 redirect to :{port}")));
+            assert!(rules.contains(&format!("meta skuid {uid} udp dport 53 dnat to 127.0.0.1:{port}")));
             assert!(rules.contains(&format!("meta skuid {uid} ip  daddr @doh_ipv4 drop")));
         }
     }
