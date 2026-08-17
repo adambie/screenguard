@@ -406,6 +406,9 @@ def profile_detail(profile_id):
              params={"from": str(week_start), "to": str(week_end)})
     usage = r3.json().get("usage", []) if r3 and r3.ok else []
 
+    r4 = api("GET", f"/profiles/{profile_id}/blocked-domains")
+    blocked_domains = r4.json().get("blocked_domains", []) if r4 and r4.ok else []
+
     usage_by_date = {u['date']: u for u in usage}
     max_used = max((u.get('used_minutes') or 0 for u in usage), default=0)
     chart_max = max(math.ceil(max_used / 15) * 15, 15)
@@ -441,6 +444,7 @@ def profile_detail(profile_id):
                            agent_users=data.get("agent_users", []),
                            status=status,
                            preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
+                           blocked_domains=blocked_domains,
                            week_bars=week_bars,
                            week_max=chart_max,
                            week_offset=week_offset,
@@ -485,6 +489,37 @@ def set_lock_behavior(profile_id):
     r = api("PATCH", f"/profiles/{profile_id}",
             json={"preserve_tasks_on_lock": preserve})
     flash(t("flash.lock_behavior_saved") if (r and r.ok) else t("flash.lock_failed"),
+          "success" if (r and r.ok) else "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id))
+
+
+@app.route("/profiles/<profile_id>/blocked-domains/add", methods=["POST"])
+@require_login
+def add_blocked_domain(profile_id):
+    domain = request.form.get("domain", "").strip().lower()
+    if domain:
+        r = api("POST", f"/profiles/{profile_id}/blocked-domains", json={"domain": domain})
+        flash(t("flash.domain_added") if (r and r.ok) else t("flash.domain_add_failed"),
+              "success" if (r and r.ok) else "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id))
+
+
+@app.route("/profiles/<profile_id>/blocked-domains/<domain_id>/toggle", methods=["POST"])
+@require_login
+def toggle_blocked_domain(profile_id, domain_id):
+    enabled = request.form.get("enabled", "true").lower() == "true"
+    r = api("PATCH", f"/profiles/{profile_id}/blocked-domains/{domain_id}",
+            json={"enabled": enabled})
+    if not (r and r.ok):
+        flash(t("flash.domain_update_failed"), "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id))
+
+
+@app.route("/profiles/<profile_id>/blocked-domains/<domain_id>/delete", methods=["POST"])
+@require_login
+def delete_blocked_domain(profile_id, domain_id):
+    r = api("DELETE", f"/profiles/{profile_id}/blocked-domains/{domain_id}")
+    flash(t("flash.domain_deleted") if (r and r.ok) else t("flash.domain_delete_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))
 

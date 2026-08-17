@@ -15,6 +15,7 @@ use crate::db::{AgentMode, Db};
 use crate::dbus::{SessionEvent, SessionUsageState, uid_counts_usage};
 use crate::enforcement::{evaluate_enforcement, execute_lock, handle_midnight};
 use crate::users::{diff_users, scan_local_users, users_to_map};
+use crate::web_filter::WebFilter;
 use crate::ws_client::{self, ConnectionEvent};
 
 type SessionStates = HashMap<u32, HashMap<String, SessionUsageState>>;
@@ -59,6 +60,7 @@ pub struct HeartbeatLoop {
     notified_thresholds: HashMap<u32, HashSet<i32>>,
     locked_uids: Arc<tokio::sync::Mutex<HashSet<u32>>>,
     status_handle: Option<Arc<crate::status_dbus::Handle>>,
+    web_filter: WebFilter,
 }
 
 impl HeartbeatLoop {
@@ -74,6 +76,7 @@ impl HeartbeatLoop {
         min_uid: u32,
         cache_ttl_hours: u64,
         status_handle: Option<Arc<crate::status_dbus::Handle>>,
+        web_filter_available: bool,
     ) -> Self {
         Self {
             db,
@@ -89,10 +92,29 @@ impl HeartbeatLoop {
             notified_thresholds: HashMap::new(),
             locked_uids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             status_handle,
+            web_filter: WebFilter::new(web_filter_available),
         }
     }
 
     pub async fn run(mut self) -> Result<()> {
+        // Apply cached blocked domains immediately so filtering is active even
+        // before the first config_push (offline resilience).
+        {
+            let cached: Vec<(u32, Vec<String>)> = {
+                let db = self.db.lock().await;
+                let uids = db.get_managed_uids().unwrap_or_default();
+                uids.into_iter()
+                    .map(|uid| {
+                        let domains = db.get_cached_blocked_domains(uid).unwrap_or_default();
+                        (uid, domains)
+                    })
+                    .collect()
+            };
+            if let Err(e) = self.web_filter.apply(&cached).await {
+                tracing::warn!("Web filter startup apply failed: {e}");
+            }
+        }
+
         let mut heartbeat_ticker = tokio::time::interval(self.heartbeat_interval);
         let mut user_scan_ticker = tokio::time::interval(self.user_scan_interval);
         let mut last_date: NaiveDate = Local::now().date_naive();
@@ -267,6 +289,16 @@ impl HeartbeatLoop {
                     let db = self.db.lock().await;
                     db.apply_config_push(&push.users)?;
                     db.save_config_version(push.config_version)?;
+                }
+
+                // Refresh web filter rules with the new blocklists.
+                {
+                    let uid_configs: Vec<(u32, Vec<String>)> = push.users.iter()
+                        .map(|u| (u.local_uid, u.blocked_domains.clone()))
+                        .collect();
+                    if let Err(e) = self.web_filter.apply(&uid_configs).await {
+                        tracing::warn!("Web filter config_push apply failed: {e}");
+                    }
                 }
 
                 // Notify users about what changed.
@@ -641,6 +673,14 @@ impl HeartbeatLoop {
                 timezone: local_timezone(),
                 agent_version: self.agent_version.clone(),
                 last_config_version: config_version,
+                capabilities: {
+                    let db = self.db.lock().await;
+                    let mut caps = Vec::new();
+                    if db.get_capability("web_filter").unwrap_or(None).unwrap_or(false) {
+                        caps.push("web_filter".to_string());
+                    }
+                    caps
+                },
             },
         )
         .await

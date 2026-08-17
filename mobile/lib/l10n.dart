@@ -188,6 +188,20 @@ class AppLocalizations {
   String get updateAgentBody => _t('updateAgentBody');
   String get updateTriggered => _t('updateTriggered');
 
+  // Web filter
+  String get webFilter => _t('webFilter');
+  String get webFilterAvailable => _t('webFilterAvailable');
+  String get webFilterUnavailable => _t('webFilterUnavailable');
+
+  // Blocked sites
+  String get blockedSites => _t('blockedSites');
+  String get noBlockedSites => _t('noBlockedSites');
+  String get addSite => _t('addSite');
+  String get domainHint => _t('domainHint');
+  String get domainAdded => _t('domainAdded');
+  String get domainDeleted => _t('domainDeleted');
+  String get confirmRemoveDomain => _t('confirmRemoveDomain');
+
   // Localized time ago
   String timeAgo(int? unixSeconds) {
     if (unixSeconds == null) return _t('never');
@@ -351,6 +365,16 @@ class AppLocalizations {
     'selectTimezone': 'Select timezone',
     'search': 'Search...',
     'notSet': 'Not set',
+    'webFilter': 'Web filter',
+    'webFilterAvailable': 'available',
+    'webFilterUnavailable': 'unavailable (install nftables)',
+    'blockedSites': 'Blocked sites',
+    'noBlockedSites': 'No sites configured.',
+    'addSite': 'Add site',
+    'domainHint': 'youtube.com',
+    'domainAdded': 'Domain added.',
+    'domainDeleted': 'Domain removed.',
+    'confirmRemoveDomain': 'Remove this domain from the blocklist?',
   };
 
   static const _pl = <String, String>{

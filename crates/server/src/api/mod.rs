@@ -47,6 +47,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/profiles/{id}/adjustments", get(profiles::list_adjustments).post(profiles::create_adjustment))
         .route("/profiles/{id}/lock-now", post(profiles::lock_now))
         .route("/profiles/{id}/notify", post(profiles::notify_profile))
+        // Blocked domains
+        .route("/profiles/{id}/blocked-domains", get(profiles::get_blocked_domains).put(profiles::set_blocked_domains).post(profiles::add_blocked_domain))
+        .route("/profiles/{id}/blocked-domains/{domain_id}", patch(profiles::patch_blocked_domain).delete(profiles::delete_blocked_domain))
         // Usage & dashboard
         .route("/profiles/{id}/usage", get(usage::get_usage))
         .route("/profiles/{id}/status", get(usage::get_status))

@@ -178,7 +178,9 @@ async fn handle_agent_hello(
     }
 
     db::update_agent_hello(&state.db, agent.id, &hello.hostname, &hello.timezone, &hello.agent_version)?;
-    tracing::info!("Agent '{}' connected (v{}, config_v{})", hello.hostname, hello.agent_version, hello.last_config_version);
+    let web_filter_available = hello.capabilities.iter().any(|c| c == "web_filter");
+    db::update_agent_web_filter(&state.db, agent.id, web_filter_available)?;
+    tracing::info!("Agent '{}' connected (v{}, config_v{}, capabilities={:?})", hello.hostname, hello.agent_version, hello.last_config_version, hello.capabilities);
 
     // Check if config is stale → push updated config.
     let agent_users = db::list_agent_users(&state.db, agent.id)?;

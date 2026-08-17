@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
 const DB_PATH: &str = "/var/lib/screenguard/agent.db";
@@ -32,12 +32,26 @@ impl Db {
     }
 
     fn migrate(&self) -> Result<()> {
-        // Ignore error — column already exists on fresh DBs created by create_schema below.
+        // Ignore errors — columns/tables already exist on fresh DBs created by create_schema.
         let _ = self.conn.execute_batch(
             "ALTER TABLE cached_enforcement ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
         );
         let _ = self.conn.execute_batch(
             "ALTER TABLE cached_enforcement ADD COLUMN preserve_tasks_on_lock INTEGER NOT NULL DEFAULT 0",
+        );
+        let _ = self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_capabilities (
+                capability  TEXT PRIMARY KEY,
+                available   INTEGER NOT NULL DEFAULT 0,
+                checked_at  INTEGER NOT NULL
+            )",
+        );
+        let _ = self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS cached_blocked_domains (
+                local_uid   INTEGER NOT NULL REFERENCES managed_users(local_uid) ON DELETE CASCADE,
+                domain      TEXT NOT NULL,
+                PRIMARY KEY (local_uid, domain)
+            )",
         );
         Ok(())
     }
@@ -124,6 +138,18 @@ impl Db {
                 id              INTEGER PRIMARY KEY CHECK (id = 1),
                 mode            TEXT NOT NULL CHECK (mode IN ('unpaired', 'online', 'offline')) DEFAULT 'unpaired',
                 offline_since   INTEGER
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_capabilities (
+                capability  TEXT PRIMARY KEY,
+                available   INTEGER NOT NULL DEFAULT 0,
+                checked_at  INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cached_blocked_domains (
+                local_uid   INTEGER NOT NULL REFERENCES managed_users(local_uid) ON DELETE CASCADE,
+                domain      TEXT NOT NULL,
+                PRIMARY KEY (local_uid, domain)
             );
 
             INSERT OR IGNORE INTO agent_state (id, mode) VALUES (1, 'unpaired');
@@ -278,6 +304,17 @@ impl Db {
                     u.preserve_tasks_on_lock,
                 ],
             )?;
+
+            tx.execute(
+                "DELETE FROM cached_blocked_domains WHERE local_uid = ?1",
+                params![u.local_uid],
+            )?;
+            for domain in &u.blocked_domains {
+                tx.execute(
+                    "INSERT OR IGNORE INTO cached_blocked_domains (local_uid, domain) VALUES (?1, ?2)",
+                    params![u.local_uid, domain],
+                )?;
+            }
         }
 
         tx.commit()?;
@@ -568,6 +605,48 @@ impl Db {
             preserve_tasks_on_lock: preserve_tasks,
         })
     }
+
+    pub fn save_capability(&self, capability: &str, available: bool) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO agent_capabilities (capability, available, checked_at)
+             VALUES (?1, ?2, ?3)",
+            params![capability, available as i32, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_capability(&self, capability: &str) -> Result<Option<bool>> {
+        let val: Option<i32> = self.conn.query_row(
+            "SELECT available FROM agent_capabilities WHERE capability = ?1",
+            params![capability],
+            |row| row.get(0),
+        ).optional()?;
+        Ok(val.map(|v| v != 0))
+    }
+
+    pub fn save_cached_blocked_domains(&self, local_uid: u32, domains: &[String]) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM cached_blocked_domains WHERE local_uid = ?1",
+            params![local_uid],
+        )?;
+        for domain in domains {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO cached_blocked_domains (local_uid, domain) VALUES (?1, ?2)",
+                params![local_uid, domain],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_cached_blocked_domains(&self, local_uid: u32) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT domain FROM cached_blocked_domains WHERE local_uid = ?1 ORDER BY domain",
+        )?;
+        let rows = stmt.query_map(params![local_uid], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(rows)
+    }
 }
 
 #[cfg(test)]
@@ -590,6 +669,7 @@ mod tests {
             preserve_tasks_on_lock,
             warning_thresholds_minutes: vec![15, 5, 1],
             language: "en".to_string(),
+            blocked_domains: Vec::new(),
         }
     }
 
@@ -627,5 +707,52 @@ mod tests {
 
         db.apply_config_push(&[user_config(1000, false)]).unwrap();
         assert!(!db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn save_and_get_capability() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        assert_eq!(db.get_capability("web_filter").unwrap(), None);
+        db.save_capability("web_filter", true).unwrap();
+        assert_eq!(db.get_capability("web_filter").unwrap(), Some(true));
+        db.save_capability("web_filter", false).unwrap();
+        assert_eq!(db.get_capability("web_filter").unwrap(), Some(false));
+    }
+
+    #[test]
+    fn config_push_caches_blocked_domains() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        let mut cfg = user_config(1000, false);
+        cfg.blocked_domains = vec!["youtube.com".to_string(), "tiktok.com".to_string()];
+        db.apply_config_push(&[cfg]).unwrap();
+        let cached = db.get_cached_blocked_domains(1000).unwrap();
+        assert_eq!(cached, vec!["tiktok.com", "youtube.com"]); // ORDER BY domain
+    }
+
+    #[test]
+    fn config_push_replaces_cached_blocked_domains() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        let mut cfg = user_config(1000, false);
+        cfg.blocked_domains = vec!["youtube.com".to_string()];
+        db.apply_config_push(&[cfg]).unwrap();
+
+        let mut cfg2 = user_config(1000, false);
+        cfg2.blocked_domains = vec!["discord.com".to_string()];
+        db.apply_config_push(&[cfg2]).unwrap();
+
+        let cached = db.get_cached_blocked_domains(1000).unwrap();
+        assert_eq!(cached, vec!["discord.com"]);
+    }
+
+    #[test]
+    fn save_and_get_cached_blocked_domains() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        let mut cfg = user_config(1000, false);
+        cfg.blocked_domains = Vec::new();
+        db.apply_config_push(&[cfg]).unwrap();
+
+        db.save_cached_blocked_domains(1000, &["instagram.com".to_string(), "reddit.com".to_string()]).unwrap();
+        let cached = db.get_cached_blocked_domains(1000).unwrap();
+        assert_eq!(cached, vec!["instagram.com", "reddit.com"]);
     }
 }

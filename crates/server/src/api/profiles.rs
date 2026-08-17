@@ -310,6 +310,96 @@ pub async fn patch_agent_user(
     Ok(Json(serde_json::json!({ "message": "User linked to profile" })))
 }
 
+// ── blocked domains ───────────────────────────────────────────────────────────
+
+pub async fn get_blocked_domains(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let domains = db::get_blocked_domains(&state.db, id).map_err(internal)?;
+    Ok(Json(serde_json::json!({ "blocked_domains": domains })))
+}
+
+#[derive(Deserialize)]
+pub struct BlockedDomainEntry {
+    pub domain: String,
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub struct SetBlockedDomainsBody {
+    pub blocked_domains: Vec<BlockedDomainEntry>,
+}
+
+pub async fn set_blocked_domains(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<SetBlockedDomainsBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let entries: Vec<(String, bool)> = body.blocked_domains
+        .into_iter()
+        .map(|e| (e.domain, e.enabled))
+        .collect();
+    db::set_blocked_domains(&state.db, id, &entries).map_err(internal)?;
+    let version = bump_and_propagate(&state, id).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "message": "Blocked domains updated", "config_version": version })))
+}
+
+#[derive(Deserialize)]
+pub struct AddBlockedDomainBody {
+    pub domain: String,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+pub async fn add_blocked_domain(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AddBlockedDomainBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let domain = db::add_blocked_domain(&state.db, id, &body.domain, body.enabled)
+        .map_err(internal)?;
+    if body.enabled {
+        bump_and_propagate(&state, id).await.map_err(internal)?;
+    }
+    Ok((StatusCode::CREATED, Json(serde_json::json!(domain))))
+}
+
+#[derive(Deserialize)]
+pub struct PatchBlockedDomainBody {
+    pub enabled: bool,
+}
+
+pub async fn patch_blocked_domain(
+    State(state): State<Arc<AppState>>,
+    Path((profile_id, domain_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<PatchBlockedDomainBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, profile_id).map_err(internal)?.ok_or_else(not_found)?;
+    let found = db::patch_blocked_domain(&state.db, domain_id, body.enabled).map_err(internal)?;
+    if !found {
+        return Err(not_found());
+    }
+    bump_and_propagate(&state, profile_id).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "message": "Domain updated" })))
+}
+
+pub async fn delete_blocked_domain(
+    State(state): State<Arc<AppState>>,
+    Path((profile_id, domain_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, profile_id).map_err(internal)?.ok_or_else(not_found)?;
+    let found = db::delete_blocked_domain(&state.db, domain_id).map_err(internal)?;
+    if !found {
+        return Err(not_found());
+    }
+    bump_and_propagate(&state, profile_id).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "message": "Domain deleted" })))
+}
+
 // ── config propagation ────────────────────────────────────────────────────────
 
 /// Bump config_version for a profile, then push updated config and remaining

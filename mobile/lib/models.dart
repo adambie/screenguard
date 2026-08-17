@@ -265,6 +265,7 @@ class Agent {
   final int userCount;
   final String? pairingCode;
   final bool upgradeable;
+  final bool? webFilterAvailable;
 
   const Agent({
     required this.id,
@@ -279,6 +280,7 @@ class Agent {
     required this.userCount,
     this.pairingCode,
     this.upgradeable = false,
+    this.webFilterAvailable,
   });
 
   factory Agent.fromJson(Map<String, dynamic> j) => Agent(
@@ -294,7 +296,22 @@ class Agent {
         userCount: (j['user_count'] as int?) ?? 0,
         pairingCode: j['pairing_code'] as String?,
         upgradeable: (j['upgradeable'] as bool?) ?? false,
+        webFilterAvailable: j['web_filter_available'] as bool?,
       );
 
   String get name => displayName.isNotEmpty ? displayName : hostname;
+}
+
+class BlockedDomain {
+  final String id;
+  final String domain;
+  final bool enabled;
+
+  const BlockedDomain({required this.id, required this.domain, required this.enabled});
+
+  factory BlockedDomain.fromJson(Map<String, dynamic> j) => BlockedDomain(
+        id: j['id'] as String,
+        domain: j['domain'] as String,
+        enabled: (j['enabled'] as bool?) ?? false,
+      );
 }

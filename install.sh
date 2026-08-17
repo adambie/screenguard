@@ -237,6 +237,9 @@ if [[ $MODE == update ]]; then
         cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
         systemctl reload dbus 2>/dev/null || true
         info "Updated screenguard-tray"
+        if ! command -v nft &>/dev/null; then
+            warn "nftables not found — web content filtering will be disabled (install nftables to enable it)"
+        fi
     fi
     if [[ $WEBUI_INSTALLED -eq 1 ]]; then
         tar -xzf "${TMP}/screenguard-webui.tar.gz" -C "${WEBUI_DIR}"
@@ -464,6 +467,26 @@ EOF
 
     cp "${TMP}/screenguard-agent.service" "${SYSTEMD_DIR}/screenguard-agent.service"
     info "Installed systemd unit: screenguard-agent.service"
+
+    # Web content filtering requires nftables.
+    if ! command -v nft &>/dev/null; then
+        echo
+        warn "nftables not found — web content filtering will be disabled."
+        warn "To enable it, install nftables and restart the agent:"
+        if command -v apt-get &>/dev/null; then
+            warn "  sudo apt-get install nftables"
+        elif command -v dnf &>/dev/null; then
+            warn "  sudo dnf install nftables"
+        elif command -v pacman &>/dev/null; then
+            warn "  sudo pacman -S nftables"
+        else
+            warn "  (install the 'nftables' package for your distribution)"
+        fi
+        warn "  sudo systemctl restart screenguard-agent"
+        echo
+    else
+        info "nftables found — web content filtering available"
+    fi
 fi
 
 # ── enable & start ────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/screenguard-agent
+ExecStopPost=/bin/sh -c 'nft delete table inet screenguard 2>/dev/null; exit 0'
 Restart=always
 RestartSec=5
 

@@ -27,6 +27,7 @@ pub struct AgentResponse {
     pub user_count: usize,
     pub pairing_code: Option<String>,
     pub upgradeable: bool,
+    pub web_filter_available: Option<bool>,
 }
 
 pub async fn list_agents(
@@ -56,6 +57,7 @@ pub async fn list_agents(
             user_count,
             pairing_code,
             upgradeable,
+            web_filter_available: a.web_filter_available,
         });
     }
     Ok(Json(serde_json::json!({ "agents": result })))
@@ -78,6 +80,7 @@ pub async fn get_agent(
         hostname: a.hostname, timezone: a.timezone, status: a.status,
         last_seen_at: a.last_seen_at, agent_version: a.agent_version,
         user_count, pairing_code, upgradeable,
+        web_filter_available: a.web_filter_available,
     })))
 }
 

@@ -173,6 +173,7 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
         let language = db::get_profile(pool, profile_id)?
             .map(|p| p.language)
             .unwrap_or_else(|| "en".to_string());
+        let blocked_domains = db::get_enabled_blocked_domains(pool, profile_id)?;
 
         user_configs.push(UserConfig {
             local_uid: au.local_uid as u32,
@@ -186,6 +187,7 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             preserve_tasks_on_lock: enforcement.preserve_tasks_on_lock,
             warning_thresholds_minutes: enforcement.warning_thresholds.iter().map(|&t| t as u32).collect(),
             language,
+            blocked_domains,
         });
     }
 

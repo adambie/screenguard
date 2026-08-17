@@ -2,12 +2,15 @@ mod config;
 mod db;
 mod dbus;
 mod discovery;
+mod dns_proxy;
 mod enforcement;
 mod heartbeat;
 mod i18n;
+mod nftables;
 mod pairing;
 mod status_dbus;
 mod users;
+mod web_filter;
 mod ws_client;
 
 use anyhow::{Context, Result};
@@ -66,6 +69,17 @@ async fn main() -> Result<()> {
     let db = Arc::new(Mutex::new(
         Db::open(None).context("Failed to open agent database")?,
     ));
+
+    let nft_available = nftables::is_available();
+    {
+        let db = db.lock().await;
+        db.save_capability("web_filter", nft_available)?;
+        if nft_available {
+            tracing::info!("nft available — web filtering capability enabled");
+        } else {
+            tracing::warn!("nft not found — web filtering disabled. Install nftables to enable it.");
+        }
+    }
 
     let mode = {
         let db = db.lock().await;
@@ -163,6 +177,7 @@ async fn main() -> Result<()> {
         cfg.min_uid,
         cfg.cache_ttl_hours,
         status_handle,
+        nft_available,
     );
 
     // SIGTERM: notify systemd STOPPING=1 then exit.

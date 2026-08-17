@@ -24,10 +24,19 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
   bool _applyingAdj = false;
   bool _locking = false;
   bool _unlocking = false;
+  final _domainCtrl = TextEditingController();
+  bool _addingDomain = false;
+
+  @override
+  void dispose() {
+    _domainCtrl.dispose();
+    super.dispose();
+  }
 
   void _refresh() {
     ref.invalidate(profileStatusProvider(widget.profileId));
     ref.invalidate(profileDetailProvider(widget.profileId));
+    ref.invalidate(blockedDomainsProvider(widget.profileId));
     ref.invalidate(dashboardProvider);
   }
 
@@ -205,6 +214,57 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
     }
   }
 
+  Future<void> _toggleDomain(String domainId, bool enabled) async {
+    try {
+      await ref.read(apiClientProvider).patch(
+        '/profiles/${widget.profileId}/blocked-domains/$domainId',
+        {'enabled': enabled},
+      );
+      ref.invalidate(blockedDomainsProvider(widget.profileId));
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    }
+  }
+
+  Future<void> _addDomain(String domain) async {
+    if (domain.isEmpty) return;
+    setState(() => _addingDomain = true);
+    try {
+      await ref.read(apiClientProvider).post(
+        '/profiles/${widget.profileId}/blocked-domains',
+        {'domain': domain},
+      );
+      _domainCtrl.clear();
+      ref.invalidate(blockedDomainsProvider(widget.profileId));
+      if (mounted) _snack(AppLocalizations.of(context).domainAdded);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _addingDomain = false);
+    }
+  }
+
+  Future<void> _removeDomain(String domainId) async {
+    final l = AppLocalizations.of(context);
+    final ok = await _confirm(l.confirm, l.confirmRemoveDomain);
+    if (!ok) return;
+    try {
+      await ref
+          .read(apiClientProvider)
+          .delete('/profiles/${widget.profileId}/blocked-domains/$domainId');
+      ref.invalidate(blockedDomainsProvider(widget.profileId));
+      if (mounted) _snack(AppLocalizations.of(context).domainDeleted);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    }
+  }
+
   void _showRenameDialog(String currentName) {
     final l = AppLocalizations.of(context);
     final ctrl = TextEditingController(text: currentName);
@@ -361,6 +421,8 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
                       initialSchedules: profile.schedules,
                       onSave: _saveSchedules,
                     ),
+                    const SizedBox(height: 16),
+                    _buildBlockedSitesCard(context),
                     const SizedBox(height: 16),
                     _buildLockBehaviorCard(context, profile),
                     const SizedBox(height: 16),
@@ -562,6 +624,95 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBlockedSitesCard(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final domainsAsync = ref.watch(blockedDomainsProvider(widget.profileId));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.blockedSites, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            domainsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('Error: $e'),
+              data: (domains) {
+                if (domains.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      l.noBlockedSites,
+                      style: TextStyle(color: cs.onSurfaceVariant),
+                    ),
+                  );
+                }
+                return Column(
+                  children: domains.map((d) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              d.domain,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          Switch(
+                            value: d.enabled,
+                            onChanged: (v) => _toggleDomain(d.id, v),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close, size: 18, color: cs.onSurfaceVariant),
+                            onPressed: () => _removeDomain(d.id),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const Divider(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _domainCtrl,
+                    decoration: InputDecoration(
+                      hintText: l.domainHint,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (v) => _addDomain(v.trim()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _addingDomain ? null : () => _addDomain(_domainCtrl.text.trim()),
+                  child: _addingDomain
+                      ? const SizedBox(
+                          height: 14,
+                          width: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text(l.addSite),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

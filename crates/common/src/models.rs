@@ -30,6 +30,8 @@ pub struct UserConfig {
     pub warning_thresholds_minutes: Vec<u32>,
     #[serde(default = "default_lang")]
     pub language: String,
+    #[serde(default)]
+    pub blocked_domains: Vec<String>,
 }
 
 fn default_lang() -> String { "en".to_string() }
@@ -128,6 +130,7 @@ mod tests {
         let config: UserConfig = serde_json::from_value(value.clone()).unwrap();
         value["preserve_tasks_on_lock"] = serde_json::Value::Bool(false);
         value["language"] = serde_json::Value::String("en".to_string());
+        value["blocked_domains"] = serde_json::json!([]);
 
         assert_eq!(serde_json::to_value(config).unwrap(), value);
     }

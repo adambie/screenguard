@@ -30,6 +30,8 @@ pub struct AgentHello {
     pub timezone: String,
     pub agent_version: String,
     pub last_config_version: i64,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

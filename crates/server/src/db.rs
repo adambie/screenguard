@@ -24,6 +24,7 @@ pub fn open(path: &str) -> Result<DbPool> {
     migrate_v3(&conn)?;
     migrate_v4(&conn)?;
     migrate_v5(&conn)?;
+    migrate_v6(&conn)?;
     Ok(pool)
 }
 
@@ -49,9 +50,11 @@ fn migrate_v1(conn: &rusqlite::Connection) -> Result<()> {
             agent_version   TEXT,
             paired_at       INTEGER,
             last_seen_at    INTEGER,
-            created_at      INTEGER NOT NULL
+            created_at      INTEGER NOT NULL,
+            web_filter_available INTEGER
         );
-        INSERT INTO agents_v1 SELECT * FROM agents;
+        INSERT INTO agents_v1 (id,machine_id,display_name,hostname,timezone,status,auth_token_hash,agent_version,paired_at,last_seen_at,created_at)
+            SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,agent_version,paired_at,last_seen_at,created_at FROM agents;
         DROP TABLE agents;
         ALTER TABLE agents_v1 RENAME TO agents;
         COMMIT;
@@ -137,6 +140,42 @@ fn migrate_v5(conn: &rusqlite::Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_v6(conn: &rusqlite::Connection) -> Result<()> {
+    let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v >= 6 {
+        return Ok(());
+    }
+    let col_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name='web_filter_available'",
+        [],
+        |r| r.get::<_, i32>(0),
+    ).unwrap_or(0) > 0;
+    if !col_exists {
+        conn.execute_batch("ALTER TABLE agents ADD COLUMN web_filter_available INTEGER;")?;
+    }
+    let table_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='blocked_domains'",
+        [],
+        |r| r.get::<_, i32>(0),
+    ).unwrap_or(0) > 0;
+    if !table_exists {
+        conn.execute_batch("
+            CREATE TABLE blocked_domains (
+                id          TEXT PRIMARY KEY,
+                profile_id  TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+                domain      TEXT NOT NULL,
+                enabled     INTEGER NOT NULL DEFAULT 0,
+                created_at  INTEGER NOT NULL,
+                UNIQUE (profile_id, domain)
+            );
+            CREATE INDEX idx_blocked_domains_profile ON blocked_domains(profile_id);
+        ")?;
+    }
+    conn.execute("PRAGMA user_version = 6", [])?;
+    tracing::info!("DB migration v6 applied (web filter)");
+    Ok(())
+}
+
 const SCHEMA: &str = "
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -160,7 +199,8 @@ CREATE TABLE IF NOT EXISTS agents (
     agent_version   TEXT,
     paired_at       INTEGER,
     last_seen_at    INTEGER,
-    created_at      INTEGER NOT NULL
+    created_at      INTEGER NOT NULL,
+    web_filter_available INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS user_profiles (
@@ -241,11 +281,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at      INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS blocked_domains (
+    id          TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+    domain      TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL,
+    UNIQUE (profile_id, domain)
+);
+
 CREATE INDEX IF NOT EXISTS idx_agent_users_agent    ON agent_users(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_users_profile  ON agent_users(profile_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_profile    ON schedules(profile_id);
 CREATE INDEX IF NOT EXISTS idx_daily_usage_date     ON daily_usage(date);
 CREATE INDEX IF NOT EXISTS idx_adjustments_profile  ON time_adjustments(profile_id, target_date);
+CREATE INDEX IF NOT EXISTS idx_blocked_domains_profile ON blocked_domains(profile_id);
 ";
 
 // ── models ────────────────────────────────────────────────────────────────────
@@ -271,6 +321,16 @@ pub struct Agent {
     pub agent_version: Option<String>,
     pub paired_at: Option<i64>,
     pub last_seen_at: Option<i64>,
+    pub created_at: i64,
+    pub web_filter_available: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockedDomain {
+    pub id: Uuid,
+    pub profile_id: Uuid,
+    pub domain: String,
+    pub enabled: bool,
     pub created_at: i64,
 }
 
@@ -439,7 +499,7 @@ pub fn get_agent_by_id(pool: &DbPool, id: Uuid) -> Result<Option<Agent>> {
     let conn = pool.get()?;
     conn.query_row(
         "SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,
-                agent_version,paired_at,last_seen_at,created_at
+                agent_version,paired_at,last_seen_at,created_at,web_filter_available
          FROM agents WHERE id=?1",
         params![id.to_string()],
         row_to_agent,
@@ -450,7 +510,7 @@ pub fn get_agent_by_machine_id(pool: &DbPool, machine_id: &str) -> Result<Option
     let conn = pool.get()?;
     conn.query_row(
         "SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,
-                agent_version,paired_at,last_seen_at,created_at
+                agent_version,paired_at,last_seen_at,created_at,web_filter_available
          FROM agents WHERE machine_id=?1",
         params![machine_id],
         row_to_agent,
@@ -461,7 +521,7 @@ pub fn list_agents(pool: &DbPool) -> Result<Vec<Agent>> {
     let conn = pool.get()?;
     let mut stmt = conn.prepare(
         "SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,
-                agent_version,paired_at,last_seen_at,created_at
+                agent_version,paired_at,last_seen_at,created_at,web_filter_available
          FROM agents ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map([], row_to_agent)?;
@@ -543,6 +603,7 @@ pub fn delete_agent(pool: &DbPool, id: Uuid) -> Result<()> {
 }
 
 fn row_to_agent(r: &rusqlite::Row<'_>) -> rusqlite::Result<Agent> {
+    let wf_int: Option<i32> = r.get(11)?;
     Ok(Agent {
         id: r.get::<_, String>(0)?.parse().unwrap_or_default(),
         machine_id: r.get(1)?,
@@ -555,7 +616,17 @@ fn row_to_agent(r: &rusqlite::Row<'_>) -> rusqlite::Result<Agent> {
         paired_at: r.get(8)?,
         last_seen_at: r.get(9)?,
         created_at: r.get(10)?,
+        web_filter_available: wf_int.map(|v| v != 0),
     })
+}
+
+pub fn update_agent_web_filter(pool: &DbPool, id: Uuid, available: bool) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE agents SET web_filter_available=?1 WHERE id=?2",
+        params![available as i32, id.to_string()],
+    )?;
+    Ok(())
 }
 
 // ── agent_users ───────────────────────────────────────────────────────────────
@@ -694,6 +765,14 @@ pub fn create_profile(pool: &DbPool, display_name: &str) -> Result<UserProfile> 
         "INSERT INTO config_versions (profile_id, version, updated_at) VALUES (?1, 1, ?2)",
         params![id.to_string(), now],
     )?;
+    for domain in DEFAULT_BLOCKED_DOMAINS {
+        let domain_id = Uuid::new_v4();
+        conn.execute(
+            "INSERT OR IGNORE INTO blocked_domains (id, profile_id, domain, enabled, created_at)
+             VALUES (?1, ?2, ?3, 0, ?4)",
+            params![domain_id.to_string(), id.to_string(), domain, now],
+        )?;
+    }
     Ok(UserProfile { id, display_name: display_name.to_string(), language: "en".to_string(), created_at: now, updated_at: now })
 }
 
@@ -973,6 +1052,83 @@ pub fn get_daily_usage_for_profile(
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
 }
 
+// ── blocked_domains ───────────────────────────────────────────────────────────
+
+const DEFAULT_BLOCKED_DOMAINS: &[&str] = &[
+    "youtube.com", "tiktok.com", "instagram.com", "facebook.com",
+    "twitter.com", "x.com", "twitch.tv", "discord.com",
+    "reddit.com", "snapchat.com", "roblox.com",
+];
+
+pub fn get_blocked_domains(pool: &DbPool, profile_id: Uuid) -> Result<Vec<BlockedDomain>> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, profile_id, domain, enabled, created_at
+         FROM blocked_domains WHERE profile_id=?1 ORDER BY domain",
+    )?;
+    let rows = stmt.query_map(params![profile_id.to_string()], |r| {
+        Ok(BlockedDomain {
+            id: r.get::<_, String>(0)?.parse().unwrap_or_default(),
+            profile_id: r.get::<_, String>(1)?.parse().unwrap_or_default(),
+            domain: r.get(2)?,
+            enabled: r.get::<_, i32>(3)? != 0,
+            created_at: r.get(4)?,
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+}
+
+pub fn get_enabled_blocked_domains(pool: &DbPool, profile_id: Uuid) -> Result<Vec<String>> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT domain FROM blocked_domains WHERE profile_id=?1 AND enabled=1 ORDER BY domain",
+    )?;
+    let rows = stmt.query_map(params![profile_id.to_string()], |r| r.get(0))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+}
+
+pub fn set_blocked_domains(pool: &DbPool, profile_id: Uuid, domains: &[(String, bool)]) -> Result<()> {
+    let conn = pool.get()?;
+    let now = Utc::now().timestamp();
+    conn.execute("DELETE FROM blocked_domains WHERE profile_id=?1", params![profile_id.to_string()])?;
+    for (domain, enabled) in domains {
+        let id = Uuid::new_v4();
+        conn.execute(
+            "INSERT INTO blocked_domains (id, profile_id, domain, enabled, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id.to_string(), profile_id.to_string(), domain, *enabled as i32, now],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn patch_blocked_domain(pool: &DbPool, id: Uuid, enabled: bool) -> Result<bool> {
+    let conn = pool.get()?;
+    let n = conn.execute(
+        "UPDATE blocked_domains SET enabled=?1 WHERE id=?2",
+        params![enabled as i32, id.to_string()],
+    )?;
+    Ok(n > 0)
+}
+
+pub fn add_blocked_domain(pool: &DbPool, profile_id: Uuid, domain: &str, enabled: bool) -> Result<BlockedDomain> {
+    let id = Uuid::new_v4();
+    let now = Utc::now().timestamp();
+    let conn = pool.get()?;
+    conn.execute(
+        "INSERT INTO blocked_domains (id, profile_id, domain, enabled, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id.to_string(), profile_id.to_string(), domain, enabled as i32, now],
+    )?;
+    Ok(BlockedDomain { id, profile_id, domain: domain.to_string(), enabled, created_at: now })
+}
+
+pub fn delete_blocked_domain(pool: &DbPool, id: Uuid) -> Result<bool> {
+    let conn = pool.get()?;
+    let n = conn.execute("DELETE FROM blocked_domains WHERE id=?1", params![id.to_string()])?;
+    Ok(n > 0)
+}
+
 // ── config_versions ───────────────────────────────────────────────────────────
 
 pub fn get_config_version(pool: &DbPool, profile_id: Uuid) -> Result<i64> {
@@ -1077,7 +1233,10 @@ mod tests {
 
     fn test_pool() -> DbPool {
         let pool = test_pool_before_v5();
-        migrate_v5(&pool.get().unwrap()).unwrap();
+        let conn = pool.get().unwrap();
+        migrate_v5(&conn).unwrap();
+        migrate_v6(&conn).unwrap();
+        drop(conn);
         pool
     }
 
@@ -1145,5 +1304,98 @@ mod tests {
 
         assert_eq!(config.users.len(), 1);
         assert!(config.users[0].preserve_tasks_on_lock);
+    }
+
+    #[test]
+    fn new_profile_seeds_default_blocked_domains() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test").unwrap();
+        let domains = get_blocked_domains(&pool, profile.id).unwrap();
+        assert_eq!(domains.len(), DEFAULT_BLOCKED_DOMAINS.len());
+        assert!(domains.iter().any(|d| d.domain == "youtube.com"));
+        assert!(domains.iter().all(|d| !d.enabled));
+    }
+
+    #[test]
+    fn set_and_get_blocked_domains() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test").unwrap();
+        set_blocked_domains(&pool, profile.id, &[
+            ("youtube.com".to_string(), true),
+            ("tiktok.com".to_string(), false),
+        ]).unwrap();
+        let domains = get_blocked_domains(&pool, profile.id).unwrap();
+        assert_eq!(domains.len(), 2);
+        let yt = domains.iter().find(|d| d.domain == "youtube.com").unwrap();
+        assert!(yt.enabled);
+        let tt = domains.iter().find(|d| d.domain == "tiktok.com").unwrap();
+        assert!(!tt.enabled);
+    }
+
+    #[test]
+    fn get_enabled_blocked_domains_returns_only_enabled() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test").unwrap();
+        set_blocked_domains(&pool, profile.id, &[
+            ("youtube.com".to_string(), true),
+            ("tiktok.com".to_string(), false),
+            ("discord.com".to_string(), true),
+        ]).unwrap();
+        let enabled = get_enabled_blocked_domains(&pool, profile.id).unwrap();
+        assert_eq!(enabled.len(), 2);
+        assert!(enabled.contains(&"youtube.com".to_string()));
+        assert!(enabled.contains(&"discord.com".to_string()));
+        assert!(!enabled.contains(&"tiktok.com".to_string()));
+    }
+
+    #[test]
+    fn patch_blocked_domain_toggles_enabled() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test").unwrap();
+        let domain = add_blocked_domain(&pool, profile.id, "example.com", false).unwrap();
+        assert!(!domain.enabled);
+        patch_blocked_domain(&pool, domain.id, true).unwrap();
+        let domains = get_blocked_domains(&pool, profile.id).unwrap();
+        let d = domains.iter().find(|d| d.domain == "example.com").unwrap();
+        assert!(d.enabled);
+    }
+
+    #[test]
+    fn delete_blocked_domain_removes_it() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test").unwrap();
+        let domain = add_blocked_domain(&pool, profile.id, "example.com", true).unwrap();
+        let before = get_blocked_domains(&pool, profile.id).unwrap().len();
+        delete_blocked_domain(&pool, domain.id).unwrap();
+        let after = get_blocked_domains(&pool, profile.id).unwrap().len();
+        assert_eq!(after, before - 1);
+    }
+
+    #[test]
+    fn config_push_includes_enabled_blocked_domains() {
+        let pool = test_pool();
+        let profile = create_profile(&pool, "Test").unwrap();
+        set_blocked_domains(&pool, profile.id, &[
+            ("youtube.com".to_string(), true),
+            ("tiktok.com".to_string(), false),
+        ]).unwrap();
+        let agent_id = Uuid::new_v4();
+        pool.get().unwrap().execute(
+            "INSERT INTO agents
+             (id, machine_id, display_name, hostname, timezone, status, agent_version, created_at)
+             VALUES (?1, 'machine2', 'host', 'host', 'UTC', 'paired', 'test', 1)",
+            params![agent_id.to_string()],
+        ).unwrap();
+        upsert_agent_users(&pool, agent_id, &[LocalUser {
+            local_uid: 1000,
+            username: "test".to_string(),
+            display_name: "Test User".to_string(),
+        }]).unwrap();
+        let agent_user = get_agent_user(&pool, agent_id, 1000).unwrap().unwrap();
+        update_agent_user(&pool, agent_user.id, Some(profile.id), Some("managed")).unwrap();
+
+        let config = crate::remaining::build_config_push(&pool, agent_id, 1).unwrap();
+        assert_eq!(config.users.len(), 1);
+        assert_eq!(config.users[0].blocked_domains, vec!["youtube.com"]);
     }
 }

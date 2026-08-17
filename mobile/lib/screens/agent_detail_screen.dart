@@ -345,6 +345,11 @@ class _AgentDetailScreenState extends ConsumerState<AgentDetailScreen> {
                   label: Text(l.copyId, style: const TextStyle(fontSize: 12)),
                 ),
               ),
+            if (agent.webFilterAvailable != null)
+              _InfoRow(
+                l.webFilter,
+                agent.webFilterAvailable! ? l.webFilterAvailable : l.webFilterUnavailable,
+              ),
           ],
         ),
       ),

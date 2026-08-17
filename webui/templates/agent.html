@@ -72,6 +72,17 @@
           <dd class="col-7 mb-0">
             <code style="font-size:11px;color:var(--t2)">{{ agent.machine_id }}</code>
           </dd>
+          {% if agent.web_filter_available is not none %}
+          <dt class="col-5" style="color:var(--t2);font-weight:500;margin-bottom:0">{{ t('agent.label_web_filter') }}</dt>
+          <dd class="col-7 mb-0">
+            {% if agent.web_filter_available %}
+              <span class="badge text-bg-success">{{ t('agent.web_filter_available') }}</span>
+            {% else %}
+              <span class="badge text-bg-secondary">{{ t('agent.web_filter_unavailable') }}</span>
+              <div style="font-size:11px;color:var(--t2);margin-top:3px">{{ t('agent.web_filter_install_hint') }}</div>
+            {% endif %}
+          </dd>
+          {% endif %}
         </dl>
       </div>
     </div>
