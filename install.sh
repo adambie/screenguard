@@ -140,6 +140,14 @@ if [[ $MODE == uninstall ]]; then
     fi
     systemctl daemon-reload
 
+    # Restore nsswitch.conf if we patched it during install.
+    if [[ -f "${CONFIG_DIR}/.nsswitch_hosts_orig" ]]; then
+        orig_line=$(cat "${CONFIG_DIR}/.nsswitch_hosts_orig")
+        sed -i "s|^hosts:.*|${orig_line}|" /etc/nsswitch.conf
+        rm -f "${CONFIG_DIR}/.nsswitch_hosts_orig"
+        info "Restored /etc/nsswitch.conf hosts line"
+    fi
+
     echo
     if confirm "Also remove config directory ${CONFIG_DIR}/ (agent.toml, server.toml)?" n; then
         rm -rf "${CONFIG_DIR}"
@@ -443,6 +451,21 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
     systemctl reload dbus 2>/dev/null || true
     info "Installed D-Bus policy /etc/dbus-1/system.d/screenguard-dbus.conf"
+
+    # Remove the nss-resolve module from /etc/nsswitch.conf so that
+    # getaddrinfo() sends UDP DNS packets (interceptable by nftables per-UID
+    # DNAT) instead of going via D-Bus to systemd-resolved, which bypasses
+    # the web filter entirely.
+    if grep -qE '^hosts:.*\bresolve\b' /etc/nsswitch.conf; then
+        # Save the original hosts line so uninstall can restore it exactly.
+        mkdir -p "${CONFIG_DIR}"
+        grep '^hosts:' /etc/nsswitch.conf > "${CONFIG_DIR}/.nsswitch_hosts_orig"
+        # Strip 'resolve' and any immediately following bracketed flags like [!UNAVAIL=return]
+        sed -i -E 's/\bresolve(\s+\[[^]]*\])?//g' /etc/nsswitch.conf
+        # Collapse any double-spaces left behind
+        sed -i -E 's/  +/ /g' /etc/nsswitch.conf
+        info "Removed nss-resolve from /etc/nsswitch.conf (required for web filtering)"
+    fi
 
     mkdir -p "${DATA_DIR}"
 
