@@ -234,6 +234,7 @@ if [[ $MODE == update ]]; then
         info "Updated screenguard-agent"
         cp "${TMP}/screenguard-tray" "${INSTALL_DIR}/screenguard-tray"
         cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
+        mkdir -p /etc/dbus-1/system.d
         cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
         systemctl reload dbus 2>/dev/null || true
         info "Updated screenguard-tray"
@@ -438,6 +439,7 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     mkdir -p /etc/xdg/autostart
     cp "${TMP}/screenguard-tray.desktop" "/etc/xdg/autostart/screenguard-tray.desktop"
     info "Installed /etc/xdg/autostart/screenguard-tray.desktop"
+    mkdir -p /etc/dbus-1/system.d
     cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
     systemctl reload dbus 2>/dev/null || true
     info "Installed D-Bus policy /etc/dbus-1/system.d/screenguard-dbus.conf"
