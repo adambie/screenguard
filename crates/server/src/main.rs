@@ -6,6 +6,7 @@ use tokio::signal::unix::{signal, SignalKind};
 mod api;
 mod config;
 mod db;
+mod release_check;
 mod remaining;
 mod state;
 mod ws;
@@ -51,6 +52,9 @@ async fn main() -> Result<()> {
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
     let app = ws_router.merge(api::router(state.clone()));
+
+    // Background: poll GitHub for the latest Rust release every hour.
+    release_check::spawn_updater("adambie/screenguard", state.latest_agent_release.clone());
 
     // mDNS advertisement.
     let _mdns = if cfg.enable_mdns {

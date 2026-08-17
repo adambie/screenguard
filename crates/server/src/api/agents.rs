@@ -9,21 +9,8 @@ use uuid::Uuid;
 
 use crate::api::auth::{internal, not_found};
 use crate::db;
+use crate::release_check;
 use crate::state::{AppState, PairingDecision};
-
-const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-fn parse_semver(v: &str) -> Option<(u32, u32, u32)> {
-    let mut p = v.split('.');
-    Some((p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.parse().ok()?))
-}
-
-fn agent_needs_update(agent_version: &str, server_version: &str) -> bool {
-    match (parse_semver(agent_version), parse_semver(server_version)) {
-        (Some(a), Some(s)) => a < s,
-        _ => agent_version != server_version,
-    }
-}
 
 #[derive(Serialize)]
 pub struct AgentResponse {
@@ -48,6 +35,7 @@ pub async fn list_agents(
     let agents = db::list_agents(&state.db).map_err(internal)?;
     let online = state.online.read().await;
     let pending = state.pending.read().await;
+    let latest = state.latest_agent_release.read().await;
     let mut result = Vec::new();
     for a in agents {
         let user_count = db::list_agent_users(&state.db, a.id)
@@ -55,7 +43,8 @@ pub async fn list_agents(
             .unwrap_or(0);
         let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
         let upgradeable = a.agent_version.as_deref()
-            .map_or(false, |v| agent_needs_update(v, SERVER_VERSION));
+            .zip(latest.as_deref())
+            .map_or(false, |(agent_v, latest_v)| release_check::is_older(agent_v, latest_v));
         result.push(AgentResponse {
             online: online.values().any(|h| h.agent_id == a.id),
             id: a.id,
@@ -82,10 +71,12 @@ pub async fn get_agent(
     let a = db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
     let online = state.online.read().await;
     let pending = state.pending.read().await;
+    let latest = state.latest_agent_release.read().await;
     let user_count = db::list_agent_users(&state.db, a.id).map(|u| u.len()).unwrap_or(0);
     let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
     let upgradeable = a.agent_version.as_deref()
-        .map_or(false, |v| v != SERVER_VERSION);
+        .zip(latest.as_deref())
+        .map_or(false, |(agent_v, latest_v)| release_check::is_older(agent_v, latest_v));
     Ok(Json(serde_json::json!(AgentResponse {
         online: online.values().any(|h| h.agent_id == a.id),
         id: a.id, machine_id: a.machine_id, display_name: a.display_name,

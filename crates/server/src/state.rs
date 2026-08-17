@@ -4,6 +4,7 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::release_check::LatestRelease;
 use common::protocol::WssMessage;
 
 /// Handle to a connected agent's outbound message channel.
@@ -35,6 +36,8 @@ pub struct AppState {
     pub pending: Arc<RwLock<HashMap<String, PairingHandle>>>,
     /// agent_id → oneshot sender for pending log requests.
     pub log_requests: Arc<RwLock<HashMap<Uuid, oneshot::Sender<Vec<String>>>>>,
+    /// Latest Rust release version fetched from GitHub (e.g. "0.9.8").
+    pub latest_agent_release: LatestRelease,
 }
 
 impl AppState {
@@ -46,6 +49,7 @@ impl AppState {
             online: Arc::new(RwLock::new(HashMap::new())),
             pending: Arc::new(RwLock::new(HashMap::new())),
             log_requests: Arc::new(RwLock::new(HashMap::new())),
+            latest_agent_release: Arc::new(RwLock::new(None)),
         })
     }
 

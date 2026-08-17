@@ -1,6 +1,6 @@
 [package]
 name = "server"
-version = "0.9.8"
+version = "0.9.9"
 edition = "2024"
 [[bin]]
 name = "parental-controller-server"
@@ -47,6 +47,9 @@ toml = "0.8"
 
 # Systemd
 libsystemd = "0.7"
+
+# HTTP client (GitHub release check)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Logging
 tracing = "0.1"
