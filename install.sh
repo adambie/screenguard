@@ -246,6 +246,13 @@ if [[ $MODE == update ]]; then
         cp "${TMP}/screenguard-dbus.conf" "/etc/dbus-1/system.d/screenguard-dbus.conf"
         systemctl reload dbus 2>/dev/null || true
         info "Updated screenguard-tray"
+        if grep -qE '^hosts:.*\bresolve\b' /etc/nsswitch.conf; then
+            mkdir -p "${CONFIG_DIR}"
+            grep '^hosts:' /etc/nsswitch.conf > "${CONFIG_DIR}/.nsswitch_hosts_orig"
+            sed -i -E 's/\bresolve(\s+\[[^]]*\])?//g' /etc/nsswitch.conf
+            sed -i -E 's/  +/ /g' /etc/nsswitch.conf
+            info "Removed nss-resolve from /etc/nsswitch.conf (required for web filtering)"
+        fi
         if ! command -v nft &>/dev/null; then
             warn "nftables not found — web content filtering will be disabled (install nftables to enable it)"
         fi
