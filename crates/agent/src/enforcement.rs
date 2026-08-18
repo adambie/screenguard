@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::{Datelike, Local, NaiveTime};
 use common::models::EnforceAction;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -177,7 +178,10 @@ mod tests {
 
 /// Midnight handler: called when the calendar date changes.
 /// Resets daily usage and locks any sessions that fall outside the new day's schedule.
-pub async fn handle_midnight(db: &Arc<Mutex<Db>>) -> Result<()> {
+pub async fn handle_midnight(
+    db: &Arc<Mutex<Db>>,
+    locked_uids: &Arc<Mutex<HashSet<u32>>>,
+) -> Result<()> {
     let yesterday = (Local::now() - chrono::Duration::days(1)).date_naive();
     let uids = {
         let db = db.lock().await;
@@ -194,13 +198,24 @@ pub async fn handle_midnight(db: &Arc<Mutex<Db>>) -> Result<()> {
     for uid in uids {
         let action = evaluate_enforcement(uid, db, false).await?;
         if action == EnforceAction::Lock {
-            tracing::info!("Midnight: locking uid={uid} (outside schedule for new day)");
-            let db = db.clone();
-            tokio::spawn(async move {
-                if let Err(e) = execute_lock(uid, &db).await {
-                    tracing::error!("Midnight lock failed for uid={uid}: {e}");
-                }
-            });
+            let is_new = locked_uids.lock().await.insert(uid);
+            if is_new {
+                tracing::info!("Midnight: locking uid={uid} (outside schedule for new day)");
+                let db = db.clone();
+                let locked_uids = locked_uids.clone();
+                tokio::spawn(async move {
+                    let rearm = match execute_lock(uid, &db).await {
+                        Ok(rearm) => rearm,
+                        Err(e) => {
+                            tracing::error!("Midnight lock failed for uid={uid}: {e}");
+                            true
+                        }
+                    };
+                    if rearm {
+                        locked_uids.lock().await.remove(&uid);
+                    }
+                });
+            }
         }
     }
 

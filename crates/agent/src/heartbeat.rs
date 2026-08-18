@@ -145,7 +145,7 @@ impl HeartbeatLoop {
                     let today = now.date_naive();
 
                     if today != last_date {
-                        handle_midnight(&self.db).await?;
+                        handle_midnight(&self.db, &self.locked_uids).await?;
                         last_date = today;
                         self.notified_thresholds.clear();
                     }
@@ -490,14 +490,38 @@ impl HeartbeatLoop {
                 }
             }
             ServerMessage::LockNow(lock) => {
-                tracing::info!("Locking uid={}: manual lock requested by administrator", lock.local_uid);
-                let db = self.db.clone();
                 let uid = lock.local_uid;
-                tokio::spawn(async move {
-                    if let Err(e) = execute_lock(uid, &db).await {
-                        tracing::error!("lock_now failed for uid={uid}: {e}");
-                    }
-                });
+                let is_new = self.locked_uids.lock().await.insert(uid);
+                if is_new {
+                    tracing::info!("Locking uid={uid}: manual lock requested by administrator");
+                    let db = self.db.clone();
+                    let locked_uids = self.locked_uids.clone();
+                    tokio::spawn(async move {
+                        let rearm = match execute_lock(uid, &db).await {
+                            Ok(rearm) => rearm,
+                            Err(e) => {
+                                tracing::error!("lock_now failed for uid={uid}: {e}");
+                                true
+                            }
+                        };
+                        if rearm {
+                            locked_uids.lock().await.remove(&uid);
+                        }
+                    });
+                } else {
+                    tracing::info!("Re-locking uid={uid}: lock_now while grace/preserve already armed");
+                    let db = self.db.clone();
+                    tokio::spawn(async move {
+                        let session_ids = db.lock().await
+                            .get_all_session_ids(uid)
+                            .unwrap_or_default();
+                        if !session_ids.is_empty() {
+                            if let Err(e) = crate::dbus::lock_sessions(&session_ids).await {
+                                tracing::warn!("Re-lock for lock_now failed for uid={uid}: {e}");
+                            }
+                        }
+                    });
+                }
             }
             ServerMessage::ConfigReload => {
                 tracing::info!("Received config_reload — re-sending agent_hello");
@@ -639,18 +663,55 @@ impl HeartbeatLoop {
                 let action = evaluate_enforcement(uid, &self.db, false).await?;
                 match action {
                     EnforceAction::Lock => {
-                        tracing::info!("Locking uid={uid}: offline enforcement triggered (server unreachable)");
-                        let db = self.db.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = execute_lock(uid, &db).await {
-                                tracing::error!("Offline lock failed for uid={uid}: {e}");
-                            }
-                        });
+                        let is_new = self.locked_uids.lock().await.insert(uid);
+                        if is_new {
+                            tracing::info!("Locking uid={uid}: offline enforcement triggered (server unreachable)");
+                            let db = self.db.clone();
+                            let locked_uids = self.locked_uids.clone();
+                            tokio::spawn(async move {
+                                let rearm = match execute_lock(uid, &db).await {
+                                    Ok(rearm) => rearm,
+                                    Err(e) => {
+                                        tracing::error!("Offline lock failed for uid={uid}: {e}");
+                                        true
+                                    }
+                                };
+                                if rearm {
+                                    locked_uids.lock().await.remove(&uid);
+                                }
+                            });
+                        } else {
+                            let db = self.db.clone();
+                            tokio::spawn(async move {
+                                let session_ids = db.lock().await
+                                    .get_all_session_ids(uid)
+                                    .unwrap_or_default();
+                                if !session_ids.is_empty() {
+                                    if let Err(e) = crate::dbus::lock_sessions(&session_ids).await {
+                                        tracing::warn!("Offline re-lock failed for uid={uid}: {e}");
+                                    }
+                                }
+                            });
+                        }
                     }
                     EnforceAction::Warn => {
                         tracing::warn!("uid={uid} is approaching their limit (offline mode)");
                     }
-                    EnforceAction::Allow => {}
+                    EnforceAction::Allow => {
+                        if self.locked_uids.lock().await.remove(&uid) {
+                            let db = self.db.clone();
+                            tokio::spawn(async move {
+                                let session_ids = db.lock().await
+                                    .get_all_session_ids(uid)
+                                    .unwrap_or_default();
+                                if !session_ids.is_empty() {
+                                    if let Err(e) = crate::dbus::unlock_sessions(&session_ids).await {
+                                        tracing::warn!("Offline unlock failed for uid={uid}: {e}");
+                                    }
+                                }
+                            });
+                        }
+                    }
                 }
             }
         }
