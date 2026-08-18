@@ -49,6 +49,8 @@ trait Login1Manager {
     fn list_sessions(
         &self,
     ) -> zbus::Result<Vec<(String, u32, String, String, zbus::zvariant::OwnedObjectPath)>>;
+
+    fn kill_session(&self, session_id: &str, who: &str, signal_number: i32) -> zbus::Result<()>;
 }
 
 #[proxy(
@@ -316,20 +318,17 @@ pub async fn unlock_sessions(session_ids: &[String]) -> Result<()> {
 }
 
 /// Terminate all sessions in the given list via DBus.
+/// Uses Manager.KillSession with SIGKILL so that lock-screen daemons (kscreenlocker,
+/// swaylock, etc.) that resist SIGTERM are forcefully removed.
 pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
-    let sessions = manager.list_sessions().await?;
 
-    for (sid, _uid, _user, _seat, path) in &sessions {
-        if session_ids.contains(sid)
-            && let Ok(session) = Login1SessionProxy::builder(&conn)
-                .path(path.as_ref())?
-                .build()
-                .await
-            {
-                let _ = session.terminate().await;
-            }
+    for sid in session_ids {
+        match manager.kill_session(sid, "all", 9).await {
+            Ok(()) => tracing::info!("Sent SIGKILL to session {sid}"),
+            Err(e) => tracing::warn!("kill_session failed for {sid}: {e}"),
+        }
     }
     tracing::info!("Terminated {} session(s): {:?}", session_ids.len(), session_ids);
     Ok(())
