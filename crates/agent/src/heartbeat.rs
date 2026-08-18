@@ -291,6 +291,22 @@ impl HeartbeatLoop {
                     db.save_config_version(push.config_version)?;
                 }
 
+                // If preserve_tasks_on_lock was turned off for a uid currently armed in the
+                // re-lock loop, evict it so the next RemainingUpdate spawns a fresh
+                // execute_lock that reads the new setting and runs the terminate path.
+                {
+                    let mut locked = self.locked_uids.lock().await;
+                    for u in &push.users {
+                        if !u.preserve_tasks_on_lock && locked.remove(&u.local_uid) {
+                            tracing::info!(
+                                "uid={}: preserve disabled via config_push while armed — \
+                                 evicting so next RemainingUpdate triggers terminate path",
+                                u.local_uid
+                            );
+                        }
+                    }
+                }
+
                 // Refresh web filter rules with the new blocklists.
                 {
                     let uid_configs: Vec<(u32, Vec<String>)> = push.users.iter()

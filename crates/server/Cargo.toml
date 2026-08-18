@@ -1,6 +1,6 @@
 [package]
 name = "server"
-version = "0.9.10"
+version = "0.9.11"
 edition = "2024"
 [[bin]]
 name = "parental-controller-server"
