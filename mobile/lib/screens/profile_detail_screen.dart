@@ -183,6 +183,21 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
     }
   }
 
+  Future<void> _saveGraceMinutes(int minutes) async {
+    try {
+      await ref.read(apiClientProvider).patch(
+        '/profiles/${widget.profileId}',
+        {'lockout_grace_minutes': minutes},
+      );
+      ref.invalidate(profileDetailProvider(widget.profileId));
+      if (mounted) _snack(AppLocalizations.of(context).graceMinutesSaved);
+    } on UnauthorizedException {
+      ref.read(authProvider.notifier).relogin();
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    }
+  }
+
   Future<void> _rename(String newName) async {
     try {
       await ref.read(apiClientProvider).patch(
@@ -767,12 +782,43 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
 
   Widget _buildLockBehaviorCard(BuildContext context, Profile profile) {
     final l = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
     return Card(
-      child: SwitchListTile(
-        title: Text(l.keepTasksRunning),
-        subtitle: Text(l.keepTasksRunningHint),
-        value: profile.preserveTasksOnLock,
-        onChanged: _savePreserveTasksOnLock,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              title: Text(l.keepTasksRunning),
+              subtitle: Text(l.keepTasksRunningHint),
+              value: profile.preserveTasksOnLock,
+              onChanged: _savePreserveTasksOnLock,
+            ),
+            if (!profile.preserveTasksOnLock) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(l.graceMinutesLabel,
+                        style: Theme.of(context).textTheme.bodyMedium),
+                    const SizedBox(height: 8),
+                    _GraceEditor(
+                      initialValue: profile.lockoutGraceMinutes,
+                      onSave: _saveGraceMinutes,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(l.graceMinutesHint,
+                        style: TextStyle(
+                            fontSize: 12, color: cs.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -807,6 +853,64 @@ class _ProfileDetailScreenState extends ConsumerState<ProfileDetailScreen> {
         ),
       ),
     );
+  }
+}
+
+class _GraceEditor extends StatefulWidget {
+  final int initialValue;
+  final ValueChanged<int> onSave;
+  const _GraceEditor({required this.initialValue, required this.onSave});
+
+  @override
+  State<_GraceEditor> createState() => _GraceEditorState();
+}
+
+class _GraceEditorState extends State<_GraceEditor> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: '${widget.initialValue}');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return Row(
+      children: [
+        SizedBox(
+          width: 90,
+          child: TextField(
+            controller: _ctrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              suffixText: 'min',
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(l.save),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    final v = int.tryParse(_ctrl.text) ?? widget.initialValue;
+    widget.onSave(v.clamp(0, 60));
   }
 }
 

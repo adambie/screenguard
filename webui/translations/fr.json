@@ -75,6 +75,9 @@
   "profile.card_lock_behavior": "Comportement du verrouillage",
   "profile.keep_tasks_running": "Laisser les applications et les tâches en cours pendant le verrouillage",
   "profile.keep_tasks_running_hint": "Lorsque le temps est écoulé, ScreenGuard maintient l’écran de connexion verrouillé, mais ne met pas fin à la session. Le temps disponible est tout de même remis à zéro.",
+  "profile.grace_minutes_label": "Grace period before logout",
+  "profile.grace_minutes_unit": "min",
+  "profile.grace_minutes_hint": "After locking, the session is forcibly terminated after this many minutes (only when 'keep tasks running' is off). Set to 0 for immediate logout.",
   "profile.btn_save_lock_behavior": "Enregistrer le comportement du verrouillage",
 
   "agents.heading": "Agents",

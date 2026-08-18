@@ -75,6 +75,9 @@
   "profile.card_lock_behavior": "Sposób blokowania",
   "profile.keep_tasks_running": "Pozostaw aplikacje i zadania uruchomione podczas blokady",
   "profile.keep_tasks_running_hint": "Po wyczerpaniu czasu ScreenGuard utrzymuje ekran logowania zablokowany, ale nie kończy sesji. Dostępny czas nadal jest zerowany.",
+  "profile.grace_minutes_label": "Okres karencji przed wylogowaniem",
+  "profile.grace_minutes_unit": "min",
+  "profile.grace_minutes_hint": "Po zablokowaniu sesja zostanie przymusowo zakończona po upływie tej liczby minut (tylko gdy 'pozostaw zadania' jest wyłączone). Ustaw 0 dla natychmiastowego wylogowania.",
   "profile.btn_save_lock_behavior": "Zapisz sposób blokowania",
 
   "agents.heading": "Agenci",

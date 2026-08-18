@@ -36,8 +36,11 @@ confirm() {
     local prompt="$1" default="${2:-y}"
     local yn
     [[ $default == y ]] && prompt+=" [Y/n] " || prompt+=" [y/N] "
-    # Non-interactive (e.g. systemd-run has no /dev/tty): silently use default.
-    if ! read -rp "$prompt" yn </dev/tty 2>/dev/null; then
+    if [ -e /dev/tty ] && [ -r /dev/tty ]; then
+        printf '%s' "$prompt" >/dev/tty
+        read -r yn </dev/tty || yn="$default"
+    else
+        # Non-interactive (e.g. systemd-run has no /dev/tty): silently use default.
         yn="$default"
     fi
     yn="${yn:-$default}"

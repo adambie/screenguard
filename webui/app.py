@@ -444,6 +444,7 @@ def profile_detail(profile_id):
                            agent_users=data.get("agent_users", []),
                            status=status,
                            preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
+                           lockout_grace_minutes=data.get("lockout_grace_minutes", 5),
                            blocked_domains=blocked_domains,
                            week_bars=week_bars,
                            week_max=chart_max,
@@ -486,8 +487,12 @@ def set_profile_language(profile_id):
 @require_login
 def set_lock_behavior(profile_id):
     preserve = request.form.get("preserve_tasks_on_lock") == "on"
+    try:
+        grace = max(0, min(60, int(request.form.get("lockout_grace_minutes", 5))))
+    except (ValueError, TypeError):
+        grace = 5
     r = api("PATCH", f"/profiles/{profile_id}",
-            json={"preserve_tasks_on_lock": preserve})
+            json={"preserve_tasks_on_lock": preserve, "lockout_grace_minutes": grace})
     flash(t("flash.lock_behavior_saved") if (r and r.ok) else t("flash.lock_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id))

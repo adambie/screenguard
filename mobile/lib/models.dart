@@ -36,6 +36,7 @@ class Profile {
   final String displayName;
   final String language;
   final bool preserveTasksOnLock;
+  final int lockoutGraceMinutes;
   final List<Schedule> schedules;
   final List<DailyLimit> dailyLimits;
   final List<AgentUser> agentUsers;
@@ -45,6 +46,7 @@ class Profile {
     required this.displayName,
     required this.language,
     required this.preserveTasksOnLock,
+    required this.lockoutGraceMinutes,
     required this.schedules,
     required this.dailyLimits,
     required this.agentUsers,
@@ -57,6 +59,7 @@ class Profile {
       displayName: p['display_name'] as String,
       language: (p['language'] as String?) ?? 'en',
       preserveTasksOnLock: (j['preserve_tasks_on_lock'] as bool?) ?? false,
+      lockoutGraceMinutes: (j['lockout_grace_minutes'] as int?) ?? 5,
       schedules: ((j['schedules'] as List?) ?? [])
           .map((s) => Schedule.fromJson(s as Map<String, dynamic>))
           .toList(),

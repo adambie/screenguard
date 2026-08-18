@@ -75,6 +75,9 @@
   "profile.card_lock_behavior": "Lock behavior",
   "profile.keep_tasks_running": "Keep apps and tasks running while locked",
   "profile.keep_tasks_running_hint": "When time runs out, ScreenGuard keeps the login screen locked but does not terminate the session. The allowance is still zeroed out.",
+  "profile.grace_minutes_label": "Grace period before logout",
+  "profile.grace_minutes_unit": "min",
+  "profile.grace_minutes_hint": "After locking, the session is forcibly terminated after this many minutes (only when 'keep tasks running' is off). Set to 0 for immediate logout.",
   "profile.btn_save_lock_behavior": "Save lock behavior",
 
   "agents.heading": "Agents",

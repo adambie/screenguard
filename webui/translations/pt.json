@@ -75,6 +75,9 @@
   "profile.card_lock_behavior": "Comportamento do bloqueio",
   "profile.keep_tasks_running": "Manter aplicações e tarefas em execução durante o bloqueio",
   "profile.keep_tasks_running_hint": "Quando o tempo termina, o ScreenGuard mantém o ecrã de início de sessão bloqueado, mas não termina a sessão. O tempo disponível continua a ser reposto a zero.",
+  "profile.grace_minutes_label": "Grace period before logout",
+  "profile.grace_minutes_unit": "min",
+  "profile.grace_minutes_hint": "After locking, the session is forcibly terminated after this many minutes (only when 'keep tasks running' is off). Set to 0 for immediate logout.",
   "profile.btn_save_lock_behavior": "Guardar comportamento do bloqueio",
 
   "agents.heading": "Agentes",

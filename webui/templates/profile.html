@@ -360,6 +360,18 @@
       <p class="text-secondary small mt-2 mb-3">
         {{ t('profile.keep_tasks_running_hint') }}
       </p>
+      <div class="mb-3" style="max-width:260px">
+        <label class="form-label" for="lockoutGraceMinutes">
+          {{ t('profile.grace_minutes_label') }}
+        </label>
+        <div class="input-group input-group-sm">
+          <input class="form-control" type="number" id="lockoutGraceMinutes"
+                 name="lockout_grace_minutes" min="0" max="60"
+                 value="{{ lockout_grace_minutes }}">
+          <span class="input-group-text">{{ t('profile.grace_minutes_unit') }}</span>
+        </div>
+        <div class="form-text">{{ t('profile.grace_minutes_hint') }}</div>
+      </div>
       <button class="btn btn-primary btn-sm">
         {{ t('profile.btn_save_lock_behavior') }}
       </button>

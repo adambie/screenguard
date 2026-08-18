@@ -75,6 +75,9 @@
   "profile.card_lock_behavior": "Sperrverhalten",
   "profile.keep_tasks_running": "Apps und Aufgaben während der Sperre weiterlaufen lassen",
   "profile.keep_tasks_running_hint": "Wenn die Zeit abgelaufen ist, hält ScreenGuard den Anmeldebildschirm gesperrt, beendet die Sitzung aber nicht. Die verfügbare Zeit wird trotzdem auf null gesetzt.",
+  "profile.grace_minutes_label": "Grace period before logout",
+  "profile.grace_minutes_unit": "min",
+  "profile.grace_minutes_hint": "After locking, the session is forcibly terminated after this many minutes (only when 'keep tasks running' is off). Set to 0 for immediate logout.",
   "profile.btn_save_lock_behavior": "Sperrverhalten speichern",
 
   "agents.heading": "Agenten",

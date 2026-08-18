@@ -52,6 +52,7 @@ pub async fn get_profile(
         "daily_limits": limits,
         "agent_users": users,
         "preserve_tasks_on_lock": enforcement.preserve_tasks_on_lock,
+        "lockout_grace_minutes": enforcement.lockout_grace_minutes,
     })))
 }
 
@@ -60,6 +61,7 @@ pub struct PatchProfileBody {
     pub display_name: Option<String>,
     pub language: Option<String>,
     pub preserve_tasks_on_lock: Option<bool>,
+    pub lockout_grace_minutes: Option<u32>,
 }
 
 fn lock_now_adjustment(limit: i32, adjustments: i32, used_minutes: i32) -> i32 {
@@ -82,6 +84,10 @@ pub async fn patch_profile(
     }
     if let Some(preserve) = body.preserve_tasks_on_lock {
         db::set_preserve_tasks_on_lock(&state.db, id, preserve).map_err(internal)?;
+        bump_and_propagate(&state, id).await.map_err(internal)?;
+    }
+    if let Some(grace) = body.lockout_grace_minutes {
+        db::set_lockout_grace_minutes(&state.db, id, grace).map_err(internal)?;
         bump_and_propagate(&state, id).await.map_err(internal)?;
     }
     Ok(Json(serde_json::json!({ "message": "Profile updated" })))

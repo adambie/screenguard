@@ -105,6 +105,9 @@ class AppLocalizations {
   String get notifLanguage => _t('notifLanguage');
   String get keepTasksRunning => _t('keepTasksRunning');
   String get keepTasksRunningHint => _t('keepTasksRunningHint');
+  String get graceMinutesLabel => _t('graceMinutesLabel');
+  String get graceMinutesHint => _t('graceMinutesHint');
+  String get graceMinutesSaved => _t('graceMinutesSaved');
   String get lockBehaviorSaved => _t('lockBehaviorSaved');
   String get linkedAccounts => _t('linkedAccounts');
   String get renameProfile => _t('renameProfile');
@@ -296,6 +299,9 @@ class AppLocalizations {
     'notifLanguage': 'Notification language',
     'keepTasksRunning': 'Keep apps and tasks running while locked',
     'keepTasksRunningHint': 'Keeps the login screen locked without ending the session.',
+    'graceMinutesLabel': 'Grace period before logout',
+    'graceMinutesHint': "After locking, the session is forcibly terminated after this many minutes. Set to 0 for immediate logout.",
+    'graceMinutesSaved': 'Grace period saved',
     'lockBehaviorSaved': 'Lock behavior saved',
     'linkedAccounts': 'Linked accounts',
     'renameProfile': 'Rename profile',
@@ -426,6 +432,9 @@ class AppLocalizations {
     'notifLanguage': 'Język powiadomień',
     'keepTasksRunning': 'Pozostaw aplikacje i zadania uruchomione podczas blokady',
     'keepTasksRunningHint': 'Utrzymuje ekran logowania zablokowany bez kończenia sesji.',
+    'graceMinutesLabel': 'Okres karencji przed wylogowaniem',
+    'graceMinutesHint': 'Po zablokowaniu sesja zostanie przymusowo zakończona po upływie tej liczby minut. Ustaw 0 dla natychmiastowego wylogowania.',
+    'graceMinutesSaved': 'Okres karencji zapisany',
     'lockBehaviorSaved': 'Sposób blokowania zapisany',
     'linkedAccounts': 'Powiązane konta',
     'renameProfile': 'Zmień nazwę profilu',

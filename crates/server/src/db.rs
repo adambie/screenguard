@@ -982,6 +982,15 @@ pub fn set_preserve_tasks_on_lock(pool: &DbPool, profile_id: Uuid, preserve: boo
     Ok(())
 }
 
+pub fn set_lockout_grace_minutes(pool: &DbPool, profile_id: Uuid, minutes: u32) -> Result<()> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE enforcement_settings SET lockout_grace_minutes=?1 WHERE profile_id=?2",
+        params![minutes, profile_id.to_string()],
+    )?;
+    Ok(())
+}
+
 // ── daily_usage ───────────────────────────────────────────────────────────────
 
 pub fn add_usage_seconds(pool: &DbPool, agent_user_id: Uuid, date: &str, seconds: i64) -> Result<()> {
