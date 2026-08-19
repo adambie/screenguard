@@ -199,6 +199,12 @@ impl HeartbeatLoop {
         active_since: &mut HashMap<u32, Option<Instant>>,
     ) {
         match event {
+            SessionEvent::StartupSnapshot { sessions } => {
+                let db = self.db.lock().await;
+                if let Err(e) = db.reconcile_sessions(&sessions) {
+                    tracing::warn!("Session reconciliation failed: {e}");
+                }
+            }
             SessionEvent::SessionStarted { uid, session_id } => {
                 let was_counting = uid_is_counting(session_states, uid);
                 let db = self.db.lock().await;

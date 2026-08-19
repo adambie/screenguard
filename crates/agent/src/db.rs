@@ -424,13 +424,43 @@ impl Db {
 impl Db {
     pub fn upsert_session(&self, uid: u32, session_id: &str, is_idle: bool) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        // Remove any stale row where the same session_id was owned by a different uid
+        // (can happen if logind reuses the ID after a reboot and the agent missed cleanup).
+        tx.execute(
+            "DELETE FROM active_sessions WHERE session_id = ?1 AND local_uid != ?2",
+            params![session_id, uid],
+        )?;
+        tx.execute(
             "INSERT INTO active_sessions (local_uid, session_id, started_at, last_heartbeat, is_idle)
              VALUES (?1, ?2, ?3, ?3, ?4)
              ON CONFLICT(local_uid, session_id) DO UPDATE
              SET last_heartbeat = ?3, is_idle = ?4",
             params![uid, session_id, now, is_idle as i32],
         )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Remove any `active_sessions` rows that are not in the live logind session snapshot.
+    /// Called once at agent startup to purge rows left over from before a reboot.
+    pub fn reconcile_sessions(&self, live: &[(u32, String)]) -> Result<()> {
+        let live: std::collections::HashSet<(u32, &str)> =
+            live.iter().map(|(uid, sid)| (*uid, sid.as_str())).collect();
+        let mut stmt = self.conn.prepare(
+            "SELECT local_uid, session_id FROM active_sessions",
+        )?;
+        let stale: Vec<(u32, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (uid, sid) in stale {
+            if !live.contains(&(uid, sid.as_str())) {
+                self.conn.execute(
+                    "DELETE FROM active_sessions WHERE local_uid = ?1 AND session_id = ?2",
+                    params![uid, sid],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -754,5 +784,58 @@ mod tests {
         db.save_cached_blocked_domains(1000, &["instagram.com".to_string(), "reddit.com".to_string()]).unwrap();
         let cached = db.get_cached_blocked_domains(1000).unwrap();
         assert_eq!(cached, vec!["instagram.com", "reddit.com"]);
+    }
+
+    fn all_sessions(db: &Db) -> Vec<(u32, String)> {
+        let mut stmt = db.conn.prepare(
+            "SELECT local_uid, session_id FROM active_sessions ORDER BY local_uid, session_id",
+        ).unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn upsert_session_evicts_stale_owner_for_reused_id() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c9", false).unwrap();
+        db.upsert_session(1002, "c9", false).unwrap();
+        assert_eq!(all_sessions(&db), vec![(1002, "c9".to_string())]);
+    }
+
+    #[test]
+    fn reconcile_removes_sessions_absent_from_live_snapshot() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c2", false).unwrap();
+        db.upsert_session(1001, "c7", false).unwrap();
+
+        db.reconcile_sessions(&[(1001, "c2".to_string())]).unwrap();
+
+        assert_eq!(all_sessions(&db), vec![(1001, "c2".to_string())]);
+    }
+
+    #[test]
+    fn reconcile_keeps_all_sessions_that_are_still_live() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c2", false).unwrap();
+        db.upsert_session(1001, "c7", false).unwrap();
+
+        db.reconcile_sessions(&[(1001, "c2".to_string()), (1001, "c7".to_string())]).unwrap();
+
+        assert_eq!(all_sessions(&db), vec![
+            (1001, "c2".to_string()),
+            (1001, "c7".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn reconcile_with_empty_snapshot_clears_all() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.upsert_session(1001, "c2", false).unwrap();
+
+        db.reconcile_sessions(&[]).unwrap();
+
+        assert!(all_sessions(&db).is_empty());
     }
 }
