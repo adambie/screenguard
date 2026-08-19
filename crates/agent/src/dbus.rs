@@ -74,11 +74,24 @@ trait Login1Session {
     #[zbus(property, name = "Type")]
     fn session_type(&self) -> zbus::Result<String>;
 
+    #[zbus(property)]
+    fn desktop(&self) -> zbus::Result<String>;
+
     fn lock(&self) -> zbus::Result<()>;
 
     fn unlock(&self) -> zbus::Result<()>;
 
     fn terminate(&self) -> zbus::Result<()>;
+}
+
+#[proxy(
+    interface = "org.cinnamon.ScreenSaver",
+    default_service = "org.cinnamon.ScreenSaver",
+    default_path = "/org/cinnamon/ScreenSaver"
+)]
+trait CinnamonScreenSaver {
+    fn lock(&self, message: &str) -> zbus::Result<()>;
+    fn get_active(&self) -> zbus::Result<bool>;
 }
 
 pub struct DbusMonitor {
@@ -287,24 +300,126 @@ async fn read_session_state(
     SessionUsageState { active, locked, idle }
 }
 
-/// Lock all sessions in the given list via DBus.
+/// Lock all sessions. Cinnamon on X11 does not respond to logind Session.Lock(), so for
+/// sessions explicitly identified as Cinnamon we call org.cinnamon.ScreenSaver.Lock() via
+/// a subprocess running as the target user, with logind as fallback if that fails.
 pub async fn lock_sessions(session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
     let sessions = manager.list_sessions().await?;
 
-    for (sid, _uid, _user, _seat, path) in &sessions {
-        if session_ids.contains(sid)
-            && let Ok(session) = Login1SessionProxy::builder(&conn)
-                .path(path.as_ref())?
-                .build()
-                .await
-            {
-                let _ = session.lock().await;
+    for (sid, uid, _user, _seat, path) in &sessions {
+        if !session_ids.contains(sid) {
+            continue;
+        }
+        let Ok(session) = Login1SessionProxy::builder(&conn)
+            .path(path.as_ref())?
+            .build()
+            .await
+        else {
+            tracing::warn!("Cannot build session proxy for uid={uid} session={sid}");
+            continue;
+        };
+
+        let desktop = session.desktop().await.unwrap_or_default();
+        if is_cinnamon(&desktop) {
+            if try_cinnamon_lock(*uid).await {
+                tracing::info!("Cinnamon lock verified for uid={uid} session={sid}");
+                continue;
             }
+            tracing::warn!(
+                "Cinnamon lock unconfirmed for uid={uid} session={sid}; falling back to logind"
+            );
+        }
+
+        let _ = session.lock().await;
+        tracing::info!("logind Session.Lock() sent for uid={uid} session={sid}");
     }
-    tracing::info!("Locked {} session(s): {:?}", session_ids.len(), session_ids);
     Ok(())
+}
+
+/// Returns true only for sessions explicitly identified as running Cinnamon.
+/// Empty or unrecognised desktop strings return false so non-Cinnamon sessions
+/// always go straight to the logind path.
+fn is_cinnamon(desktop: &str) -> bool {
+    !desktop.is_empty()
+        && desktop.split([':', ';']).any(|part| {
+            matches!(
+                part.trim().to_ascii_lowercase().as_str(),
+                "cinnamon" | "x-cinnamon" | "cinnamon2d" | "x-cinnamon2d"
+            )
+        })
+}
+
+/// Spawns the agent binary as the target user to call org.cinnamon.ScreenSaver.Lock()
+/// on their session bus. Returns true if the screensaver confirmed active (exit 0).
+async fn try_cinnamon_lock(uid: u32) -> bool {
+    let socket = format!("/run/user/{uid}/bus");
+    if !std::path::Path::new(&socket).exists() {
+        return false;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("Cannot locate agent binary for Cinnamon lock: {e}");
+            return false;
+        }
+    };
+    let gid = lookup_gid_for_uid(uid).unwrap_or(uid);
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::process::Command::new(exe)
+            .arg("--lock-cinnamon")
+            .env_clear()
+            .env("DBUS_SESSION_BUS_ADDRESS", format!("unix:path=/run/user/{uid}/bus"))
+            .env("XDG_RUNTIME_DIR", format!("/run/user/{uid}"))
+            .uid(uid)
+            .gid(gid)
+            .kill_on_drop(true)
+            .status(),
+    )
+    .await;
+    matches!(result, Ok(Ok(s)) if s.code() == Some(0))
+}
+
+/// Called when the agent binary is invoked with `--lock-cinnamon` as the target user.
+/// Connects to the user session bus, requests Cinnamon lock, and verifies it activated.
+/// Exit 0 = locked and confirmed; exit 1 = unavailable or unconfirmed.
+pub async fn lock_cinnamon_as_current_user() -> i32 {
+    let conn = match Connection::session().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("Cannot connect to session bus for Cinnamon lock: {e}");
+            return 1;
+        }
+    };
+    let proxy = match CinnamonScreenSaverProxy::new(&conn).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::debug!("Cannot create Cinnamon ScreenSaver proxy: {e}");
+            return 1;
+        }
+    };
+    if let Err(e) = proxy.lock("ScreenGuard").await {
+        tracing::debug!("Cinnamon ScreenSaver.Lock failed: {e}");
+        return 1;
+    }
+    // Poll GetActive briefly — the screensaver takes a moment to report active.
+    for i in 0..5usize {
+        match proxy.get_active().await {
+            Ok(true) => return 0,
+            Ok(false) => {}
+            Err(e) => {
+                tracing::debug!("Cinnamon ScreenSaver.GetActive failed: {e}");
+                return 1;
+            }
+        }
+        if i < 4 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+    tracing::debug!("Cinnamon lock sent but GetActive returned false after 5 checks");
+    1
 }
 
 /// Unlock all sessions in the given list via DBus.
@@ -431,7 +546,7 @@ trait Notifications {
 
 #[cfg(test)]
 mod tests {
-    use super::{session_counts_usage, uid_counts_usage, SessionUsageState};
+    use super::{is_cinnamon, session_counts_usage, uid_counts_usage, SessionUsageState};
 
     fn state(active: bool, locked: bool, idle: bool) -> SessionUsageState {
         SessionUsageState {
@@ -497,5 +612,23 @@ mod tests {
             idle: Some(false),
         }];
         assert!(!uid_counts_usage(&states));
+    }
+
+    #[test]
+    fn is_cinnamon_recognises_cinnamon_desktops() {
+        assert!(is_cinnamon("cinnamon"));
+        assert!(is_cinnamon("X-Cinnamon"));
+        assert!(is_cinnamon("cinnamon2d"));
+        assert!(is_cinnamon("x-cinnamon2d"));
+        assert!(is_cinnamon("GNOME:X-Cinnamon"));
+    }
+
+    #[test]
+    fn is_cinnamon_rejects_non_cinnamon_and_unknown() {
+        assert!(!is_cinnamon(""));
+        assert!(!is_cinnamon("GNOME"));
+        assert!(!is_cinnamon("KDE"));
+        assert!(!is_cinnamon("XFCE"));
+        assert!(!is_cinnamon("Hyprland"));
     }
 }
