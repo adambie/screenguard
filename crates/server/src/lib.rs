@@ -22,7 +22,7 @@ pub async fn run() -> Result<()> {
     let cfg = config::load(None)?;
     tracing::info!("Server starting on {}:{}", cfg.listen_addr, cfg.listen_port);
 
-    let pool = db::open(&cfg.db_path)?;
+    let pool = db::open(&cfg).await?;
 
     let jwt_secret = cfg.jwt_secret.clone().unwrap_or_else(|| {
         use rand::Rng;
@@ -37,7 +37,7 @@ pub async fn run() -> Result<()> {
 
     let state = AppState::new(pool, jwt_secret, cfg.jwt_expiry_hours);
 
-    if db::admin_count(&state.db)? == 0 {
+    if db::admin_count(&state.db).await? == 0 {
         tracing::warn!("No admin account — call POST /api/v1/auth/setup to create one");
     }
 

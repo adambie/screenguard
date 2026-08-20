@@ -26,7 +26,6 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
     let (mut sink, mut stream) = socket.split();
     let (out_tx, mut out_rx) = mpsc::channel::<WssMessage>(64);
 
-    // Spawn outbound writer task.
     tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             if let Ok(json) = msg.to_json() {
@@ -54,25 +53,20 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
     let (machine_id, agent_db_id) = match envelope.msg_type.as_str() {
         MSG_PAIRING_REQUEST => {
             let req: PairingRequest = envelope.parse_payload()?;
-            // After pairing_accepted is sent the agent closes its pairing
-            // connection and reconnects with the auth token. Close here.
             handle_pairing_request(req, &state, out_tx.clone()).await?;
             return Ok(());
         }
         MSG_AGENT_HELLO => {
             let hello: AgentHello = envelope.parse_payload()?;
-            // If agent is pending_delete, send unpair and wait for it to disconnect.
-            if let Ok(Some(agent)) = db::get_agent_by_machine_id(&state.db, &hello.machine_id) {
+            if let Ok(Some(agent)) = db::get_agent_by_machine_id(&state.db, &hello.machine_id).await {
                 if agent.status == "pending_delete" {
                     tracing::info!("Agent {} is pending_delete — sending unpair", hello.machine_id);
                     let msg = WssMessage::new(MSG_UNPAIR, &Unpair {})?;
                     let _ = out_tx.send(msg).await;
-                    // Drain until the agent closes the connection.
                     while let Some(Ok(msg)) = stream.next().await {
                         if matches!(msg, Message::Close(_)) { break; }
                     }
-                    // Agent has acknowledged — delete the record so re-pairing starts fresh.
-                    let _ = db::delete_agent(&state.db, agent.id);
+                    let _ = db::delete_agent(&state.db, agent.id).await;
                     tracing::info!("Agent {} deleted after unpair", hello.machine_id);
                     return Ok(());
                 }
@@ -95,16 +89,15 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
 
     state.remove_online(DEFAULT_TENANT, &machine_id).await;
 
-    // If the agent was pending_delete, it disconnected after receiving unpair — clean up now.
-    if let Ok(Some(agent)) = db::get_agent_by_id(&state.db, agent_db_id) {
+    if let Ok(Some(agent)) = db::get_agent_by_id(&state.db, agent_db_id).await {
         if agent.status == "pending_delete" {
-            let _ = db::delete_agent(&state.db, agent_db_id);
+            let _ = db::delete_agent(&state.db, agent_db_id).await;
             tracing::info!("Agent {} deleted after unpair (was online)", machine_id);
             return result;
         }
     }
 
-    let _ = db::update_agent_last_seen(&state.db, agent_db_id);
+    let _ = db::update_agent_last_seen(&state.db, agent_db_id).await;
     tracing::info!("Agent {machine_id} disconnected");
 
     result
@@ -120,16 +113,14 @@ async fn handle_pairing_request(
         req.hostname, req.machine_id, req.pairing_code
     );
 
-    // Upsert agent record as pending.
     let agent = db::upsert_agent_pending(
         &state.db,
         &req.machine_id,
         &req.hostname,
         "UTC",
         "",
-    )?;
+    ).await?;
 
-    // Register a pairing handle so REST /accept can deliver the decision.
     let (tx, rx) = oneshot::channel::<PairingDecision>();
     {
         let mut pending = state.pending.write().await;
@@ -144,10 +135,8 @@ async fn handle_pairing_request(
         req.hostname, req.pairing_code, agent.id
     );
 
-    // Wait for admin to accept (no timeout — agent will reconnect if needed).
     let decision = rx.await?;
 
-    // Remove from pending map.
     state.pending.write().await.remove(&(DEFAULT_TENANT.to_string(), req.machine_id.clone()));
 
     let accepted = PairingAccepted {
@@ -166,8 +155,7 @@ async fn handle_agent_hello(
     state: &Arc<AppState>,
     out_tx: mpsc::Sender<WssMessage>,
 ) -> Result<(String, Uuid)> {
-    // Validate auth: look up agent by machine_id, check token hash.
-    let Some(agent) = db::get_agent_by_machine_id(&state.db, &hello.machine_id)? else {
+    let Some(agent) = db::get_agent_by_machine_id(&state.db, &hello.machine_id).await? else {
         tracing::warn!("Unknown agent: {}", hello.machine_id);
         return Err(anyhow::anyhow!("Unknown agent"));
     };
@@ -177,26 +165,26 @@ async fn handle_agent_hello(
         return Err(anyhow::anyhow!("Agent not paired"));
     }
 
-    db::update_agent_hello(&state.db, agent.id, &hello.hostname, &hello.timezone, &hello.agent_version)?;
+    db::update_agent_hello(&state.db, agent.id, &hello.hostname, &hello.timezone, &hello.agent_version).await?;
     let web_filter_available = hello.capabilities.iter().any(|c| c == "web_filter");
-    db::update_agent_web_filter(&state.db, agent.id, web_filter_available)?;
+    db::update_agent_web_filter(&state.db, agent.id, web_filter_available).await?;
     tracing::info!("Agent '{}' connected (v{}, config_v{}, capabilities={:?})", hello.hostname, hello.agent_version, hello.last_config_version, hello.capabilities);
 
-    // Check if config is stale → push updated config.
-    let agent_users = db::list_agent_users(&state.db, agent.id)?;
+    let agent_users = db::list_agent_users(&state.db, agent.id).await?;
     let profile_ids: Vec<Uuid> = agent_users.iter()
         .filter_map(|u| u.profile_id)
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
 
-    let server_version: i64 = profile_ids.iter()
-        .map(|pid| db::get_config_version(&state.db, *pid).unwrap_or(1))
-        .max()
-        .unwrap_or(1);
+    let mut server_version: i64 = 1;
+    for pid in &profile_ids {
+        let v = db::get_config_version(&state.db, *pid).await.unwrap_or(1);
+        if v > server_version { server_version = v; }
+    }
 
     if hello.last_config_version < server_version {
-        let push = remaining::build_config_push(&state.db, agent.id, server_version)?;
+        let push = remaining::build_config_push(&state.db, agent.id, server_version).await?;
         let msg = WssMessage::new(MSG_CONFIG_PUSH, &push)?;
         out_tx.send(msg).await?;
         tracing::info!("Sent config_push v{server_version} to agent {}", agent.id);
@@ -205,10 +193,6 @@ async fn handle_agent_hello(
     Ok((hello.machine_id, agent.id))
 }
 
-/// If no message arrives within this window the connection is considered stale
-/// (e.g. PC went offline abruptly without a clean TCP close) and is dropped so
-/// the agent shows as offline in the UI.  The default heartbeat interval is 10 s,
-/// so 90 s (9× that) gives ample headroom for any reasonable configuration.
 const WS_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 async fn message_loop(
@@ -260,35 +244,35 @@ async fn handle_agent_message(
     match envelope.msg_type.as_str() {
         MSG_AGENT_HELLO => {
             let hello: AgentHello = envelope.parse_payload()?;
-            db::update_agent_hello(&state.db, agent_id, &hello.hostname, &hello.timezone, &hello.agent_version)?;
+            db::update_agent_hello(&state.db, agent_id, &hello.hostname, &hello.timezone, &hello.agent_version).await?;
         }
 
         MSG_USER_LIST_UPDATE => {
             let update: UserListUpdate = envelope.parse_payload()?;
-            db::upsert_agent_users(&state.db, agent_id, &update.users)?;
+            db::upsert_agent_users(&state.db, agent_id, &update.users).await?;
             if !update.removed_uids.is_empty() {
-                db::mark_agent_users_deleted(&state.db, agent_id, &update.removed_uids)?;
+                db::mark_agent_users_deleted(&state.db, agent_id, &update.removed_uids).await?;
             }
             tracing::info!("Agent {agent_id}: user list updated ({} users)", update.users.len());
         }
 
         MSG_HEARTBEAT => {
             let hb: Heartbeat = envelope.parse_payload()?;
-            let agent = db::get_agent_by_id(&state.db, agent_id)?
+            let agent = db::get_agent_by_id(&state.db, agent_id).await?
                 .ok_or_else(|| anyhow::anyhow!("Agent not found"))?;
 
             let hb_input: Vec<(u32, u32)> = hb.users.iter()
                 .map(|u| (u.local_uid, u.active_seconds_since_last))
                 .collect();
 
-            let admin_tz = db::get_admin_timezone(&state.db).unwrap_or_else(|_| "UTC".to_string());
+            let admin_tz = db::get_admin_timezone(&state.db).await.unwrap_or_else(|_| "UTC".to_string());
             let entries = remaining::calculate_remaining_for_agent(
                 &state.db,
                 agent_id,
                 &agent.timezone,
                 &admin_tz,
                 &hb_input,
-            )?;
+            ).await?;
 
             let reply = WssMessage::new(MSG_REMAINING_UPDATE, &RemainingUpdate { users: entries })?;
             out_tx.send(reply).await?;
@@ -299,8 +283,8 @@ async fn handle_agent_message(
             tracing::info!("Agent {agent_id}: usage sync ({} records)", sync.usage.len());
             for entry in &sync.usage {
                 let date_str = entry.date.to_string();
-                if let Some(au) = db::get_agent_user(&state.db, agent_id, entry.local_uid)? {
-                    db::add_usage_seconds(&state.db, au.id, &date_str, entry.used_seconds as i64)?;
+                if let Some(au) = db::get_agent_user(&state.db, agent_id, entry.local_uid).await? {
+                    db::add_usage_seconds(&state.db, au.id, &date_str, entry.used_seconds as i64).await?;
                 }
             }
         }
