@@ -1,0 +1,61 @@
+# ScreenGuard — Postgres dev stack
+# ──────────────────────────────────
+# Builds the server from local source and wires it to a Postgres container.
+# Use this to test the Postgres path locally (feature/cloud-prep branch).
+#
+# Quickstart:
+#   docker compose -f docker-compose.postgres.yml up --build
+#   Open http://localhost:5000 and create an admin account.
+#
+# NOTE: mDNS auto-discovery does not work in bridge mode.
+# Agents on the LAN must point at the host IP explicitly:
+#   server_url = "http://<host-ip>:8080"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: screenguard
+      POSTGRES_USER: screenguard
+      POSTGRES_PASSWORD: screenguard_dev
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U screenguard -d screenguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.server.src
+    image: screenguard-server-dev
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://screenguard:screenguard_dev@postgres:5432/screenguard
+      SCREENGUARD_SERVER_JWT_SECRET: change-me-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  webui:
+    build:
+      context: ./webui
+      dockerfile: ../deploy/Dockerfile.webui
+    image: screenguard-webui
+    ports:
+      - "5000:5000"
+    environment:
+      SERVER_URL: http://server:8080
+      SECRET_KEY: change-me-in-production
+      UI_PORT: "5000"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  pg-data:
