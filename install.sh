@@ -53,15 +53,19 @@ need_cmd curl
 need_cmd systemctl
 
 MODE="install"
+DB_URL=""
 for arg in "$@"; do
     case $arg in
         --update)    MODE="update"    ;;
         --uninstall) MODE="uninstall" ;;
+        --db-url=*)  DB_URL="${arg#--db-url=}" ;;
         --help|-h)
-            echo "Usage: sudo bash install.sh [--update | --uninstall]"
-            echo "  (no flag)    Fresh install — interactive"
-            echo "  --update     Download latest binaries, restart services"
-            echo "  --uninstall  Stop services and remove all ScreenGuard files"
+            echo "Usage: sudo bash install.sh [--update | --uninstall] [--db-url=<postgres://...>]"
+            echo "  (no flag)              Fresh install — interactive, SQLite by default"
+            echo "  --update               Download latest binaries, restart services"
+            echo "  --uninstall            Stop services and remove all ScreenGuard files"
+            echo "  --db-url=<URL>         Use Postgres instead of SQLite (server only)"
+            echo "                         Example: --db-url=postgres://user:pass@host/dbname"
             exit 0
             ;;
     esac
@@ -361,7 +365,14 @@ fi
 
 # ── confirm ───────────────────────────────────────────────────────────────────
 header "Summary"
-[[ ${INSTALL_SERVER:-0} -eq 1 ]] && echo "  • Install server  (port ${SERVER_PORT})"
+if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
+    echo "  • Install server  (port ${SERVER_PORT})"
+    if [[ -n $DB_URL ]]; then
+        echo "  • Database        Postgres  (${DB_URL})"
+    else
+        echo "  • Database        SQLite    (${DATA_DIR}/server.db)"
+    fi
+fi
 [[ $INSTALL_WEBUI -eq 1 ]] && echo "  • Install web UI  (port ${WEBUI_PORT})"
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     if [[ -n $SERVER_URL ]]; then
@@ -416,15 +427,24 @@ if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     cp "${TMP}/screenguard-server" "${INSTALL_DIR}/screenguard-server"
     info "Installed ${INSTALL_DIR}/screenguard-server"
 
-    mkdir -p "${DATA_DIR}"
+    [[ -z $DB_URL ]] && mkdir -p "${DATA_DIR}"
 
     if [[ ! -f "${CONFIG_DIR}/server.toml" ]]; then
-        cat > "${CONFIG_DIR}/server.toml" <<EOF
+        if [[ -n $DB_URL ]]; then
+            cat > "${CONFIG_DIR}/server.toml" <<EOF
+listen_addr  = "0.0.0.0"
+listen_port  = ${SERVER_PORT}
+database_url = "${DB_URL}"
+enable_mdns  = true
+EOF
+        else
+            cat > "${CONFIG_DIR}/server.toml" <<EOF
 listen_addr = "0.0.0.0"
 listen_port = ${SERVER_PORT}
 db_path     = "${DATA_DIR}/server.db"
 enable_mdns = true
 EOF
+        fi
         info "Created ${CONFIG_DIR}/server.toml"
     else
         warn "Config already exists, skipping: ${CONFIG_DIR}/server.toml"
@@ -556,6 +576,11 @@ header "Done!"
 
 if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     echo -e "  Server running on port ${SERVER_PORT}"
+    if [[ -n $DB_URL ]]; then
+        echo -e "  Database: Postgres (${DB_URL})"
+    else
+        echo -e "  Database: SQLite   (${DATA_DIR}/server.db)"
+    fi
     if [[ $INSTALL_WEBUI -eq 1 ]]; then
         LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
         echo -e "  Web UI:  http://${LOCAL_IP:-localhost}:${WEBUI_PORT}"
