@@ -6,6 +6,7 @@ const DEFAULT_CONFIG_PATH: &str = "/etc/screenguard/server.toml";
 const CONFIG_PATH_ENV: &str = "SCREENGUARD_SERVER_CONFIG";
 const DEFAULT_DB_PATH: &str = "/var/lib/screenguard/server.db";
 const DB_PATH_ENV: &str = "SCREENGUARD_SERVER_DB";
+const DATABASE_URL_ENV: &str = "DATABASE_URL";
 const JWT_SECRET_ENV: &str = "SCREENGUARD_SERVER_JWT_SECRET";
 
 #[derive(Debug, Deserialize, Clone)]
@@ -18,6 +19,10 @@ pub struct ServerConfig {
 
     #[serde(default = "default_db_path")]
     pub db_path: String,
+
+    /// PostgreSQL connection URL. When set, takes precedence over db_path.
+    /// Homelab ignores this; cloud server sets DATABASE_URL instead of db_path.
+    pub database_url: Option<String>,
 
     /// JWT signing secret. If absent, one is generated and saved on first run.
     pub jwt_secret: Option<String>,
@@ -41,6 +46,7 @@ impl Default for ServerConfig {
             listen_addr: default_listen_addr(),
             listen_port: default_listen_port(),
             db_path: default_db_path(),
+            database_url: None,
             jwt_secret: None,
             jwt_expiry_hours: default_jwt_expiry_hours(),
             enable_mdns: default_enable_mdns(),
@@ -64,6 +70,9 @@ pub fn load(path: Option<&str>) -> Result<ServerConfig> {
 
     if let Ok(db) = std::env::var(DB_PATH_ENV) {
         config.db_path = db;
+    }
+    if let Ok(url) = std::env::var(DATABASE_URL_ENV) {
+        config.database_url = Some(url);
     }
     if let Ok(secret) = std::env::var(JWT_SECRET_ENV) {
         config.jwt_secret = Some(secret);

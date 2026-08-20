@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::api::auth::{internal, not_found};
 use crate::db;
 use crate::remaining;
-use crate::state::AppState;
+use crate::state::{AppState, DEFAULT_TENANT};
 
 // ── profiles ──────────────────────────────────────────────────────────────────
 
@@ -243,7 +243,7 @@ pub async fn lock_now(
             common::messages::MSG_LOCK_NOW,
             &common::messages::LockNow { local_uid: au.local_uid as u32 },
         ).map_err(internal)?;
-        state.send_to_agent_id(au.agent_id, msg).await;
+        state.send_to_agent_id(DEFAULT_TENANT, au.agent_id, msg).await;
     }
 
     let _ = agent_ids;
@@ -270,7 +270,7 @@ pub async fn notify_profile(
     let mut sent = 0usize;
 
     for au in &agent_users {
-        if !state.is_online(au.agent_id).await {
+        if !state.is_online(DEFAULT_TENANT, au.agent_id).await {
             continue;
         }
         let msg = WssMessage::new(MSG_NOTIFY_USER, &NotifyUser {
@@ -278,7 +278,7 @@ pub async fn notify_profile(
             summary: summary.to_string(),
             body: body.body.clone(),
         }).map_err(internal)?;
-        state.send_to_agent_id(au.agent_id, msg).await;
+        state.send_to_agent_id(DEFAULT_TENANT, au.agent_id, msg).await;
         sent += 1;
     }
 
@@ -418,11 +418,11 @@ pub async fn bump_and_propagate(state: &AppState, profile_id: Uuid) -> anyhow::R
     let mut seen = std::collections::HashSet::new();
     for au in &agent_users {
         if !seen.insert(au.agent_id) { continue; }
-        if !state.is_online(au.agent_id).await { continue; }
+        if !state.is_online(DEFAULT_TENANT, au.agent_id).await { continue; }
 
         let push = remaining::build_config_push(&state.db, au.agent_id, version)?;
         let msg = WssMessage::new(MSG_CONFIG_PUSH, &push)?;
-        state.send_to_agent_id(au.agent_id, msg).await;
+        state.send_to_agent_id(DEFAULT_TENANT, au.agent_id, msg).await;
 
         // Also send fresh remaining_update.
         let today = Local::now().date_naive().to_string();
@@ -438,7 +438,7 @@ pub async fn bump_and_propagate(state: &AppState, profile_id: Uuid) -> anyhow::R
             let admin_tz = db::get_admin_timezone(&state.db).unwrap_or_else(|_| "UTC".to_string());
             let entries = remaining::calculate_remaining_for_agent(&state.db, au.agent_id, &tz, &admin_tz, &managed)?;
             let msg = WssMessage::new(MSG_REMAINING_UPDATE, &RemainingUpdate { users: entries })?;
-            state.send_to_agent_id(au.agent_id, msg).await;
+            state.send_to_agent_id(DEFAULT_TENANT, au.agent_id, msg).await;
         }
         let _ = today;
     }

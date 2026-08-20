@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::db;
-use crate::state::AppState;
+use crate::state::{AppState, DEFAULT_TENANT};
 
 #[derive(Deserialize)]
 pub struct AuthRequest {
@@ -28,8 +28,9 @@ pub struct LoginResponse {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String, // admin user id
+    pub sub: String,        // admin user id
     pub exp: usize,
+    pub tenant_id: String,  // "default" for homelab; cloud sets per-tenant value
 }
 
 pub async fn status(
@@ -88,7 +89,7 @@ pub async fn login(
         .unwrap_or_default()
         .to_rfc3339();
 
-    let claims = Claims { sub: admin.id.to_string(), exp };
+    let claims = Claims { sub: admin.id.to_string(), exp, tenant_id: DEFAULT_TENANT.to_string() };
     let token = encode(
         &Header::default(),
         &claims,

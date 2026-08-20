@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::db;
 use crate::remaining;
-use crate::state::{AgentHandle, AppState, PairingDecision, PairingHandle};
+use crate::state::{AgentHandle, AppState, DEFAULT_TENANT, PairingDecision, PairingHandle};
 
 pub async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     if let Err(e) = handle_ws_inner(socket, state).await {
@@ -86,14 +86,14 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
     };
 
     // ── Phase 2: normal message loop ─────────────────────────────────────────
-    state.add_online(machine_id.clone(), AgentHandle {
+    state.add_online(DEFAULT_TENANT, machine_id.clone(), AgentHandle {
         agent_id: agent_db_id,
         outbound_tx: out_tx,
     }).await;
 
     let result = message_loop(&mut stream, &state, agent_db_id, &machine_id).await;
 
-    state.remove_online(&machine_id).await;
+    state.remove_online(DEFAULT_TENANT, &machine_id).await;
 
     // If the agent was pending_delete, it disconnected after receiving unpair — clean up now.
     if let Ok(Some(agent)) = db::get_agent_by_id(&state.db, agent_db_id) {
@@ -133,7 +133,7 @@ async fn handle_pairing_request(
     let (tx, rx) = oneshot::channel::<PairingDecision>();
     {
         let mut pending = state.pending.write().await;
-        pending.insert(req.machine_id.clone(), PairingHandle {
+        pending.insert((DEFAULT_TENANT.to_string(), req.machine_id.clone()), PairingHandle {
             pairing_code: req.pairing_code.clone(),
             tx,
         });
@@ -148,7 +148,7 @@ async fn handle_pairing_request(
     let decision = rx.await?;
 
     // Remove from pending map.
-    state.pending.write().await.remove(&req.machine_id);
+    state.pending.write().await.remove(&(DEFAULT_TENANT.to_string(), req.machine_id.clone()));
 
     let accepted = PairingAccepted {
         agent_id: decision.agent_db_id.to_string(),
@@ -219,7 +219,7 @@ async fn message_loop(
 ) -> Result<()> {
     let online_map = state.online.read().await;
     let out_tx = online_map
-        .get(machine_id)
+        .get(&(DEFAULT_TENANT.to_string(), machine_id.to_string()))
         .map(|h| h.outbound_tx.clone())
         .ok_or_else(|| anyhow::anyhow!("Agent handle missing"))?;
     drop(online_map);
@@ -307,7 +307,7 @@ async fn handle_agent_message(
 
         MSG_LOG_RESPONSE => {
             let resp: LogResponse = envelope.parse_payload()?;
-            if let Some(tx) = state.log_requests.write().await.remove(&agent_id) {
+            if let Some(tx) = state.log_requests.write().await.remove(&(DEFAULT_TENANT.to_string(), agent_id)) {
                 let _ = tx.send(resp.lines);
             }
         }

@@ -7,6 +7,14 @@ use crate::db::DbPool;
 use crate::release_check::LatestRelease;
 use common::protocol::WssMessage;
 
+/// Logical tenant identifier. Homelab always uses DEFAULT_TENANT.
+/// Cloud assigns one per registered family/account.
+pub type TenantId = String;
+pub const DEFAULT_TENANT: &str = "default";
+
+/// Composite key used in all per-connection maps so tenant agents never collide.
+type TenantKey<K> = (TenantId, K);
+
 /// Handle to a connected agent's outbound message channel.
 #[derive(Debug)]
 pub struct AgentHandle {
@@ -30,12 +38,12 @@ pub struct AppState {
     pub db: DbPool,
     pub jwt_secret: String,
     pub jwt_expiry_hours: u64,
-    /// machine_id → AgentHandle for currently connected agents.
-    pub online: Arc<RwLock<HashMap<String, AgentHandle>>>,
-    /// machine_id → PairingHandle for agents waiting for admin accept.
-    pub pending: Arc<RwLock<HashMap<String, PairingHandle>>>,
-    /// agent_id → oneshot sender for pending log requests.
-    pub log_requests: Arc<RwLock<HashMap<Uuid, oneshot::Sender<Vec<String>>>>>,
+    /// (tenant_id, machine_id) → AgentHandle for currently connected agents.
+    pub online: Arc<RwLock<HashMap<TenantKey<String>, AgentHandle>>>,
+    /// (tenant_id, machine_id) → PairingHandle for agents waiting for admin accept.
+    pub pending: Arc<RwLock<HashMap<TenantKey<String>, PairingHandle>>>,
+    /// (tenant_id, agent_id) → oneshot sender for pending log requests.
+    pub log_requests: Arc<RwLock<HashMap<TenantKey<Uuid>, oneshot::Sender<Vec<String>>>>>,
     /// Latest Rust release version fetched from GitHub (e.g. "0.9.8").
     pub latest_agent_release: LatestRelease,
 }
@@ -53,29 +61,30 @@ impl AppState {
         })
     }
 
-    pub async fn add_online(&self, machine_id: String, handle: AgentHandle) {
-        self.online.write().await.insert(machine_id, handle);
+    pub async fn add_online(&self, tenant_id: &str, machine_id: String, handle: AgentHandle) {
+        self.online.write().await.insert((tenant_id.to_string(), machine_id), handle);
     }
 
-    pub async fn remove_online(&self, machine_id: &str) {
-        self.online.write().await.remove(machine_id);
+    pub async fn remove_online(&self, tenant_id: &str, machine_id: &str) {
+        self.online.write().await.remove(&(tenant_id.to_string(), machine_id.to_string()));
     }
 
-    /// Send a message to all online agents whose agent_id is in the provided set.
-    pub async fn send_to_agents(&self, agent_ids: &[Uuid], msg: WssMessage) {
+    /// Send a message to all online agents belonging to tenant whose agent_id is in the provided set.
+    pub async fn send_to_agents(&self, tenant_id: &str, agent_ids: &[Uuid], msg: WssMessage) {
         let online = self.online.read().await;
-        for handle in online.values() {
-            if agent_ids.contains(&handle.agent_id) {
+        for ((tid, _), handle) in online.iter() {
+            if tid == tenant_id && agent_ids.contains(&handle.agent_id) {
                 let _ = handle.outbound_tx.send(msg.clone()).await;
             }
         }
     }
 
-    pub async fn send_to_agent_id(&self, agent_id: Uuid, msg: WssMessage) {
-        self.send_to_agents(&[agent_id], msg).await;
+    pub async fn send_to_agent_id(&self, tenant_id: &str, agent_id: Uuid, msg: WssMessage) {
+        self.send_to_agents(tenant_id, &[agent_id], msg).await;
     }
 
-    pub async fn is_online(&self, agent_id: Uuid) -> bool {
-        self.online.read().await.values().any(|h| h.agent_id == agent_id)
+    pub async fn is_online(&self, tenant_id: &str, agent_id: Uuid) -> bool {
+        let online = self.online.read().await;
+        online.iter().any(|((tid, _), h)| tid == tenant_id && h.agent_id == agent_id)
     }
 }

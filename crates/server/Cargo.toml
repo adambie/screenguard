@@ -2,6 +2,10 @@
 name = "server"
 version = "0.9.15"
 edition = "2024"
+[lib]
+name = "server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "parental-controller-server"
 path = "src/main.rs"
