@@ -89,19 +89,18 @@ You will be asked separately whether to remove the config directory and the data
 
 ## Running the server in Docker
 
-`docker-compose.yml` is included at the root of the repository and covers both the server and the web UI. The **agent always runs natively** on the managed (child) machine — it interacts with the desktop session via DBus and cannot run inside a container.
+Two compose files are included. The **agent always runs natively** on the managed (child) machine — it interacts with the desktop session via DBus and cannot run inside a container.
 
-### Host networking (recommended)
+### SQLite (default) — `docker-compose.yml`
 
-The default compose file uses `network_mode: host`. Both containers share the host's network stack, so mDNS auto-discovery works normally — agents on the LAN find the server without any manual configuration.
+Uses host networking so mDNS auto-discovery works — agents on the LAN find the server without any manual configuration. The database is stored in a named Docker volume (`screenguard-data`) and survives restarts and image updates.
 
 ```bash
 # 1. Clone the repo (or download docker-compose.yml + deploy/ separately)
 git clone https://github.com/adambie/screenguard.git
 cd screenguard
 
-# 2. Set a strong secret key for the web UI session
-#    Edit docker-compose.yml and replace "change-me-in-production"
+# 2. Edit docker-compose.yml and replace "change-me-in-production" with strong secrets
 
 # 3. Start
 docker compose up -d
@@ -110,30 +109,37 @@ docker compose up -d
 #    http://<server-ip>:5000
 ```
 
-The database is stored in a named Docker volume (`screenguard-data`) and survives container restarts and image updates.
-
 To pin a specific release instead of always pulling `latest`, set the `VERSION` build arg in `docker-compose.yml`:
 
 ```yaml
 args:
-  VERSION: v0.8.4
+  VERSION: v0.10.0
 ```
 
-### Bridge networking
+### Postgres — `docker-compose.postgres.yml`
 
-If host networking is not an option (rootless Podman, non-Linux Docker host, strict isolation), the `docker-compose.yml` file contains a commented-out bridge-mode configuration. The key difference: **mDNS auto-discovery does not work in bridge mode** because Docker bridges block multicast. You must configure the server address manually on every managed machine:
+Spins up a Postgres container alongside the server. Useful if you want a proper relational backend or plan to move the database off the server host later. Uses bridge networking — **mDNS auto-discovery does not work**, so agents must be pointed at the server manually:
 
 ```toml
 # /etc/screenguard/agent.toml on each managed machine
 server_url = "ws://<server-host-ip>:8080"
 ```
 
+```bash
+# Edit docker-compose.postgres.yml and replace "change-me-in-production" with strong secrets
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+The `DATABASE_URL` environment variable controls which database the server connects to. When set to a `postgres://` URL the server uses Postgres; when set to a `sqlite:` path (or left unset) it falls back to SQLite.
+
+### Bridge networking (SQLite)
+
+If host networking is not an option for the default compose (rootless Podman, non-Linux Docker host, strict isolation), `docker-compose.yml` contains a commented-out bridge-mode configuration. The same mDNS caveat applies — you must configure the server address manually on every managed machine.
+
 ### Updating
 
 ```bash
-docker compose pull   # if using pre-built images
-# or
-docker compose build --no-cache   # to rebuild from the latest release binary
+docker compose pull
 docker compose up -d
 ```
 
@@ -186,7 +192,8 @@ In both modes, **Lock now** zeroes the user's remaining allowance. The preserve-
 ```toml
 listen_addr      = "0.0.0.0"
 listen_port      = 8080
-db_path          = "/var/lib/screenguard/server.db"
+db_path          = "/var/lib/screenguard/server.db"  # SQLite path (ignored when database_url is set)
+# database_url   = "postgres://user:pass@host:5432/screenguard"  # use Postgres instead of SQLite
 enable_mdns      = true
 jwt_expiry_hours = 24
 ```
@@ -203,7 +210,15 @@ cache_ttl_hours     = 48
 min_uid             = 1000  # ignore system accounts below this UID
 ```
 
-Environment variable overrides: `SCREENGUARD_SERVER_CONFIG`, `SCREENGUARD_AGENT_CONFIG`, `SCREENGUARD_SERVER_DB`.
+Environment variable overrides:
+
+| Variable | Description |
+|---|---|
+| `SCREENGUARD_SERVER_CONFIG` | Path to server config file |
+| `SCREENGUARD_AGENT_CONFIG` | Path to agent config file |
+| `SCREENGUARD_SERVER_DB` | SQLite database path (default: `/var/lib/screenguard/server.db`) |
+| `DATABASE_URL` | Full database URL — overrides `db_path`. Use `postgres://…` for Postgres or `sqlite:/path` for SQLite |
+| `SCREENGUARD_SERVER_JWT_SECRET` | JWT signing secret |
 
 ## Web UI
 
