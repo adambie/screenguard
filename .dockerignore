@@ -1,5 +1,4 @@
 target/
-!target/release/parental-controller-server
 .git/
 .claude/
 mobile/

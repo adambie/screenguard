@@ -1,7 +1,7 @@
-# ScreenGuard — Postgres dev stack
-# ──────────────────────────────────
-# Builds the server from local source and wires it to a Postgres container.
-# Use this to test the Postgres path locally (feature/cloud-prep branch).
+# ScreenGuard — Postgres stack
+# ─────────────────────────────
+# Pulls the latest server release from GitHub and wires it to a Postgres container.
+# Use this to test or run the Postgres path locally.
 #
 # Quickstart:
 #   docker compose -f docker-compose.postgres.yml up --build
@@ -30,7 +30,9 @@ services:
   server:
     build:
       context: .
-      dockerfile: deploy/Dockerfile.server.src
+      dockerfile: deploy/Dockerfile.server
+      args:
+        VERSION: latest
     image: screenguard-server-dev
     ports:
       - "8080:8080"
