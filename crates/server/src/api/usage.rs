@@ -24,7 +24,7 @@ pub async fn get_usage(
     Path(id): Path<Uuid>,
     Query(q): Query<UsageQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
 
     let today = Local::now().date_naive();
     let to = q.to.unwrap_or_else(|| today.to_string());
@@ -32,10 +32,10 @@ pub async fn get_usage(
         (today - chrono::Duration::days(30)).to_string()
     });
 
-    let daily = db::get_daily_usage_for_profile(&state.db, id, &from, &to).map_err(internal)?;
-    let by_agent_raw = db::get_usage_by_agent_for_profile(&state.db, id, &from, &to).map_err(internal)?;
-    let limits = db::get_daily_limits(&state.db, id).map_err(internal)?;
-    let adj = db::get_adjustments(&state.db, id, Some(&from), Some(&to)).map_err(internal)?;
+    let daily = db::get_daily_usage_for_profile(&state.db, id, &from, &to).await.map_err(internal)?;
+    let by_agent_raw = db::get_usage_by_agent_for_profile(&state.db, id, &from, &to).await.map_err(internal)?;
+    let limits = db::get_daily_limits(&state.db, id).await.map_err(internal)?;
+    let adj = db::get_adjustments(&state.db, id, Some(&from), Some(&to)).await.map_err(internal)?;
 
     let usage: Vec<serde_json::Value> = daily.iter().map(|(date, secs)| {
         let dow = db::weekday_for_date(date);
@@ -50,7 +50,7 @@ pub async fn get_usage(
     }).collect();
 
     // Group by agent.
-    let agents = db::list_agents(&state.db).map_err(internal)?;
+    let agents = db::list_agents(&state.db).await.map_err(internal)?;
     let mut by_agent: std::collections::HashMap<Uuid, Vec<serde_json::Value>> = std::collections::HashMap::new();
     for (agent_id, _agent_user_id, date, secs) in &by_agent_raw {
         by_agent.entry(*agent_id).or_default().push(serde_json::json!({
@@ -70,29 +70,28 @@ pub async fn get_status(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let profile = db::get_profile(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let profile = db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
 
     let today = Local::now().date_naive();
     let today_str = today.to_string();
     let dow = today.weekday().num_days_from_monday() as u8;
-    let used_secs = db::get_used_seconds_for_profile_today(&state.db, id, &today_str).map_err(internal)?;
-    let limits = db::get_daily_limits(&state.db, id).map_err(internal)?;
-    let adj = db::sum_adjustments_for_date(&state.db, id, &today_str).map_err(internal)?;
+    let used_secs = db::get_used_seconds_for_profile_today(&state.db, id, &today_str).await.map_err(internal)?;
+    let limits = db::get_daily_limits(&state.db, id).await.map_err(internal)?;
+    let adj = db::sum_adjustments_for_date(&state.db, id, &today_str).await.map_err(internal)?;
     let limit_min = limits.iter().find(|l| l.day_of_week == dow).map(|l| l.allowed_minutes);
     let used_min = (used_secs / 60) as i32;
-    // Use 1440 as the base when no explicit limit is set — matches enforcement logic.
     let effective_limit = limit_min.unwrap_or(1440);
     let remaining = (effective_limit + adj - used_min).max(0);
 
     // Per-agent breakdown.
-    let agent_users = db::get_agent_users_for_profile(&state.db, id).map_err(internal)?;
+    let agent_users = db::get_agent_users_for_profile(&state.db, id).await.map_err(internal)?;
     let online = state.online.read().await;
     let mut agents_out = Vec::new();
     for au in &agent_users {
-        let agent = db::get_agent_by_id(&state.db, au.agent_id).map_err(internal)?;
+        let agent = db::get_agent_by_id(&state.db, au.agent_id).await.map_err(internal)?;
         let Some(agent) = agent else { continue; };
         let agent_used: i64 = db::get_usage_by_agent_for_profile(&state.db, id, &today_str, &today_str)
-            .map_err(internal)?
+            .await.map_err(internal)?
             .iter()
             .filter(|(aid, _, _, _)| *aid == au.agent_id)
             .map(|(_, _, _, s)| s)
@@ -130,24 +129,24 @@ pub async fn get_status(
 pub async fn dashboard(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let profiles = db::list_profiles(&state.db).map_err(internal)?;
+    let profiles = db::list_profiles(&state.db).await.map_err(internal)?;
     let today = Local::now().date_naive();
     let today_str = today.to_string();
     let dow = today.weekday().num_days_from_monday() as u8;
-    let pending = db::pending_agent_count(&state.db).map_err(internal)?;
+    let pending = db::pending_agent_count(&state.db).await.map_err(internal)?;
     let online = state.online.read().await;
 
     let mut out = Vec::new();
     for p in &profiles {
         let used_secs = db::get_used_seconds_for_profile_today(&state.db, p.id, &today_str)
-            .map_err(internal)?;
-        let limits = db::get_daily_limits(&state.db, p.id).map_err(internal)?;
-        let adj = db::sum_adjustments_for_date(&state.db, p.id, &today_str).map_err(internal)?;
+            .await.map_err(internal)?;
+        let limits = db::get_daily_limits(&state.db, p.id).await.map_err(internal)?;
+        let adj = db::sum_adjustments_for_date(&state.db, p.id, &today_str).await.map_err(internal)?;
         let limit_min = limits.iter().find(|l| l.day_of_week == dow).map(|l| l.allowed_minutes);
         let used_min = (used_secs / 60) as i32;
         let remaining = limit_min.map(|l| (l + adj - used_min).max(0));
 
-        let agent_users = db::get_agent_users_for_profile(&state.db, p.id).map_err(internal)?;
+        let agent_users = db::get_agent_users_for_profile(&state.db, p.id).await.map_err(internal)?;
         let agents_total = agent_users.iter().map(|u| u.agent_id).collect::<std::collections::HashSet<_>>().len();
         let agents_online = agent_users.iter()
             .map(|u| u.agent_id)
@@ -168,7 +167,6 @@ pub async fn dashboard(
         }));
     }
 
-    // Suppress unused warning.
     let _ = remaining::build_config_push;
 
     Ok(Json(serde_json::json!({ "profiles": out, "pending_agents": pending })))

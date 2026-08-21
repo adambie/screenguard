@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::api::auth::{internal, not_found};
 use crate::db;
 use crate::release_check;
-use crate::state::{AppState, PairingDecision};
+use crate::state::{AppState, DEFAULT_TENANT, PairingDecision};
 
 #[derive(Serialize)]
 pub struct AgentResponse {
@@ -32,16 +32,17 @@ pub struct AgentResponse {
 pub async fn list_agents(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let agents = db::list_agents(&state.db).map_err(internal)?;
+    let agents = db::list_agents(&state.db).await.map_err(internal)?;
     let online = state.online.read().await;
     let pending = state.pending.read().await;
     let latest = state.latest_agent_release.read().await;
     let mut result = Vec::new();
     for a in agents {
         let user_count = db::list_agent_users(&state.db, a.id)
+            .await
             .map(|u| u.len())
             .unwrap_or(0);
-        let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
+        let pairing_code = pending.get(&(DEFAULT_TENANT.to_string(), a.machine_id.clone())).map(|h| h.pairing_code.clone());
         let upgradeable = a.agent_version.as_deref()
             .zip(latest.as_deref())
             .map_or(false, |(agent_v, latest_v)| release_check::is_older(agent_v, latest_v));
@@ -68,12 +69,12 @@ pub async fn get_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let a = db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let a = db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
     let online = state.online.read().await;
     let pending = state.pending.read().await;
     let latest = state.latest_agent_release.read().await;
-    let user_count = db::list_agent_users(&state.db, a.id).map(|u| u.len()).unwrap_or(0);
-    let pairing_code = pending.get(&a.machine_id).map(|h| h.pairing_code.clone());
+    let user_count = db::list_agent_users(&state.db, a.id).await.map(|u| u.len()).unwrap_or(0);
+    let pairing_code = pending.get(&(DEFAULT_TENANT.to_string(), a.machine_id.clone())).map(|h| h.pairing_code.clone());
     let upgradeable = a.agent_version.as_deref()
         .zip(latest.as_deref())
         .map_or(false, |(agent_v, latest_v)| release_check::is_older(agent_v, latest_v));
@@ -98,9 +99,9 @@ pub async fn patch_agent(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchAgentBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
     db::update_agent_fields(&state.db, id, body.display_name.as_deref(), body.status.as_deref())
-        .map_err(internal)?;
+        .await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "message": "Agent updated" })))
 }
 
@@ -108,16 +109,14 @@ pub async fn accept_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let agent = db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    let agent = db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
 
-    // Generate a 256-bit auth token.
     let token = generate_token();
     let token_hash = hash_token(&token);
 
-    db::accept_agent(&state.db, id, &token_hash).map_err(internal)?;
+    db::accept_agent(&state.db, id, &token_hash).await.map_err(internal)?;
 
-    // If the agent is waiting in pending map, deliver the decision via oneshot.
-    let handle = state.pending.write().await.remove(&agent.machine_id);
+    let handle = state.pending.write().await.remove(&(DEFAULT_TENANT.to_string(), agent.machine_id.clone()));
     if let Some(ph) = handle {
         let _ = ph.tx.send(PairingDecision { auth_token: token.clone(), agent_db_id: id });
         tracing::info!("Delivered pairing_accepted to agent {id}");
@@ -132,10 +131,9 @@ pub async fn delete_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let agent = db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
-    db::mark_agent_pending_delete(&state.db, id).map_err(internal)?;
+    let agent = db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    db::mark_agent_pending_delete(&state.db, id).await.map_err(internal)?;
 
-    // If the agent is currently online, send unpair immediately.
     let online = state.online.read().await;
     if let Some(handle) = online.values().find(|h| h.agent_id == id) {
         use common::messages::{Unpair, MSG_UNPAIR};
@@ -154,8 +152,8 @@ pub async fn undo_delete_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
-    db::restore_agent(&state.db, id).map_err(internal)?;
+    db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    db::restore_agent(&state.db, id).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "message": "Agent deletion cancelled" })))
 }
 
@@ -163,8 +161,8 @@ pub async fn force_delete_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
-    db::delete_agent(&state.db, id).map_err(internal)?;
+    db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    db::delete_agent(&state.db, id).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "message": "Agent force deleted" })))
 }
 
@@ -172,8 +170,8 @@ pub async fn list_agent_users(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
-    let users = db::list_agent_users(&state.db, id).map_err(internal)?;
+    db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    let users = db::list_agent_users(&state.db, id).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "users": users })))
 }
 
@@ -181,9 +179,9 @@ pub async fn fetch_agent_logs(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
 
-    if !state.is_online(id).await {
+    if !state.is_online(DEFAULT_TENANT, id).await {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({ "error": "Agent is offline" })),
@@ -191,17 +189,17 @@ pub async fn fetch_agent_logs(
     }
 
     let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
-    state.log_requests.write().await.insert(id, tx);
+    state.log_requests.write().await.insert((DEFAULT_TENANT.to_string(), id), tx);
 
     use common::messages::{FetchLogs, MSG_FETCH_LOGS};
     use common::protocol::WssMessage;
     let msg = WssMessage::new(MSG_FETCH_LOGS, &FetchLogs {}).map_err(internal)?;
-    state.send_to_agent_id(id, msg).await;
+    state.send_to_agent_id(DEFAULT_TENANT, id, msg).await;
 
     match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
         Ok(Ok(lines)) => Ok(Json(serde_json::json!({ "lines": lines }))),
         _ => {
-            state.log_requests.write().await.remove(&id);
+            state.log_requests.write().await.remove(&(DEFAULT_TENANT.to_string(), id));
             Err((
                 StatusCode::GATEWAY_TIMEOUT,
                 Json(serde_json::json!({ "error": "Agent did not respond in time" })),
@@ -214,9 +212,9 @@ pub async fn update_agent(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    db::get_agent_by_id(&state.db, id).map_err(internal)?.ok_or_else(not_found)?;
+    db::get_agent_by_id(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
 
-    if !state.is_online(id).await {
+    if !state.is_online(DEFAULT_TENANT, id).await {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({ "error": "Agent is offline" })),
@@ -226,7 +224,7 @@ pub async fn update_agent(
     use common::messages::{UpdateAgent, MSG_UPDATE_AGENT};
     use common::protocol::WssMessage;
     let msg = WssMessage::new(MSG_UPDATE_AGENT, &UpdateAgent {}).map_err(internal)?;
-    state.send_to_agent_id(id, msg).await;
+    state.send_to_agent_id(DEFAULT_TENANT, id, msg).await;
 
     tracing::info!("Remote update triggered for agent {id}");
     Ok(Json(serde_json::json!({ "message": "Update triggered" })))

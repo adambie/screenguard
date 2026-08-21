@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::db;
-use crate::state::AppState;
+use crate::state::{AppState, DEFAULT_TENANT};
 
 #[derive(Deserialize)]
 pub struct AuthRequest {
@@ -28,14 +28,15 @@ pub struct LoginResponse {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String, // admin user id
+    pub sub: String,        // admin user id
     pub exp: usize,
+    pub tenant_id: String,  // "default" for homelab; cloud sets per-tenant value
 }
 
 pub async fn status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let count = db::admin_count(&state.db).map_err(internal)?;
+    let count = db::admin_count(&state.db).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "setup_needed": count == 0 })))
 }
 
@@ -43,7 +44,7 @@ pub async fn setup(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SetupBody>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
-    let count = db::admin_count(&state.db).map_err(internal)?;
+    let count = db::admin_count(&state.db).await.map_err(internal)?;
     if count > 0 {
         return Err((
             StatusCode::CONFLICT,
@@ -58,11 +59,11 @@ pub async fn setup(
     }
 
     let hash = hash_password(&body.password).map_err(internal)?;
-    let admin_id = db::create_admin(&state.db, &body.username, &hash).map_err(internal)?;
+    let admin_id = db::create_admin(&state.db, &body.username, &hash).await.map_err(internal)?;
 
     if let Some(tz) = &body.timezone {
         if tz.parse::<chrono_tz::Tz>().is_ok() {
-            let _ = db::update_admin_timezone(&state.db, admin_id, tz);
+            let _ = db::update_admin_timezone(&state.db, admin_id, tz).await;
         }
     }
 
@@ -74,7 +75,7 @@ pub async fn login(
     Json(body): Json<AuthRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<serde_json::Value>)> {
     let admin = db::get_admin_by_username(&state.db, &body.username)
-        .map_err(internal)?
+        .await.map_err(internal)?
         .ok_or_else(|| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid credentials" }))))?;
 
     let valid = verify_password(&body.password, &admin.password_hash).map_err(internal)?;
@@ -88,7 +89,7 @@ pub async fn login(
         .unwrap_or_default()
         .to_rfc3339();
 
-    let claims = Claims { sub: admin.id.to_string(), exp };
+    let claims = Claims { sub: admin.id.to_string(), exp, tenant_id: DEFAULT_TENANT.to_string() };
     let token = encode(
         &Header::default(),
         &claims,
@@ -130,7 +131,7 @@ pub async fn get_me(
     let id: uuid::Uuid = claims.sub.parse()
         .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
     let admin = db::get_admin_user_by_id(&state.db, id)
-        .map_err(internal)?
+        .await.map_err(internal)?
         .ok_or_else(not_found)?;
     Ok(Json(serde_json::json!({
         "id": admin.id,
@@ -156,7 +157,7 @@ pub async fn patch_me(
             return Err((StatusCode::UNPROCESSABLE_ENTITY,
                 Json(serde_json::json!({ "error": "Invalid timezone" }))));
         }
-        db::update_admin_timezone(&state.db, id, tz).map_err(internal)?;
+        db::update_admin_timezone(&state.db, id, tz).await.map_err(internal)?;
     }
     Ok(Json(serde_json::json!({ "message": "Profile updated" })))
 }

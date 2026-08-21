@@ -9,10 +9,7 @@ use uuid::Uuid;
 
 use crate::db::{self, DbPool};
 
-/// Calculate remaining time for every managed agent_user linked to this agent,
-/// update daily_usage with the new active seconds, and return a list of
-/// RemainingEntry values to send back in a remaining_update message.
-pub fn calculate_remaining_for_agent(
+pub async fn calculate_remaining_for_agent(
     pool: &DbPool,
     agent_id: Uuid,
     agent_timezone: &str,
@@ -26,7 +23,7 @@ pub fn calculate_remaining_for_agent(
     let mut entries = Vec::new();
 
     for (local_uid, active_secs) in heartbeat_users {
-        let Some(au) = db::get_agent_user(pool, agent_id, *local_uid)? else {
+        let Some(au) = db::get_agent_user(pool, agent_id, *local_uid).await? else {
             continue;
         };
         let Some(profile_id) = au.profile_id else {
@@ -46,51 +43,55 @@ pub fn calculate_remaining_for_agent(
 
         // 1. Persist new active seconds.
         if *active_secs > 0 {
-            db::add_usage_seconds(pool, au.id, &today_str, *active_secs as i64)?;
+            db::add_usage_seconds(pool, au.id, &today_str, *active_secs as i64).await?;
         }
 
         // 2. Sum all usage for this profile today (across all agents).
-        let used_secs = db::get_used_seconds_for_profile_today(pool, profile_id, &today_str)?;
+        let used_secs = db::get_used_seconds_for_profile_today(pool, profile_id, &today_str).await?;
         let used_minutes = (used_secs / 60) as i32;
 
         // 3. Daily limit for today's weekday.
         let weekday = db::weekday_for_date(&today_str);
-        let limits = db::get_daily_limits(pool, profile_id)?;
+        let limits = db::get_daily_limits(pool, profile_id).await?;
         let (limit_minutes, limit_today) = limits
             .iter()
             .find(|l| l.day_of_week == weekday)
             .map(|l| (l.allowed_minutes, Some(l.allowed_minutes as u32)))
-            .unwrap_or((1440, None));
+            .unwrap_or((1440, None)); // 1440 = full day; no limit configured means unrestricted
 
         // 4. Adjustments today.
-        let adjustments = db::sum_adjustments_for_date(pool, profile_id, &today_str)?;
+        let adjustments = db::sum_adjustments_for_date(pool, profile_id, &today_str).await?;
 
         // 5. Remaining from limit.
         let mut remaining = (limit_minutes + adjustments - used_minutes).max(0);
 
         // 6. Schedule window check (times converted from admin_tz to agent_tz).
-        let schedules = db::get_schedules(pool, profile_id)?;
-        let converted_schedules: Vec<crate::db::Schedule> = schedules.iter().map(|s| {
-            crate::db::Schedule {
+        let schedules = db::get_schedules(pool, profile_id).await?;
+        let converted_schedules: Vec<crate::db::Schedule> = schedules
+            .iter()
+            .map(|s| crate::db::Schedule {
                 id: s.id,
                 profile_id: s.profile_id,
                 day_of_week: s.day_of_week,
                 start_time: {
-                    let t = db::parse_time(&s.start_time).unwrap_or(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+                    let t = db::parse_time(&s.start_time)
+                        .unwrap_or(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                     let converted = schedule_time_in_agent_tz(t, admin_timezone, agent_timezone);
                     format!("{:02}:{:02}", converted.hour(), converted.minute())
                 },
                 end_time: {
-                    let t = db::parse_time(&s.end_time).unwrap_or(NaiveTime::from_hms_opt(23, 59, 0).unwrap());
+                    let t = db::parse_time(&s.end_time)
+                        .unwrap_or(NaiveTime::from_hms_opt(23, 59, 0).unwrap());
                     let converted = schedule_time_in_agent_tz(t, admin_timezone, agent_timezone);
                     format!("{:02}:{:02}", converted.hour(), converted.minute())
                 },
-            }
-        }).collect();
-        let (window_ends_at, next_window) = check_schedule_windows(&converted_schedules, weekday, now_time);
+            })
+            .collect();
+        let (window_ends_at, next_window) =
+            check_schedule_windows(&converted_schedules, weekday, now_time);
 
+        // Outside all windows — lock regardless of time remaining.
         if window_ends_at.is_none() && !converted_schedules.is_empty() {
-            // Outside all windows — lock regardless of time remaining.
             entries.push(RemainingEntry {
                 local_uid: *local_uid,
                 remaining_minutes: 0,
@@ -112,7 +113,7 @@ pub fn calculate_remaining_for_agent(
         }
 
         // 7. Determine enforce action.
-        let enforcement = db::get_enforcement_settings(pool, profile_id)?;
+        let enforcement = db::get_enforcement_settings(pool, profile_id).await?;
         let enforce = if remaining <= 0 {
             EnforceAction::Lock
         } else if enforcement.warning_thresholds.iter().any(|&t| remaining <= t) {
@@ -136,9 +137,8 @@ pub fn calculate_remaining_for_agent(
     Ok(entries)
 }
 
-/// Build a ConfigPush for a specific agent from the DB.
-pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> Result<ConfigPush> {
-    let agent_users = db::list_agent_users(pool, agent_id)?;
+pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> Result<ConfigPush> {
+    let agent_users = db::list_agent_users(pool, agent_id).await?;
     let mut user_configs = Vec::new();
 
     for au in &agent_users {
@@ -147,7 +147,8 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
         }
         let Some(profile_id) = au.profile_id else { continue; };
 
-        let schedules = db::get_schedules(pool, profile_id)?
+        let schedules = db::get_schedules(pool, profile_id)
+            .await?
             .into_iter()
             .map(|s| ModelSchedule {
                 day_of_week: s.day_of_week,
@@ -158,7 +159,8 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             })
             .collect();
 
-        let daily_limits = db::get_daily_limits(pool, profile_id)?
+        let daily_limits = db::get_daily_limits(pool, profile_id)
+            .await?
             .into_iter()
             .map(|l| ModelDailyLimit {
                 day_of_week: l.day_of_week,
@@ -166,14 +168,16 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             })
             .collect();
 
-        let enforcement = db::get_enforcement_settings(pool, profile_id)?;
+        let enforcement = db::get_enforcement_settings(pool, profile_id).await?;
         let today = Local::now().date_naive().to_string();
-        let today_adj = db::sum_adjustments_for_date(pool, profile_id, &today)?;
-        let adjustment_message = db::latest_adjustment_reason_for_date(pool, profile_id, &today)?;
-        let language = db::get_profile(pool, profile_id)?
+        let today_adj = db::sum_adjustments_for_date(pool, profile_id, &today).await?;
+        let adjustment_message =
+            db::latest_adjustment_reason_for_date(pool, profile_id, &today).await?;
+        let language = db::get_profile(pool, profile_id)
+            .await?
             .map(|p| p.language)
             .unwrap_or_else(|| "en".to_string());
-        let blocked_domains = db::get_enabled_blocked_domains(pool, profile_id)?;
+        let blocked_domains = db::get_enabled_blocked_domains(pool, profile_id).await?;
 
         user_configs.push(UserConfig {
             local_uid: au.local_uid as u32,
@@ -185,7 +189,11 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
             adjustment_message,
             lockout_grace_minutes: enforcement.lockout_grace_minutes as u32,
             preserve_tasks_on_lock: enforcement.preserve_tasks_on_lock,
-            warning_thresholds_minutes: enforcement.warning_thresholds.iter().map(|&t| t as u32).collect(),
+            warning_thresholds_minutes: enforcement
+                .warning_thresholds
+                .iter()
+                .map(|&t| t as u32)
+                .collect(),
             language,
             blocked_domains,
         });
@@ -196,8 +204,6 @@ pub fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> 
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Convert a naive schedule time from admin_tz to agent_tz, using today's UTC
-/// date for DST-aware conversion.
 fn schedule_time_in_agent_tz(naive: NaiveTime, admin_tz: &str, agent_tz: &str) -> NaiveTime {
     if admin_tz == agent_tz {
         return naive;
@@ -222,14 +228,13 @@ fn current_time_in_timezone(tz: &str) -> NaiveTime {
     chrono::Utc::now().with_timezone(&tz).time()
 }
 
-/// Returns (current_window_end, next_window_start) given schedules and current time.
 fn check_schedule_windows(
     schedules: &[crate::db::Schedule],
     weekday: u8,
     now: NaiveTime,
 ) -> (Option<NaiveTime>, Option<NaiveTime>) {
-    // Find an active window.
-    let active_end = schedules.iter()
+    let active_end = schedules
+        .iter()
         .filter(|s| s.day_of_week == weekday)
         .filter_map(|s| {
             let start = db::parse_time(&s.start_time)?;
@@ -238,8 +243,8 @@ fn check_schedule_windows(
         })
         .min();
 
-    // Find the next upcoming window start (today or wrapping to tomorrow).
-    let next_start = schedules.iter()
+    let next_start = schedules
+        .iter()
         .filter_map(|s| {
             let start = db::parse_time(&s.start_time)?;
             if s.day_of_week == weekday && start > now {
