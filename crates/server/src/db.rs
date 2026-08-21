@@ -155,35 +155,42 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
 }
 
 async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
-    let v = get_schema_version(pool, is_sqlite).await?;
+    let mut v = get_schema_version(pool, is_sqlite).await?;
 
-    if !is_sqlite {
-        // Postgres is always a fresh database; tables already created with final DDL.
-        if v < CURRENT_VERSION {
-            set_schema_version(pool, CURRENT_VERSION).await?;
+    // ── SQLite-only migrations (v1–v6) ────────────────────────────────────────
+    // These use SQLite-specific DDL (sqlite_master, PRAGMA, table recreation).
+    // Postgres always provisions with the final create_tables() DDL and skips these.
+    if is_sqlite {
+        if v == 0 {
+            // Distinguish a fresh database from a very-old pre-migration one.
+            let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users")
+                .fetch_one(pool)
+                .await?;
+            if admin_count == 0 {
+                v = CURRENT_VERSION;
+                set_schema_version(pool, v).await?;
+            }
         }
-        return Ok(());
+        if v < 1 { apply_v1(pool).await?; v = 1; set_schema_version(pool, v).await?; }
+        if v < 2 { apply_v2(pool).await?; v = 2; set_schema_version(pool, v).await?; }
+        if v < 3 { apply_v3(pool).await?; v = 3; set_schema_version(pool, v).await?; }
+        if v < 4 { apply_v4(pool).await?; v = 4; set_schema_version(pool, v).await?; }
+        if v < 5 { apply_v5(pool).await?; v = 5; set_schema_version(pool, v).await?; }
+        if v < 6 { apply_v6(pool).await?; v = 6; set_schema_version(pool, v).await?; }
+    } else if v < CURRENT_VERSION {
+        // Postgres fresh install: mark as current so portable migrations below
+        // start from the right baseline.
+        v = CURRENT_VERSION;
+        set_schema_version(pool, v).await?;
     }
 
-    if v == 0 {
-        // Distinguish fresh database from very-old pre-migration database.
-        let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users")
-            .fetch_one(pool)
-            .await?;
-        if admin_count == 0 {
-            set_schema_version(pool, CURRENT_VERSION).await?;
-            return Ok(());
-        }
-    }
+    // ── Portable migrations (v7+) — run on BOTH SQLite and Postgres ───────────
+    // Write in standard SQL only: no PRAGMA, no sqlite_master, no table recreation.
+    // Add new entries here; increment CURRENT_VERSION at the top of this file.
+    //
+    // if v < 7 { apply_v7(pool).await?; v = 7; set_schema_version(pool, v).await?; }
 
-    let mut v = v;
-    if v < 1 { apply_v1(pool).await?; v = 1; set_schema_version(pool, v).await?; }
-    if v < 2 { apply_v2(pool).await?; v = 2; set_schema_version(pool, v).await?; }
-    if v < 3 { apply_v3(pool).await?; v = 3; set_schema_version(pool, v).await?; }
-    if v < 4 { apply_v4(pool).await?; v = 4; set_schema_version(pool, v).await?; }
-    if v < 5 { apply_v5(pool).await?; v = 5; set_schema_version(pool, v).await?; }
-    if v < 6 { apply_v6(pool).await?;        set_schema_version(pool, CURRENT_VERSION).await?; }
-
+    let _ = v; // suppress unused-variable warning until first portable migration lands
     Ok(())
 }
 
