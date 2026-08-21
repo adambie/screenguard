@@ -20,7 +20,17 @@ A Flutter Android app lives in the [screenguard-mobile](https://github.com/adamb
 
 **Download:** grab `screenguard-android-<version>.apk` from the [latest mobile release](https://github.com/adambie/screenguard-mobile/releases/latest) and install it (enable *Install unknown apps* in Android settings first).
 
-The app connects directly to the same REST API as the web UI. No extra setup needed on the server. See the [screenguard-mobile README](https://github.com/adambie/screenguard-mobile#readme) for screenshots, features, and build instructions.
+The app connects directly to the same REST API as the web UI. No extra setup needed on the server.
+
+<p align="center">
+  <img src="docs/screenshots/mobile-profiles.png" width="30%" alt="Profiles dashboard" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-profile-detail.png" width="30%" alt="Profile detail with usage chart" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-devices.png" width="30%" alt="Devices list" />
+</p>
+
+See the [screenguard-mobile repo](https://github.com/adambie/screenguard-mobile) for full details and build instructions.
 
 ## Architecture
 
