@@ -63,9 +63,11 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
                     tracing::info!("Agent {} is pending_delete — sending unpair", hello.machine_id);
                     let msg = WssMessage::new(MSG_UNPAIR, &Unpair {})?;
                     let _ = out_tx.send(msg).await;
+                    // Drain until the agent closes the connection.
                     while let Some(Ok(msg)) = stream.next().await {
                         if matches!(msg, Message::Close(_)) { break; }
                     }
+                    // Agent has acknowledged — delete the record so re-pairing starts fresh.
                     let _ = db::delete_agent(&state.db, agent.id).await;
                     tracing::info!("Agent {} deleted after unpair", hello.machine_id);
                     return Ok(());
@@ -89,6 +91,7 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
 
     state.remove_online(DEFAULT_TENANT, &machine_id).await;
 
+    // If the agent was pending_delete, it disconnected after receiving unpair — clean up now.
     if let Ok(Some(agent)) = db::get_agent_by_id(&state.db, agent_db_id).await {
         if agent.status == "pending_delete" {
             let _ = db::delete_agent(&state.db, agent_db_id).await;
@@ -146,6 +149,7 @@ async fn handle_pairing_request(
     let msg = WssMessage::new(MSG_PAIRING_ACCEPTED, &accepted)?;
     out_tx.send(msg).await?;
 
+    // Agent closes this connection and reconnects with the auth token.
     tracing::info!("Pairing accepted for agent {} — agent will reconnect with auth token", decision.agent_db_id);
     Ok(())
 }

@@ -887,6 +887,8 @@ fn row_to_agent_user(r: sqlx::any::AnyRow) -> AgentUser {
     AgentUser {
         id: r.get::<String, _>("id").parse().unwrap_or_default(),
         agent_id: r.get::<String, _>("agent_id").parse().unwrap_or_default(),
+        // Explicit Option<String> so NULL decodes as None rather than InvalidColumnType;
+        // .and_then flattens Option<Option<String>> → Option<Uuid>.
         profile_id: r
             .get::<Option<String>, _>("profile_id")
             .and_then(|s| s.parse().ok()),

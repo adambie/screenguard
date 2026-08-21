@@ -14,7 +14,7 @@ pub async fn calculate_remaining_for_agent(
     agent_id: Uuid,
     agent_timezone: &str,
     admin_timezone: &str,
-    heartbeat_users: &[(u32, u32)],
+    heartbeat_users: &[(u32, u32)], // (local_uid, active_seconds_since_last)
 ) -> Result<Vec<RemainingEntry>> {
     let today = today_in_timezone(agent_timezone);
     let today_str = today.to_string();
@@ -27,6 +27,7 @@ pub async fn calculate_remaining_for_agent(
             continue;
         };
         let Some(profile_id) = au.profile_id else {
+            // Unmanaged user — always allow.
             entries.push(RemainingEntry {
                 local_uid: *local_uid,
                 remaining_minutes: 1440,
@@ -40,25 +41,31 @@ pub async fn calculate_remaining_for_agent(
             continue;
         };
 
+        // 1. Persist new active seconds.
         if *active_secs > 0 {
             db::add_usage_seconds(pool, au.id, &today_str, *active_secs as i64).await?;
         }
 
+        // 2. Sum all usage for this profile today (across all agents).
         let used_secs = db::get_used_seconds_for_profile_today(pool, profile_id, &today_str).await?;
         let used_minutes = (used_secs / 60) as i32;
 
+        // 3. Daily limit for today's weekday.
         let weekday = db::weekday_for_date(&today_str);
         let limits = db::get_daily_limits(pool, profile_id).await?;
         let (limit_minutes, limit_today) = limits
             .iter()
             .find(|l| l.day_of_week == weekday)
             .map(|l| (l.allowed_minutes, Some(l.allowed_minutes as u32)))
-            .unwrap_or((1440, None));
+            .unwrap_or((1440, None)); // 1440 = full day; no limit configured means unrestricted
 
+        // 4. Adjustments today.
         let adjustments = db::sum_adjustments_for_date(pool, profile_id, &today_str).await?;
 
+        // 5. Remaining from limit.
         let mut remaining = (limit_minutes + adjustments - used_minutes).max(0);
 
+        // 6. Schedule window check (times converted from admin_tz to agent_tz).
         let schedules = db::get_schedules(pool, profile_id).await?;
         let converted_schedules: Vec<crate::db::Schedule> = schedules
             .iter()
@@ -83,6 +90,7 @@ pub async fn calculate_remaining_for_agent(
         let (window_ends_at, next_window) =
             check_schedule_windows(&converted_schedules, weekday, now_time);
 
+        // Outside all windows — lock regardless of time remaining.
         if window_ends_at.is_none() && !converted_schedules.is_empty() {
             entries.push(RemainingEntry {
                 local_uid: *local_uid,
@@ -97,12 +105,14 @@ pub async fn calculate_remaining_for_agent(
             continue;
         }
 
+        // Cap remaining by time until window ends.
         if let Some(end) = window_ends_at {
             let secs_to_end = (end - now_time).num_seconds().max(0);
             let mins_to_end = (secs_to_end / 60) as i32;
             remaining = remaining.min(mins_to_end);
         }
 
+        // 7. Determine enforce action.
         let enforcement = db::get_enforcement_settings(pool, profile_id).await?;
         let enforce = if remaining <= 0 {
             EnforceAction::Lock
@@ -204,7 +214,7 @@ fn schedule_time_in_agent_tz(naive: NaiveTime, admin_tz: &str, agent_tz: &str) -
     let dt_in_admin = a_tz.from_local_datetime(&today.and_time(naive)).single();
     match dt_in_admin {
         Some(dt) => dt.with_timezone(&b_tz).time(),
-        None => naive,
+        None => naive, // ambiguous time (DST gap) — use as-is
     }
 }
 
