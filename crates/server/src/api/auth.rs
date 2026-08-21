@@ -33,6 +33,12 @@ pub struct Claims {
     pub tenant_id: String,  // "default" for homelab; cloud sets per-tenant value
 }
 
+pub async fn version() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
 pub async fn status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agent"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "serde",
@@ -2064,7 +2064,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "argon2",
