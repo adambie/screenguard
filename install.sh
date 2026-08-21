@@ -21,6 +21,14 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 
 need_cmd() { command -v "$1" &>/dev/null || error "Required command not found: $1"; }
 download() { curl -fsSL "$1" -o "$2" || error "Download failed: $1"; }
+verify_checksum() {
+    local file="$1" url="$2"
+    local expected actual
+    expected=$(curl -fsSL "$url") || error "Checksum download failed: $url"
+    actual=$(sha256sum "$file" | awk '{print $1}')
+    [[ "$expected" == "$actual" ]] || error "Checksum mismatch for $(basename "$file") — download may be corrupt, aborting"
+    info "Checksum OK: $(basename "$file")"
+}
 
 # Always read from /dev/tty so interactive prompts work when piped through curl.
 ask() {
@@ -209,16 +217,19 @@ if [[ $MODE == update ]]; then
     if [[ $SERVER_INSTALLED -eq 1 ]]; then
         info "Downloading screenguard-server..."
         download "${RELEASES_URL}/screenguard-server-${BIN_ARCH}" "${TMP}/screenguard-server"
+        verify_checksum "${TMP}/screenguard-server" "${RELEASES_URL}/screenguard-server-${BIN_ARCH}.sha256"
         chmod +x "${TMP}/screenguard-server"
         download "${RELEASES_URL}/screenguard-server.service" "${TMP}/screenguard-server.service"
     fi
     if [[ $AGENT_INSTALLED -eq 1 ]]; then
         info "Downloading screenguard-agent..."
         download "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}" "${TMP}/screenguard-agent"
+        verify_checksum "${TMP}/screenguard-agent" "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}.sha256"
         chmod +x "${TMP}/screenguard-agent"
         download "${RELEASES_URL}/screenguard-agent.service" "${TMP}/screenguard-agent.service"
         info "Downloading screenguard-tray..."
         download "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}" "${TMP}/screenguard-tray"
+        verify_checksum "${TMP}/screenguard-tray" "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}.sha256"
         chmod +x "${TMP}/screenguard-tray"
         download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
         download "${RELEASES_URL}/screenguard-dbus.conf" "${TMP}/screenguard-dbus.conf"
@@ -395,15 +406,18 @@ trap 'rm -rf "$TMP"' EXIT
 if [[ ${INSTALL_SERVER:-0} -eq 1 ]]; then
     info "Downloading screenguard-server..."
     download "${RELEASES_URL}/screenguard-server-${BIN_ARCH}" "${TMP}/screenguard-server"
+    verify_checksum "${TMP}/screenguard-server" "${RELEASES_URL}/screenguard-server-${BIN_ARCH}.sha256"
     chmod +x "${TMP}/screenguard-server"
 fi
 
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     info "Downloading screenguard-agent..."
     download "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}" "${TMP}/screenguard-agent"
+    verify_checksum "${TMP}/screenguard-agent" "${RELEASES_URL}/screenguard-agent-${BIN_ARCH}.sha256"
     chmod +x "${TMP}/screenguard-agent"
     info "Downloading screenguard-tray..."
     download "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}" "${TMP}/screenguard-tray"
+    verify_checksum "${TMP}/screenguard-tray" "${RELEASES_URL}/screenguard-tray-${BIN_ARCH}.sha256"
     chmod +x "${TMP}/screenguard-tray"
     download "${RELEASES_URL}/screenguard-tray.desktop" "${TMP}/screenguard-tray.desktop"
     download "${RELEASES_URL}/screenguard-dbus.conf" "${TMP}/screenguard-dbus.conf"

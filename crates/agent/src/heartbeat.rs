@@ -569,7 +569,11 @@ impl HeartbeatLoop {
                 self.outbound_tx.send(msg).await?;
             }
             ServerMessage::UpdateAgent => {
-                tracing::info!("Remote update triggered by server — launching install script via systemd-run");
+                tracing::warn!("╔══════════════════════════════════════════════════════╗");
+                tracing::warn!("║  REMOTE UPDATE: server requested automatic update    ║");
+                tracing::warn!("║  Downloading latest release from GitHub and          ║");
+                tracing::warn!("║  installing as root via install.sh --update          ║");
+                tracing::warn!("╚══════════════════════════════════════════════════════╝");
                 match tokio::process::Command::new("systemd-run")
                     .args([
                         "--no-block",
@@ -579,8 +583,8 @@ impl HeartbeatLoop {
                     ])
                     .spawn()
                 {
-                    Ok(_) => tracing::info!("Update script launched; systemd will restart agent after update"),
-                    Err(e) => tracing::error!("Failed to launch update script: {e}"),
+                    Ok(_) => tracing::warn!("Remote update script launched — agent will restart when complete"),
+                    Err(e) => tracing::error!("Failed to launch remote update script: {e}"),
                 }
             }
         }

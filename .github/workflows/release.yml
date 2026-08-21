@@ -49,7 +49,10 @@ jobs:
           cp target/${{ matrix.target }}/release/agent                    dist/screenguard-agent-${ARCH}
           cp target/${{ matrix.target }}/release/parental-controller-server dist/screenguard-server-${ARCH}
           cp target/${{ matrix.target }}/release/screenguard-tray          dist/screenguard-tray-${ARCH}
-          chmod +x dist/*
+          chmod +x dist/screenguard-agent-${ARCH} dist/screenguard-server-${ARCH} dist/screenguard-tray-${ARCH}
+          sha256sum dist/screenguard-agent-${ARCH}  | awk '{print $1}' > dist/screenguard-agent-${ARCH}.sha256
+          sha256sum dist/screenguard-server-${ARCH} | awk '{print $1}' > dist/screenguard-server-${ARCH}.sha256
+          sha256sum dist/screenguard-tray-${ARCH}   | awk '{print $1}' > dist/screenguard-tray-${ARCH}.sha256
 
       - uses: actions/upload-artifact@v4
         with:
