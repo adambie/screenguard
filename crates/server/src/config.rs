@@ -8,6 +8,7 @@ const DEFAULT_DB_PATH: &str = "/var/lib/screenguard/server.db";
 const DB_PATH_ENV: &str = "SCREENGUARD_SERVER_DB";
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 const JWT_SECRET_ENV: &str = "SCREENGUARD_SERVER_JWT_SECRET";
+const GITHUB_REPO_ENV: &str = "SCREENGUARD_GITHUB_REPO";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -24,6 +25,10 @@ pub struct ServerConfig {
     /// Homelab ignores this; cloud server sets DATABASE_URL instead of db_path.
     pub database_url: Option<String>,
 
+    /// GitHub repo used for agent release checks (owner/repo).
+    #[serde(default = "default_github_repo")]
+    pub github_repo: String,
+
     /// JWT signing secret. If absent, one is generated and saved on first run.
     pub jwt_secret: Option<String>,
 
@@ -34,6 +39,7 @@ pub struct ServerConfig {
     pub enable_mdns: bool,
 }
 
+fn default_github_repo() -> String { "adambie/screenguard".to_string() }
 fn default_listen_addr() -> String { "0.0.0.0".to_string() }
 fn default_listen_port() -> u16 { 8080 }
 fn default_db_path() -> String { DEFAULT_DB_PATH.to_string() }
@@ -47,6 +53,7 @@ impl Default for ServerConfig {
             listen_port: default_listen_port(),
             db_path: default_db_path(),
             database_url: None,
+            github_repo: default_github_repo(),
             jwt_secret: None,
             jwt_expiry_hours: default_jwt_expiry_hours(),
             enable_mdns: default_enable_mdns(),
@@ -76,6 +83,9 @@ pub fn load(path: Option<&str>) -> Result<ServerConfig> {
     }
     if let Ok(secret) = std::env::var(JWT_SECRET_ENV) {
         config.jwt_secret = Some(secret);
+    }
+    if let Ok(repo) = std::env::var(GITHUB_REPO_ENV) {
+        config.github_repo = repo;
     }
 
     Ok(config)

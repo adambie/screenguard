@@ -1,15 +1,8 @@
-# Builds the server from local source — used by docker-compose.postgres.yml.
-# NOT used for production releases (those pull a pre-built musl binary from CI).
-
-FROM rust:slim AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-COPY . .
-RUN cargo build --release -p server
+# Packages a locally-built server binary into a minimal runtime image.
+# Build on the host first (uses your local cargo cache), then docker compose up.
+#
+# Build:  cargo build --release -p server
+# Run:    docker compose -f docker-compose.postgres.yml up --build
 
 FROM debian:bookworm-slim
 
@@ -17,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /build/target/release/parental-controller-server /usr/local/bin/screenguard-server
+COPY target/release/parental-controller-server /usr/local/bin/screenguard-server
 
 EXPOSE 8080
 ENTRYPOINT ["screenguard-server"]

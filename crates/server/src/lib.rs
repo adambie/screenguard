@@ -46,7 +46,8 @@ pub async fn run() -> Result<()> {
         .with_state(state.clone());
     let app = ws_router.merge(api::router(state.clone()));
 
-    release_check::spawn_updater("adambie/screenguard", state.latest_agent_release.clone());
+    let github_repo: &'static str = cfg.github_repo.leak();
+    release_check::spawn_updater(github_repo, state.latest_agent_release.clone());
 
     let _mdns = if cfg.enable_mdns {
         Some(register_mdns(cfg.listen_port))
