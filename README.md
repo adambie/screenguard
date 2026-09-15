@@ -11,8 +11,56 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 - Admin can send arbitrary text messages to any managed user's desktop
 - Time adjustments (add or remove minutes) with optional reason shown to the user
 - mDNS auto-discovery — agents find the server on the local network without manual configuration
+- Hosted cloud accounts — manage your machines without running a server yourself
 - Web UI for administration
 - Static binaries, no runtime dependencies
+
+## Cloud accounts
+
+**There is now a hosted ScreenGuard server at [screenguard.cc](https://screenguard.cc)** — a multi-account instance, so you can try ScreenGuard out without setting up a server of your own.
+
+Create an account there, then install the agent on the machine you want to manage and point it at that account:
+
+```bash
+curl -fsSL https://github.com/adambie/screenguard/releases/latest/download/install.sh \
+  | sudo bash -s -- --cloud-account=you@example.com
+```
+
+The machine shows up as *pending* under your account; approve it and it is managed. That is the whole setup — no server host to keep running, no fixed IP, no firewall rule.
+
+The mobile app signs in to the same account, so the devices are reachable from anywhere — no VPN back to the home network and no port forwarding. You can change a limit or lock a machine while you are out.
+
+Each account is isolated: its own profiles, devices, and usage history. Self-hosting on the LAN works exactly as before and is unaffected — see [Cloud mode](#cloud-mode) for the agent-side configuration details.
+
+## What the agent does on your machine
+
+The agent behaves identically whether it reports to a server on your own LAN or to the cloud instance — only the address it connects to changes. Agent and protocol both live in this repository, so none of the following has to be taken on trust.
+
+**What the agent sends up** — the complete uplink (`crates/common/src/messages.rs`):
+
+- `agent_hello` — machine ID, hostname, timezone, agent version
+- `user_list_update` — UID, username and display name of each local account above `min_uid`
+- `heartbeat` — per UID: seconds of active time since the last beat, an idle flag, the number of open sessions
+- `usage_sync` — per UID and date: total seconds used
+
+That is all of it. No window titles, no process or application names, no keystrokes, no screenshots, no file contents. Optional domain blocking runs entirely on the machine: a local DNS proxy answers blocked lookups with NXDOMAIN. The blocklist is pushed down from the server; the queries the proxy sees are never reported back up.
+
+**What a server can ask the agent to do** — the complete set (`ServerMessage`, same file):
+
+| Message | Effect |
+|---|---|
+| `config_push` / `config_reload` | update schedules, daily limits, blocked domains |
+| `remaining_update` | set remaining minutes and allow / warn / lock |
+| `lock_now` | lock the given local user |
+| `notify_user` | show a desktop notification |
+| `pairing_accepted` | finish pairing, store the auth token |
+| `unpair` | forget the pairing and restart |
+| `fetch_logs` | return the last 50 lines of `journalctl -u screenguard-agent` |
+| `update_agent` | run the published installer as root (see below) |
+
+There is no message that runs an arbitrary command, reads a file, or opens a shell. `update_agent` is the one privileged operation: it launches `install.sh --update` from the GitHub releases page as root via `systemd-run`, and writes a loud banner to the journal when it does. There is currently no config switch to turn it off — if that is not acceptable for a machine, self-host, or pin the agent by other means.
+
+The agent always dials out; nothing ever connects to it. That is why cloud mode needs no port forwarding and no VPN, and it is the same outbound WebSocket in both modes (`wss://` with TLS for the cloud endpoint). Local state — pairing, cached rules, usage counters — stays in `/var/lib/screenguard/agent.db`, everything it does is visible in `journalctl -u screenguard-agent`, and `screenguard-agent --reset` cuts it loose from whichever server it is paired with.
 
 ## Mobile app
 
@@ -63,7 +111,7 @@ The server and agent can run on the same machine or on separate machines. The ag
 curl -fsSL https://github.com/adambie/screenguard/releases/latest/download/install.sh | sudo bash
 ```
 
-The installer will ask whether to install the **agent**, the **server**, or **both**, then configure and start the appropriate systemd services. For an agent, it asks how to reach the server: mDNS auto-discovery, a fixed URL, or a cloud account (see [Cloud mode](#cloud-mode-experimental)).
+The installer will ask whether to install the **agent**, the **server**, or **both**, then configure and start the appropriate systemd services. For an agent, it asks how to reach the server: mDNS auto-discovery, a fixed URL, or a cloud account (see [Cloud mode](#cloud-mode)).
 
 ### Update
 
@@ -204,15 +252,16 @@ cache_ttl_hours     = 48
 min_uid             = 1000  # ignore system accounts below this UID
 ```
 
-### Cloud mode (experimental)
+### Cloud mode
 
-> ⚠️ **Experimental and unsupported.** The hosted cloud service, its endpoint,
-> and this enrolment flow may change or be removed. Self-hosted / LAN use is
-> unaffected — skip this section entirely and the agent behaves exactly as
-> documented above.
+> The hosted service is young — its endpoint and this enrolment flow may still
+> change. Self-hosted / LAN use is unaffected: skip this section entirely and the
+> agent behaves exactly as documented above.
 
 Instead of running your own server on the LAN, an agent can pair with the hosted
-service at `api.screenguard.cc` and report to a cloud account.
+service and report to a cloud account — see [Cloud accounts](#cloud-accounts) for
+the overview. You sign up at `screenguard.cc`; the agent connects to
+`api.screenguard.cc`.
 
 **At install time.** Pass the account to the installer and it writes the config
 for you:
