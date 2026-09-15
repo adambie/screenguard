@@ -32,6 +32,26 @@ The mobile app signs in to the same account, so the devices are reachable from a
 
 Each account is isolated: its own profiles, devices, and usage history. Self-hosting on the LAN works exactly as before and is unaffected — see [Cloud mode](#cloud-mode) for the agent-side configuration details.
 
+The agent is the same binary either way, and it sends and accepts exactly the same things — [What the agent does on your machine](#what-the-agent-does-on-your-machine) lists all of them.
+
+## Mobile app
+
+A Flutter Android app lives in the [screenguard-mobile](https://github.com/adambie/screenguard-mobile) repository. It lets you manage profiles, devices, schedules, and daily limits from your phone — no browser needed.
+
+**Download:** grab `screenguard-android-<version>.apk` from the [latest mobile release](https://github.com/adambie/screenguard-mobile/releases/latest) and install it (enable *Install unknown apps* in Android settings first).
+
+The app connects directly to the same REST API as the web UI. No extra setup needed on the server.
+
+<p align="center">
+  <img src="docs/screenshots/mobile-profiles.png" width="30%" alt="Profiles dashboard" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-profile-detail.png" width="30%" alt="Profile detail with usage chart" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-devices.png" width="30%" alt="Devices list" />
+</p>
+
+See the [screenguard-mobile repo](https://github.com/adambie/screenguard-mobile) for full details and build instructions.
+
 ## What the agent does on your machine
 
 The agent behaves identically whether it reports to a server on your own LAN or to the cloud instance — only the address it connects to changes. Agent and protocol both live in this repository, so none of the following has to be taken on trust.
@@ -61,24 +81,6 @@ That is all of it. No window titles, no process or application names, no keystro
 There is no message that runs an arbitrary command, reads a file, or opens a shell. `update_agent` is the one privileged operation: it launches `install.sh --update` from the GitHub releases page as root via `systemd-run`, and writes a loud banner to the journal when it does. There is currently no config switch to turn it off — if that is not acceptable for a machine, self-host, or pin the agent by other means.
 
 The agent always dials out; nothing ever connects to it. That is why cloud mode needs no port forwarding and no VPN, and it is the same outbound WebSocket in both modes (`wss://` with TLS for the cloud endpoint). Local state — pairing, cached rules, usage counters — stays in `/var/lib/screenguard/agent.db`, everything it does is visible in `journalctl -u screenguard-agent`, and `screenguard-agent --reset` cuts it loose from whichever server it is paired with.
-
-## Mobile app
-
-A Flutter Android app lives in the [screenguard-mobile](https://github.com/adambie/screenguard-mobile) repository. It lets you manage profiles, devices, schedules, and daily limits from your phone — no browser needed.
-
-**Download:** grab `screenguard-android-<version>.apk` from the [latest mobile release](https://github.com/adambie/screenguard-mobile/releases/latest) and install it (enable *Install unknown apps* in Android settings first).
-
-The app connects directly to the same REST API as the web UI. No extra setup needed on the server.
-
-<p align="center">
-  <img src="docs/screenshots/mobile-profiles.png" width="30%" alt="Profiles dashboard" />
-  &nbsp;&nbsp;
-  <img src="docs/screenshots/mobile-profile-detail.png" width="30%" alt="Profile detail with usage chart" />
-  &nbsp;&nbsp;
-  <img src="docs/screenshots/mobile-devices.png" width="30%" alt="Devices list" />
-</p>
-
-See the [screenguard-mobile repo](https://github.com/adambie/screenguard-mobile) for full details and build instructions.
 
 ## Architecture
 
