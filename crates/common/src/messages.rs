@@ -13,6 +13,7 @@ pub const MSG_CONFIG_PUSH: &str = "config_push";
 pub const MSG_REMAINING_UPDATE: &str = "remaining_update";
 pub const MSG_PAIRING_ACCEPTED: &str = "pairing_accepted";
 pub const MSG_LOCK_NOW: &str = "lock_now";
+pub const MSG_UNLOCK_NOW: &str = "unlock_now";
 pub const MSG_CONFIG_RELOAD: &str = "config_reload";
 pub const MSG_NOTIFY_USER: &str = "notify_user";
 pub const MSG_UNPAIR: &str = "unpair";
@@ -100,6 +101,11 @@ pub struct LockNow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnlockNow {
+    pub local_uid: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigReload {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +137,7 @@ pub enum ServerMessage {
     RemainingUpdate(RemainingUpdate),
     PairingAccepted(PairingAccepted),
     LockNow(LockNow),
+    UnlockNow(UnlockNow),
     NotifyUser(NotifyUser),
     ConfigReload,
     Unpair,
