@@ -382,10 +382,15 @@ impl Db {
 
 impl Db {
     pub fn add_usage_seconds(&self, uid: u32, date: &str, seconds: u64) -> Result<()> {
+        // Reset synced=0 on every update, not just the initial insert: otherwise
+        // a day's row is marked synced=1 after the first reconnect of the day,
+        // and any usage added by a *second* disconnect/reconnect that same day
+        // is never picked up by get_unsynced_usage() — the server's number gets
+        // stuck until local midnight rolls the row over.
         self.conn.execute(
             "INSERT INTO usage_log (local_uid, date, used_seconds, synced)
              VALUES (?1, ?2, ?3, 0)
-             ON CONFLICT(local_uid, date) DO UPDATE SET used_seconds = used_seconds + ?3",
+             ON CONFLICT(local_uid, date) DO UPDATE SET used_seconds = used_seconds + ?3, synced = 0",
             params![uid, date, seconds],
         )?;
         Ok(())
@@ -781,6 +786,30 @@ mod tests {
         db.migrate().unwrap();
 
         assert!(!db.get_cached_enforcement(1000).unwrap().preserve_tasks_on_lock);
+    }
+
+    // Regression test for #17: after the first reconnect of the day marks a
+    // date's usage_log row synced=1, a *second* round of usage added that same
+    // day (e.g. the agent drops offline again, keeps counting, reconnects a
+    // second time) must be flagged unsynced again so send_usage_sync picks it
+    // up — otherwise the server's displayed remaining-time freezes for the
+    // rest of that day.
+    #[test]
+    fn add_usage_seconds_reflags_unsynced_after_a_sync_cycle() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        let today = "2026-10-05";
+
+        db.add_usage_seconds(1000, today, 60).unwrap();
+        assert_eq!(db.get_unsynced_usage().unwrap(), vec![(1000, today.to_string(), 60)]);
+
+        // First reconnect of the day syncs it.
+        db.mark_usage_synced(1000, today).unwrap();
+        assert!(db.get_unsynced_usage().unwrap().is_empty());
+
+        // More usage accrues after that — must be unsynced again, not silently
+        // folded into the already-synced row.
+        db.add_usage_seconds(1000, today, 30).unwrap();
+        assert_eq!(db.get_unsynced_usage().unwrap(), vec![(1000, today.to_string(), 90)]);
     }
 
     #[test]

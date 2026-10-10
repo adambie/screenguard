@@ -21,7 +21,7 @@ pub async fn open(cfg: &crate::config::ServerConfig) -> Result<DbPool> {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create DB directory: {}", parent.display()))?;
         }
-        (format!("sqlite:{}", cfg.db_path), true)
+        (format!("sqlite:{}?mode=rwc", cfg.db_path), true)
     };
 
     let pool = sqlx::AnyPool::connect(&url)
@@ -1688,6 +1688,31 @@ mod tests {
         sqlx::query("INSERT INTO _schema_version (version) VALUES (4)").execute(&pool).await.unwrap();
 
         pool
+    }
+
+    // Regression test for #15: a brand-new homelab install (fresh Docker volume,
+    // fresh `install.sh` run) points db_path at a file that doesn't exist yet.
+    // `open()` must create it — sqlx's SqliteConnectOptions defaults
+    // create_if_missing to false, so without `?mode=rwc` on the URL this used
+    // to fail with "(code: 14) unable to open database file" on first boot,
+    // while upgrades (where server.db already existed) never showed the bug.
+    #[tokio::test]
+    async fn open_creates_missing_sqlite_file_on_fresh_install() {
+        let dir = std::env::temp_dir().join(format!("screenguard-test-{}", Uuid::new_v4()));
+        let db_path = dir.join("server.db").to_string_lossy().to_string();
+        assert!(!std::path::Path::new(&db_path).exists());
+
+        let cfg = crate::config::ServerConfig {
+            db_path,
+            ..Default::default()
+        };
+
+        let pool = open(&cfg).await.expect("open() must create a missing sqlite db file");
+        // Sanity check the pool is actually usable, not just "connected".
+        create_profile(&pool, "Fresh install smoke test").await.unwrap();
+        pool.close().await;
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

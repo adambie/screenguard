@@ -55,6 +55,7 @@
   "profile.message_placeholder": "Enviar mensagem ao utilizador…",
   "profile.btn_send": "Enviar",
   "profile.status_unavailable": "Estado indisponível — nenhum agente ligado.",
+  "profile.stale_data_warning": "{agent} está offline desde {ago} — os números acima podem estar desatualizados.",
   "profile.card_limits": "Limites diários",
   "profile.badge_blocked": "bloqueado",
   "profile.btn_clear": "limpar",
@@ -77,7 +78,7 @@
   "profile.keep_tasks_running_hint": "Quando o tempo termina, o ScreenGuard mantém o ecrã de início de sessão bloqueado, mas não termina a sessão. O tempo disponível continua a ser reposto a zero.",
   "profile.grace_minutes_label": "Grace period before logout",
   "profile.grace_minutes_unit": "min",
-  "profile.grace_minutes_hint": "After locking, the session is forcibly terminated after this many minutes (only when 'keep tasks running' is off). Set to 0 for immediate logout.",
+  "profile.grace_minutes_hint": "After locking, the session is forcibly terminated after this many minutes (only when 'keep tasks running' is off). Set to 0 for immediate logout with no warning before the lock screen engages.",
   "profile.btn_save_lock_behavior": "Guardar comportamento do bloqueio",
 
   "agents.heading": "Agentes",

@@ -1,6 +1,6 @@
 [package]
 name = "server"
-version = "0.10.9"
+version = "0.10.12"
 edition = "2024"
 [lib]
 name = "server"

@@ -116,6 +116,18 @@ fn lock_behavior(preserve_tasks_on_lock: bool) -> LockBehavior {
     }
 }
 
+/// Whether to show the "screen locks in 4 seconds" courtesy notification
+/// before actually locking the session.
+///
+/// Skipped when the admin has configured a zero grace period: that setting
+/// is documented as "immediate logout" and signals no leniency at all, so
+/// the unconditional 4s notify-then-wait window would otherwise hand back
+/// exactly the few seconds of unrestricted access a zero grace period was
+/// meant to prevent (#19).
+fn should_warn_before_lock(grace_minutes: u32) -> bool {
+    grace_minutes > 0
+}
+
 /// Execute a lock for a UID, preserving or terminating the session according to cached config.
 ///
 /// `locked_uids` is the same set the caller inserted `uid` into to arm this lock. It is
@@ -140,12 +152,14 @@ pub async fn execute_lock(
     }
 
     // Final warning before the screen locks.
-    let _ = crate::dbus::send_desktop_notification(
-        uid,
-        crate::i18n::notif_lock_title(&language),
-        crate::i18n::notif_lock_body(&language),
-    ).await;
-    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    if should_warn_before_lock(grace_minutes) {
+        let _ = crate::dbus::send_desktop_notification(
+            uid,
+            crate::i18n::notif_lock_title(&language),
+            crate::i18n::notif_lock_body(&language),
+        ).await;
+        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    }
 
     tracing::info!("Locking sessions for uid={uid}: {:?}", session_ids);
     crate::dbus::lock_sessions(&session_ids).await?;
@@ -182,7 +196,7 @@ pub async fn execute_lock(
 
 #[cfg(test)]
 mod tests {
-    use super::{lock_behavior, LockBehavior};
+    use super::{lock_behavior, should_warn_before_lock, LockBehavior};
 
     #[test]
     fn preserve_off_terminates_after_grace() {
@@ -192,6 +206,21 @@ mod tests {
     #[test]
     fn preserve_on_keeps_session_armed_for_relocking() {
         assert_eq!(lock_behavior(true), LockBehavior::PreserveAndRelock);
+    }
+
+    // Regression test for #19: a zero grace period must skip the unconditional
+    // 4s "screen locks in 4 seconds" notification too, not just the
+    // post-lock termination wait — otherwise "immediate logout" still hands
+    // back a few seconds of unrestricted access.
+    #[test]
+    fn zero_grace_skips_the_pre_lock_warning() {
+        assert!(!should_warn_before_lock(0));
+    }
+
+    #[test]
+    fn positive_grace_still_shows_the_pre_lock_warning() {
+        assert!(should_warn_before_lock(1));
+        assert!(should_warn_before_lock(5));
     }
 }
 
