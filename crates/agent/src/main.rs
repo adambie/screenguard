@@ -8,6 +8,7 @@ mod heartbeat;
 mod i18n;
 mod nftables;
 mod pairing;
+mod password;
 mod status_dbus;
 mod users;
 mod web_filter;

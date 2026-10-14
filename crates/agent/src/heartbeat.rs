@@ -435,6 +435,7 @@ impl HeartbeatLoop {
                     if entry.enforce == EnforceAction::Lock {
                         let is_new = self.locked_uids.lock().await.insert(entry.local_uid);
                         if is_new {
+                            self.set_password_locked(entry.local_uid, true).await;
                             // Log the reason so it shows up in journalctl.
                             let uid = entry.local_uid;
                             if entry.current_window_ends_at.is_none() {
@@ -524,6 +525,7 @@ impl HeartbeatLoop {
                 let uid = lock.local_uid;
                 let is_new = self.locked_uids.lock().await.insert(uid);
                 if is_new {
+                    self.set_password_locked(uid, true).await;
                     tracing::info!("Locking uid={uid}: manual lock requested by administrator");
                     let db = self.db.clone();
                     let locked_uids = self.locked_uids.clone();
@@ -552,6 +554,19 @@ impl HeartbeatLoop {
                             }
                         }
                     });
+                }
+            }
+            ServerMessage::UnlockNow(unlock) => {
+                let uid = unlock.local_uid;
+                self.set_password_locked(uid, false).await;
+                self.locked_uids.lock().await.remove(&uid);
+                let session_ids = self.db.lock().await
+                    .get_all_session_ids(uid)
+                    .unwrap_or_default();
+                if !session_ids.is_empty() {
+                    if let Err(e) = crate::dbus::unlock_sessions(&session_ids).await {
+                        tracing::warn!("Unlock failed for uid={uid}: {e}");
+                    }
                 }
             }
             ServerMessage::ConfigReload => {
@@ -628,6 +643,12 @@ impl HeartbeatLoop {
                     uid, &title, &body,
                 ).await {
                     tracing::warn!("Warn notification failed for uid={uid}: {e}");
+                }
+
+                async fn set_password_locked(&self, uid: u32, locked: bool) {
+                    if let Err(e) = crate::password::set_password_locked(uid, locked).await {
+                        tracing::error!("Failed to update password lock for uid={uid}: {e}");
+                    }
                 }
             });
         }
