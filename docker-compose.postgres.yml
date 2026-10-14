@@ -1,6 +1,6 @@
 # ScreenGuard — Postgres stack
 # ─────────────────────────────
-# Pulls the latest server release from GitHub and wires it to a Postgres container.
+# Pulls the latest server image from GHCR and wires it to a Postgres container.
 # Use this to test or run the Postgres path locally.
 #
 # Quickstart:
@@ -28,12 +28,9 @@ services:
     restart: unless-stopped
 
   server:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.server
-      args:
-        VERSION: latest
-    image: screenguard-server-dev
+    image: ghcr.io/adambie/screenguard-server:latest   # pin to e.g. ":v0.10.12" for reproducible deploys
+    # To build locally instead:
+    # build: { context: ., dockerfile: deploy/Dockerfile.server }
     ports:
       - "8080:8080"
     environment:
@@ -45,10 +42,9 @@ services:
     restart: unless-stopped
 
   webui:
-    build:
-      context: ./webui
-      dockerfile: ../deploy/Dockerfile.webui
-    image: screenguard-webui
+    image: ghcr.io/adambie/screenguard-webui:latest
+    # To build locally instead:
+    # build: { context: ./webui, dockerfile: ../deploy/Dockerfile.webui }
     ports:
       - "5000:5000"
     environment:

@@ -140,9 +140,8 @@ Two compose files are included. The **agent always runs natively** on the manage
 Uses host networking so mDNS auto-discovery works — agents on the LAN find the server without any manual configuration. The database is stored in a named Docker volume (`screenguard-data`) and survives restarts and image updates.
 
 ```bash
-# 1. Clone the repo (or download docker-compose.yml + deploy/ separately)
-git clone https://github.com/adambie/screenguard.git
-cd screenguard
+# 1. Get the compose file (images are pulled from ghcr.io — no clone or local build needed)
+curl -fsSLO https://raw.githubusercontent.com/adambie/screenguard/main/docker-compose.yml
 
 # 2. Edit docker-compose.yml and replace "change-me-in-production" with strong secrets
 
@@ -153,12 +152,14 @@ docker compose up -d
 #    http://<server-ip>:5000
 ```
 
-To pin a specific release instead of always pulling `latest`, set the `VERSION` build arg in `docker-compose.yml`:
+To pin a specific release instead of always tracking `latest`, change the image tags in `docker-compose.yml`:
 
 ```yaml
-args:
-  VERSION: v0.10.0
+image: ghcr.io/adambie/screenguard-server:v0.10.12
+image: ghcr.io/adambie/screenguard-webui:v0.10.12
 ```
+
+Images are published to GHCR for `linux/amd64` and `linux/arm64` on every release. To build from source instead, use the commented `build:` lines in the compose file.
 
 ### Postgres — `docker-compose.postgres.yml`
 
@@ -170,7 +171,7 @@ server_url = "ws://<server-host-ip>:8080"
 ```
 
 ```bash
-# Edit docker-compose.postgres.yml and replace "change-me-in-production" with strong secrets
+# Download docker-compose.postgres.yml, then edit it and replace "change-me-in-production" with strong secrets
 docker compose -f docker-compose.postgres.yml up -d
 ```
 

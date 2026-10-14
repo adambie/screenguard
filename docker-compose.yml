@@ -18,12 +18,9 @@
 
 services:
   server:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.server
-      args:
-        VERSION: latest   # pin to e.g. "v0.8.4" for reproducible deploys
-    image: screenguard-server
+    image: ghcr.io/adambie/screenguard-server:latest   # pin to e.g. ":v0.10.12" for reproducible deploys
+    # To build locally instead:
+    # build: { context: ., dockerfile: deploy/Dockerfile.server }
     network_mode: host
     volumes:
       - screenguard-data:/data
@@ -33,10 +30,9 @@ services:
     restart: unless-stopped
 
   webui:
-    build:
-      context: ./webui
-      dockerfile: ../deploy/Dockerfile.webui
-    image: screenguard-webui
+    image: ghcr.io/adambie/screenguard-webui:latest
+    # To build locally instead:
+    # build: { context: ./webui, dockerfile: ../deploy/Dockerfile.webui }
     network_mode: host
     environment:
       SERVER_URL: http://127.0.0.1:8080   # server is on the same host network
@@ -66,12 +62,7 @@ volumes:
 #
 # services:
 #   server:
-#     build:
-#       context: .
-#       dockerfile: deploy/Dockerfile.server
-#       args:
-#         VERSION: latest
-#     image: screenguard-server
+#     image: ghcr.io/adambie/screenguard-server:latest
 #     ports:
 #       - "8080:8080"    # agents connect here from the LAN
 #     volumes:
@@ -82,10 +73,7 @@ volumes:
 #     restart: unless-stopped
 #
 #   webui:
-#     build:
-#       context: ./webui
-#       dockerfile: ../deploy/Dockerfile.webui
-#     image: screenguard-webui
+#     image: ghcr.io/adambie/screenguard-webui:latest
 #     ports:
 #       - "5000:5000"    # admin web UI
 #     environment:
