@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ t('users.title') }} – ScreenGuard{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="h2 fw-bold mb-1">{{ t('users.title') }}</h1>
+  <p class="text-secondary" style="font-size:13.5px">{{ t('users.subtitle') }}</p>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">{{ t('users.card_create') }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('create_user') }}" class="row g-2 align-items-end">
+      <div class="col-sm-4">
+        <label class="form-label small fw-medium">{{ t('users.label_username') }}</label>
+        <input name="username" class="form-control" required autocomplete="off">
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label small fw-medium">{{ t('users.label_password') }}</label>
+        <input type="password" name="password" class="form-control" required autocomplete="new-password">
+      </div>
+      <div class="col-sm-auto">
+        <button type="submit" class="btn btn-primary">{{ t('users.btn_create') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <table class="table mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>{{ t('users.col_username') }}</th>
+          <th>{{ t('users.col_role') }}</th>
+          <th>{{ t('users.col_created') }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="fw-semibold">{{ u.username }}{% if u.id == me.id %} <span class="text-secondary" style="font-size:12px">({{ t('users.you') }})</span>{% endif %}</td>
+          <td>
+            {% if u.is_owner %}
+              <span class="badge text-bg-primary">{{ t('users.badge_owner') }}</span>
+            {% else %}
+              <span class="badge text-bg-secondary">{{ t('users.badge_member') }}</span>
+            {% endif %}
+          </td>
+          <td><span style="font-size:12px;color:var(--t2)">{{ u.created_at | ts_date }}</span></td>
+          <td>
+            <div class="d-flex flex-wrap gap-2 justify-content-end">
+              <button type="button" class="btn btn-sm btn-outline-secondary"
+                      data-bs-toggle="modal" data-bs-target="#resetModal-{{ u.id }}">
+                {{ t('users.btn_reset_password') }}
+              </button>
+              {% set is_self = u.id == me.id %}
+              {% set is_last = users|length <= 1 %}
+              <form method="post" action="{{ url_for('delete_user', user_id=u.id) }}"
+                    onsubmit="return confirm({{ t('users.confirm_delete', username=u.username) | tojson }})">
+                <button class="btn btn-sm btn-outline-danger"
+                        {% if is_self or is_last %}
+                          disabled
+                          title="{{ t('users.cannot_delete_self') if is_self else t('users.cannot_delete_last') }}"
+                        {% endif %}>
+                  {{ t('users.btn_delete') }}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+{% for u in users %}
+<div class="modal fade" id="resetModal-{{ u.id }}" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('reset_user_password', user_id=u.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ t('users.reset_title', username=u.username) }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label small fw-medium">{{ t('users.label_new_password') }}</label>
+          <input type="password" name="password" class="form-control" required autocomplete="new-password">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ t('users.btn_cancel') }}</button>
+          <button type="submit" class="btn btn-primary">{{ t('users.btn_reset_password') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

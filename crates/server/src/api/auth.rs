@@ -65,7 +65,10 @@ pub async fn setup(
     }
 
     let hash = hash_password(&body.password).map_err(internal)?;
-    let admin_id = db::create_admin(&state.db, &body.username, &hash).await.map_err(internal)?;
+    // The very first admin (setup only ever runs once, see the admin_count
+    // guard above) is always the owner — subsequent accounts are created via
+    // POST /users by an existing owner and default to is_owner=false there.
+    let admin_id = db::create_admin(&state.db, &body.username, &hash, true).await.map_err(internal)?;
 
     if let Some(tz) = &body.timezone {
         if tz.parse::<chrono_tz::Tz>().is_ok() {
@@ -143,6 +146,7 @@ pub async fn get_me(
         "id": admin.id,
         "username": admin.username,
         "timezone": admin.timezone,
+        "is_owner": admin.is_owner,
     })))
 }
 

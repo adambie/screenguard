@@ -3,7 +3,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     middleware::{self, Next},
     response::Response,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
@@ -15,6 +15,7 @@ pub mod auth;
 pub mod agents;
 pub mod profiles;
 pub mod usage;
+pub mod users;
 
 pub fn router(state: Arc<AppState>) -> Router {
     let public = Router::new()
@@ -26,6 +27,10 @@ pub fn router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         // Auth (me)
         .route("/auth/me", get(auth::get_me).patch(auth::patch_me))
+        // User management (owner-only, enforced inside each handler)
+        .route("/users", get(users::list_users).post(users::create_user))
+        .route("/users/{id}", delete(users::delete_user))
+        .route("/users/{id}/reset-password", post(users::reset_password))
         // Agents
         .route("/agents", get(agents::list_agents))
         .route("/agents/{id}", get(agents::get_agent).patch(agents::patch_agent).delete(agents::delete_agent))

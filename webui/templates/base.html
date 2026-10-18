@@ -375,6 +375,17 @@
   {% block content %}{% endblock %}
 </div>
 
+{# Modals must live here, as a direct sibling of the content wrapper above —
+   not nested inside it. "body > * { position: relative; z-index: 1 }"
+   further up this file (for the ambient background glow) turns the content
+   wrapper into a stacking context; a modal nested inside it gets trapped in
+   that same context, so its backdrop (appended fresh to <body> by
+   bootstrap.js, i.e. AFTER this whole block) paints over it regardless of
+   the modal's own z-index — the dialog still renders but stops accepting
+   any clicks. Bootstrap's own docs recommend top-level modal markup for
+   exactly this class of bug. #}
+{% block modals %}{% endblock %}
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   (function() {
@@ -390,6 +401,17 @@
       setTheme(document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark');
     });
   })();
+
+  // Modal content is static markup, just shown/hidden — closing a modal
+  // (Cancel, X, backdrop click, Esc) does not clear whatever was typed into
+  // it, so reopening it later shows the stale value. Reset any form inside
+  // a modal once it has finished closing. Delegated on document since
+  // modals are shown/hidden dynamically, one listener covers all of them
+  // (present now and any added later).
+  document.addEventListener('hidden.bs.modal', function (e) {
+    var form = e.target.querySelector('form');
+    if (form) form.reset();
+  });
 </script>
 {% block scripts %}{% endblock %}
 <script>

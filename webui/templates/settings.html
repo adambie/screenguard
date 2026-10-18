@@ -51,6 +51,18 @@
       </div>
     </div>
   </div>
+
+  {% if me.is_owner %}
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">{{ t('settings.card_users') }}</div>
+      <div class="card-body">
+        <p class="text-secondary mb-3" style="font-size:13px">{{ t('settings.users_hint') }}</p>
+        <a href="{{ url_for('manage_users') }}" class="btn btn-outline-secondary">{{ t('settings.btn_manage_users') }}</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <script>

@@ -628,6 +628,69 @@ def settings():
     return render_template("settings.html", me=me, timezones=COMMON_TIMEZONES)
 
 
+# ── users ─────────────────────────────────────────────────────────────────────
+# Multiple admin accounts. Only the owner account (currently: the original
+# setup account) may manage other accounts — see /api/v1/users on the server,
+# which is the real security boundary. The is_owner check on the GET route
+# below is only for the UI (hiding the page/nav link from non-owners);
+# non-owners hitting the POST routes below still get a plain 403 from the
+# server API, they're not additionally blocked in Flask.
+
+@app.route("/settings/users")
+@require_login
+def manage_users():
+    r = api("GET", "/auth/me")
+    me = r.json() if r and r.ok else {}
+    if not me.get("is_owner"):
+        flash(t("flash.not_permitted"), "danger")
+        return redirect(url_for("settings"))
+    r = api("GET", "/users")
+    users = r.json().get("users", []) if r and r.ok else []
+    return render_template("manage_users.html", me=me, users=users)
+
+
+@app.route("/settings/users/create", methods=["POST"])
+@require_login
+def create_user():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    if username and password:
+        r = api("POST", "/users", json={"username": username, "password": password})
+        if r and r.status_code == 201:
+            flash(t("flash.user_created"), "success")
+        elif r and r.status_code == 409:
+            flash(t("flash.username_taken"), "danger")
+        else:
+            flash(t("flash.settings_error"), "danger")
+    return redirect(url_for("manage_users"))
+
+
+@app.route("/settings/users/<user_id>/reset-password", methods=["POST"])
+@require_login
+def reset_user_password(user_id):
+    password = request.form.get("password", "")
+    if password:
+        r = api("POST", f"/users/{user_id}/reset-password", json={"password": password})
+        flash(t("flash.password_reset") if (r and r.ok) else t("flash.settings_error"),
+              "success" if (r and r.ok) else "danger")
+    return redirect(url_for("manage_users"))
+
+
+@app.route("/settings/users/<user_id>/delete", methods=["POST"])
+@require_login
+def delete_user(user_id):
+    r = api("DELETE", f"/users/{user_id}")
+    if r and r.ok:
+        flash(t("flash.user_deleted"), "success")
+    elif r and r.status_code == 409:
+        code = r.json().get("code") if r else None
+        flash(t("flash.cannot_delete_self") if code == "self_delete" else t("flash.last_admin_error"),
+              "danger")
+    else:
+        flash(t("flash.settings_error"), "danger")
+    return redirect(url_for("manage_users"))
+
+
 # ── run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 6;
+const CURRENT_VERSION: i32 = 7;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -46,6 +46,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
             username        TEXT NOT NULL UNIQUE,
             password_hash   TEXT NOT NULL,
             timezone        TEXT NOT NULL DEFAULT 'UTC',
+            is_owner        INTEGER NOT NULL DEFAULT 0,
             created_at      INTEGER NOT NULL
         )",
         "CREATE TABLE IF NOT EXISTS agents (
@@ -187,10 +188,8 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     // ── Portable migrations (v7+) — run on BOTH SQLite and Postgres ───────────
     // Write in standard SQL only: no PRAGMA, no sqlite_master, no table recreation.
     // Add new entries here; increment CURRENT_VERSION at the top of this file.
-    //
-    // if v < 7 { apply_v7(pool).await?; v = 7; set_schema_version(pool, v).await?; }
+    if v < 7 { apply_v7(pool).await?; v = 7; set_schema_version(pool, v).await?; }
 
-    let _ = v; // suppress unused-variable warning until first portable migration lands
     Ok(())
 }
 
@@ -375,6 +374,30 @@ pub(crate) async fn apply_v6(pool: &DbPool) -> Result<()> {
     Ok(())
 }
 
+// Migration 7: add is_owner to admin_users, for multi-admin support. Only
+// user-management itself (create/delete/reset-password of OTHER accounts) is
+// gated by this flag — every account still has full access to the rest of
+// ScreenGuard. Backfills exactly the single earliest-created admin (correct
+// today, when this migration first runs there is exactly one row; still
+// correct if this table ever legitimately holds more rows before v7 lands),
+// not a blanket UPDATE, so a pre-existing admin keeps owner rights across the
+// upgrade while any admin created after this migration defaults to false via
+// create_admin's explicit parameter.
+pub(crate) async fn apply_v7(pool: &DbPool) -> Result<()> {
+    sqlx::query("ALTER TABLE admin_users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await
+        .ok();
+    sqlx::query(
+        "UPDATE admin_users SET is_owner = 1
+         WHERE id = (SELECT id FROM admin_users ORDER BY created_at ASC LIMIT 1)",
+    )
+    .execute(pool)
+    .await?;
+    tracing::info!("DB migration v7 applied (admin is_owner)");
+    Ok(())
+}
+
 // ── models ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,6 +407,7 @@ pub struct AdminUser {
     pub password_hash: String,
     pub created_at: i64,
     pub timezone: String,
+    pub is_owner: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,52 +498,87 @@ pub async fn admin_count(pool: &DbPool) -> Result<i64> {
         .await?)
 }
 
-pub async fn create_admin(pool: &DbPool, username: &str, password_hash: &str) -> Result<Uuid> {
+pub async fn create_admin(
+    pool: &DbPool,
+    username: &str,
+    password_hash: &str,
+    is_owner: bool,
+) -> Result<Uuid> {
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO admin_users (id, username, password_hash, created_at) VALUES ($1,$2,$3,$4)",
+        "INSERT INTO admin_users (id, username, password_hash, is_owner, created_at) VALUES ($1,$2,$3,$4,$5)",
     )
     .bind(id.to_string())
     .bind(username)
     .bind(password_hash)
+    .bind(is_owner as i32)
     .bind(Utc::now().timestamp())
     .execute(pool)
     .await?;
     Ok(id)
 }
 
+fn row_to_admin_user(r: sqlx::any::AnyRow) -> AdminUser {
+    AdminUser {
+        id: r.get::<String, _>("id").parse().unwrap_or_default(),
+        username: r.get("username"),
+        password_hash: r.get("password_hash"),
+        created_at: r.get("created_at"),
+        timezone: r.get("timezone"),
+        is_owner: r.get::<i32, _>("is_owner") != 0,
+    }
+}
+
 pub async fn get_admin_by_username(pool: &DbPool, username: &str) -> Result<Option<AdminUser>> {
     let row = sqlx::query(
-        "SELECT id, username, password_hash, created_at, timezone
+        "SELECT id, username, password_hash, created_at, timezone, is_owner
          FROM admin_users WHERE username=$1",
     )
     .bind(username)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| AdminUser {
-        id: r.get::<String, _>("id").parse().unwrap_or_default(),
-        username: r.get("username"),
-        password_hash: r.get("password_hash"),
-        created_at: r.get("created_at"),
-        timezone: r.get("timezone"),
-    }))
+    Ok(row.map(row_to_admin_user))
 }
 
 pub async fn get_admin_user_by_id(pool: &DbPool, id: Uuid) -> Result<Option<AdminUser>> {
     let row = sqlx::query(
-        "SELECT id, username, password_hash, created_at, timezone
+        "SELECT id, username, password_hash, created_at, timezone, is_owner
          FROM admin_users WHERE id=$1",
     )
     .bind(id.to_string())
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| AdminUser {
-        id: r.get::<String, _>("id").parse().unwrap_or_default(),
-        username: r.get("username"),
-        password_hash: r.get("password_hash"),
-        created_at: r.get("created_at"),
-        timezone: r.get("timezone"),
-    }))
+    Ok(row.map(row_to_admin_user))
+}
+
+pub async fn list_admins(pool: &DbPool) -> Result<Vec<AdminUser>> {
+    let rows = sqlx::query(
+        "SELECT id, username, password_hash, created_at, timezone, is_owner
+         FROM admin_users ORDER BY created_at ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(row_to_admin_user).collect())
+}
+
+/// Deletes an admin account. Callers are responsible for the last-admin
+/// lockout check (`admin_count`) before calling this — it does not check
+/// itself, so it stays a plain, unconditional delete at the DB layer.
+pub async fn delete_admin(pool: &DbPool, id: Uuid) -> Result<bool> {
+    let result = sqlx::query("DELETE FROM admin_users WHERE id=$1")
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn update_admin_password(pool: &DbPool, id: Uuid, password_hash: &str) -> Result<()> {
+    sqlx::query("UPDATE admin_users SET password_hash=$1 WHERE id=$2")
+        .bind(password_hash)
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn get_admin_timezone(pool: &DbPool) -> Result<String> {
@@ -1951,5 +2010,96 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    // ── multi-admin (is_owner) ──────────────────────────────────────────────
+
+    async fn test_pool_before_v7() -> DbPool {
+        sqlx::any::install_default_drivers();
+        let pool = sqlx::pool::PoolOptions::<sqlx::Any>::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        // admin_users WITHOUT is_owner (pre-v7 shape).
+        sqlx::query("CREATE TABLE admin_users (id TEXT NOT NULL PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, timezone TEXT NOT NULL DEFAULT 'UTC', created_at INTEGER NOT NULL)").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE _schema_version (version INTEGER NOT NULL DEFAULT 0)").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO _schema_version (version) VALUES (6)").execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn new_admin_defaults_to_non_owner() {
+        let pool = test_pool().await;
+        create_admin(&pool, "steffen", "hash", true).await.unwrap();
+        let helper_id = create_admin(&pool, "helper", "hash", false).await.unwrap();
+
+        let owner = get_admin_by_username(&pool, "steffen").await.unwrap().unwrap();
+        let helper = get_admin_user_by_id(&pool, helper_id).await.unwrap().unwrap();
+        assert!(owner.is_owner);
+        assert!(!helper.is_owner);
+    }
+
+    #[tokio::test]
+    async fn migration_backfills_single_existing_admin_to_owner() {
+        let pool = test_pool_before_v7().await;
+        sqlx::query(
+            "INSERT INTO admin_users (id, username, password_hash, created_at) VALUES ($1,$2,$3,$4)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind("steffen")
+        .bind("hash")
+        .bind(1i64)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        apply_v7(&pool).await.unwrap();
+
+        let admin = get_admin_by_username(&pool, "steffen").await.unwrap().unwrap();
+        assert!(admin.is_owner);
+    }
+
+    #[tokio::test]
+    async fn list_admins_returns_all_admins_ordered_by_creation() {
+        let pool = test_pool().await;
+        create_admin(&pool, "first", "hash", true).await.unwrap();
+        create_admin(&pool, "second", "hash", false).await.unwrap();
+
+        let admins = list_admins(&pool).await.unwrap();
+        assert_eq!(admins.len(), 2);
+        assert_eq!(admins[0].username, "first");
+        assert_eq!(admins[1].username, "second");
+    }
+
+    #[tokio::test]
+    async fn admin_count_reflects_current_total() {
+        let pool = test_pool().await;
+        assert_eq!(admin_count(&pool).await.unwrap(), 0);
+        create_admin(&pool, "steffen", "hash", true).await.unwrap();
+        assert_eq!(admin_count(&pool).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_admin_removes_the_row() {
+        let pool = test_pool().await;
+        let id = create_admin(&pool, "helper", "hash", false).await.unwrap();
+        assert!(delete_admin(&pool, id).await.unwrap());
+        assert!(get_admin_user_by_id(&pool, id).await.unwrap().is_none());
+        // Deleting an id that no longer exists is a no-op, not an error.
+        assert!(!delete_admin(&pool, id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn update_admin_password_changes_hash_and_new_password_verifies() {
+        let pool = test_pool().await;
+        let id = create_admin(&pool, "helper", "old-hash", false).await.unwrap();
+
+        let new_hash = crate::api::auth::hash_password("new-password").unwrap();
+        update_admin_password(&pool, id, &new_hash).await.unwrap();
+
+        let admin = get_admin_user_by_id(&pool, id).await.unwrap().unwrap();
+        assert!(crate::api::auth::verify_password("new-password", &admin.password_hash).unwrap());
+        assert!(!crate::api::auth::verify_password("old-password", &admin.password_hash).unwrap());
     }
 }
