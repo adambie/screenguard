@@ -27,7 +27,8 @@ pub fn router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         // Auth (me)
         .route("/auth/me", get(auth::get_me).patch(auth::patch_me))
-        // User management (owner-only, enforced inside each handler)
+        .route("/auth/password", post(auth::change_password))
+        // User management (any admin)
         .route("/users", get(users::list_users).post(users::create_user))
         .route("/users/{id}", delete(users::delete_user))
         .route("/users/{id}/reset-password", post(users::reset_password))
@@ -89,6 +90,138 @@ async fn require_auth(
     .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?
     .claims;
 
+    // Re-check the account on every request: a deleted admin's still-valid token
+    // must stop working immediately, and an admin whose password was chosen by
+    // someone else may do nothing but set their own.
+    let admin_id: uuid::Uuid = claims.sub.parse()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    let admin = crate::db::get_admin_user_by_id(&state.db, admin_id)
+        .await
+        .map_err(auth::internal)?
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    let path = req.uri().path();
+    let allowed_before_change = path.ends_with("/auth/password")
+        || (path.ends_with("/auth/me") && req.method() == axum::http::Method::GET);
+    if admin.must_change_password && !allowed_before_change {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "Password change required",
+                "code": "password_change_required",
+            })),
+        ));
+    }
+
     req.extensions_mut().insert(claims);
     Ok(next.run(req).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Method, Request as HttpRequest};
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    async fn app() -> Router {
+        let pool = crate::db::open_in_memory().await;
+        router(AppState::new(pool, "test-secret".into(), 1))
+    }
+
+    async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+        let mut req = HttpRequest::builder().method(method).uri(format!("/api/v1{path}"));
+        if let Some(t) = token {
+            req = req.header("authorization", format!("Bearer {t}"));
+        }
+        let req = match body {
+            Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())),
+            None => req.body(Body::empty()),
+        }
+        .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    async fn login(app: &Router, username: &str, password: &str) -> (StatusCode, Value) {
+        call(app, Method::POST, "/auth/login", None, Some(json!({ "username": username, "password": password }))).await
+    }
+
+    #[tokio::test]
+    async fn multi_admin_flow() {
+        let app = app().await;
+        let (s, _) = call(&app, Method::POST, "/auth/setup", None,
+            Some(json!({ "username": "mom", "password": "pw1", "timezone": "Europe/Warsaw" }))).await;
+        assert_eq!(s, StatusCode::CREATED);
+        let (_, body) = login(&app, "mom", "pw1").await;
+        assert_eq!(body["must_change_password"], false);
+        let mom = body["token"].as_str().unwrap().to_string();
+
+        // Any admin can add another; the new account inherits the installation timezone.
+        let (s, created) = call(&app, Method::POST, "/users", Some(&mom),
+            Some(json!({ "username": " dad ", "password": "temp" }))).await;
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(created["username"], "dad");
+        let dad_id = created["id"].as_str().unwrap().to_string();
+
+        // First login with the temporary password: everything but GET /auth/me
+        // and the password change is blocked.
+        let (_, body) = login(&app, "dad", "temp").await;
+        assert_eq!(body["must_change_password"], true);
+        let dad = body["token"].as_str().unwrap().to_string();
+        let (s, me) = call(&app, Method::GET, "/auth/me", Some(&dad), None).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(me["timezone"], "Europe/Warsaw");
+        let (s, body) = call(&app, Method::GET, "/profiles", Some(&dad), None).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        assert_eq!(body["code"], "password_change_required");
+        let (s, _) = call(&app, Method::PATCH, "/auth/me", Some(&dad), Some(json!({ "timezone": "UTC" }))).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+
+        // Setting their own password (proving the temporary one) unlocks the account.
+        let (s, _) = call(&app, Method::POST, "/auth/password", Some(&dad),
+            Some(json!({ "current_password": "temp", "new_password": "dadpw" }))).await;
+        assert_eq!(s, StatusCode::OK);
+        let (s, _) = call(&app, Method::GET, "/profiles", Some(&dad), None).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(login(&app, "dad", "temp").await.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(login(&app, "dad", "dadpw").await.1["must_change_password"], false);
+
+        // A later change requires the current password.
+        let (s, body) = call(&app, Method::POST, "/auth/password", Some(&dad),
+            Some(json!({ "current_password": "wrong", "new_password": "x" }))).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        assert_eq!(body["code"], "wrong_password");
+
+        // Timezone changed by either admin applies installation-wide.
+        let (s, _) = call(&app, Method::PATCH, "/auth/me", Some(&dad), Some(json!({ "timezone": "Europe/Berlin" }))).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(call(&app, Method::GET, "/auth/me", Some(&mom), None).await.1["timezone"], "Europe/Berlin");
+
+        // No self-delete / self-reset.
+        let (s, body) = call(&app, Method::DELETE, &format!("/users/{dad_id}"), Some(&dad), None).await;
+        assert_eq!((s, body["code"].as_str()), (StatusCode::CONFLICT, Some("self_delete")));
+        let (s, body) = call(&app, Method::POST, &format!("/users/{dad_id}/reset-password"), Some(&dad),
+            Some(json!({ "password": "p" }))).await;
+        assert_eq!((s, body["code"].as_str()), (StatusCode::CONFLICT, Some("self_reset")));
+
+        // A reset by another admin re-arms the forced change.
+        let (s, _) = call(&app, Method::POST, &format!("/users/{dad_id}/reset-password"), Some(&mom),
+            Some(json!({ "password": "temp2" }))).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(call(&app, Method::GET, "/profiles", Some(&dad), None).await.0, StatusCode::FORBIDDEN);
+        // A session that was already open can't take over the account: it
+        // doesn't know the new temporary password.
+        let (s, body) = call(&app, Method::POST, "/auth/password", Some(&dad),
+            Some(json!({ "current_password": "dadpw", "new_password": "mine" }))).await;
+        assert_eq!((s, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("wrong_password")));
+
+        // Deleting an admin revokes their still-unexpired token immediately.
+        let (s, _) = call(&app, Method::DELETE, &format!("/users/{dad_id}"), Some(&mom), None).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(call(&app, Method::GET, "/auth/me", Some(&dad), None).await.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(call(&app, Method::GET, "/users", Some(&mom), None).await.1["users"].as_array().unwrap().len(), 1);
+    }
 }

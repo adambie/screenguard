@@ -11,53 +11,32 @@ use crate::api::auth::{self, internal, not_found, Claims};
 use crate::db;
 use crate::state::AppState;
 
-// ── user management (owner-only) ────────────────────────────────────────────
+// ── user management ──────────────────────────────────────────────────────────
 //
-// Every admin account has full access to the rest of ScreenGuard's API —
-// this module is the one exception: creating, listing, deleting, and
-// resetting the password of OTHER accounts is gated to whichever account
-// has `is_owner = true` (today: exactly the original account from setup).
+// All admin accounts are equal: any admin can add, remove, or reset the
+// password of the others. Passwords set here are chosen by someone other than
+// the account holder, so they are flagged `must_change_password` and the
+// holder must replace them on first login (enforced in `require_auth`).
 
-/// Loads the caller's own admin row from `claims.sub` and rejects the
-/// request with 403 unless it is the owner. Looked up fresh from the DB on
-/// every call, not cached in the JWT — a revoked owner flag then takes
-/// effect immediately rather than only once the (potentially long-lived)
-/// token expires.
-async fn require_owner(
-    state: &AppState,
-    claims: &Claims,
-) -> Result<db::AdminUser, (StatusCode, Json<serde_json::Value>)> {
-    let id: Uuid = claims
+fn caller_id(claims: &Claims) -> Result<Uuid, (StatusCode, Json<serde_json::Value>)> {
+    claims
         .sub
         .parse()
-        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
-    let admin = db::get_admin_user_by_id(&state.db, id)
-        .await
-        .map_err(internal)?
-        .ok_or_else(not_found)?;
-    if !admin.is_owner {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Owner privileges required" })),
-        ));
-    }
-    Ok(admin)
+        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))
 }
 
 fn admin_json(a: &db::AdminUser) -> serde_json::Value {
     serde_json::json!({
         "id": a.id,
         "username": a.username,
-        "is_owner": a.is_owner,
+        "must_change_password": a.must_change_password,
         "created_at": a.created_at,
     })
 }
 
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
-    Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    require_owner(&state, &claims).await?;
     let admins = db::list_admins(&state.db).await.map_err(internal)?;
     Ok(Json(serde_json::json!({
         "users": admins.iter().map(admin_json).collect::<Vec<_>>(),
@@ -72,18 +51,16 @@ pub struct CreateUserBody {
 
 pub async fn create_user(
     State(state): State<Arc<AppState>>,
-    Extension(claims): Extension<Claims>,
     Json(body): Json<CreateUserBody>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
-    require_owner(&state, &claims).await?;
-
-    if body.username.trim().is_empty() || body.password.is_empty() {
+    let username = body.username.trim();
+    if username.is_empty() || body.password.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": "Username and password are required" })),
         ));
     }
-    if db::get_admin_by_username(&state.db, &body.username)
+    if db::get_admin_by_username(&state.db, username)
         .await
         .map_err(internal)?
         .is_some()
@@ -95,15 +72,12 @@ pub async fn create_user(
     }
 
     let hash = auth::hash_password(&body.password).map_err(internal)?;
-    // is_owner is always false here — never taken from the request body, so
-    // a caller can't smuggle owner status through this endpoint even if they
-    // somehow reached it without actually being an owner.
-    let id = db::create_admin(&state.db, &body.username, &hash, false)
+    let id = db::create_admin(&state.db, username, &hash, true)
         .await
         .map_err(internal)?;
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({ "id": id, "username": body.username, "is_owner": false })),
+        Json(serde_json::json!({ "id": id, "username": username })),
     ))
 }
 
@@ -112,17 +86,9 @@ pub async fn delete_user(
     Extension(claims): Extension<Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let caller = require_owner(&state, &claims).await?;
-
-    // The owner is the only account allowed to delete anything, so "delete my
-    // own account" only ever means the owner deleting themselves. With no
-    // ownership-transfer mechanism in this version, that would silently zero
-    // out every `is_owner=true` row while other accounts remain — locking
-    // user management for good, not just for the deleter. Block it outright
-    // rather than relying on the (separate) last-admin-overall check below,
-    // which wouldn't catch this since other, non-owner accounts can still
-    // exist.
-    if id == caller.id {
+    // Deleting yourself is almost always a mistake, and as the last admin it
+    // would reopen /auth/setup to anyone on the network.
+    if id == caller_id(&claims)? {
         return Err((
             StatusCode::CONFLICT,
             Json(serde_json::json!({
@@ -161,8 +127,18 @@ pub async fn reset_password(
     Path(id): Path<Uuid>,
     Json(body): Json<ResetPasswordBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    require_owner(&state, &claims).await?;
-
+    // Your own password goes through POST /auth/password (which checks the
+    // current one); resetting it here would also lock you behind the
+    // must-change flag.
+    if id == caller_id(&claims)? {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "error": "Use change password for your own account",
+                "code": "self_reset",
+            })),
+        ));
+    }
     if body.password.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -174,6 +150,6 @@ pub async fn reset_password(
     }
 
     let hash = auth::hash_password(&body.password).map_err(internal)?;
-    db::update_admin_password(&state.db, id, &hash).await.map_err(internal)?;
+    db::update_admin_password(&state.db, id, &hash, true).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "message": "Password reset" })))
 }

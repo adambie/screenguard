@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 7;
+const CURRENT_VERSION: i32 = 8;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -46,7 +46,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
             username        TEXT NOT NULL UNIQUE,
             password_hash   TEXT NOT NULL,
             timezone        TEXT NOT NULL DEFAULT 'UTC',
-            is_owner        INTEGER NOT NULL DEFAULT 0,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
             created_at      INTEGER NOT NULL
         )",
         "CREATE TABLE IF NOT EXISTS agents (
@@ -178,17 +178,27 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
         if v < 4 { apply_v4(pool).await?; v = 4; set_schema_version(pool, v).await?; }
         if v < 5 { apply_v5(pool).await?; v = 5; set_schema_version(pool, v).await?; }
         if v < 6 { apply_v6(pool).await?; v = 6; set_schema_version(pool, v).await?; }
-    } else if v < CURRENT_VERSION {
-        // Postgres fresh install: mark as current so portable migrations below
-        // start from the right baseline.
+    } else if v == 0 {
+        // Postgres fresh install: create_tables() already built the final schema,
+        // so mark as current and skip the portable migrations below.
         v = CURRENT_VERSION;
+        set_schema_version(pool, v).await?;
+    } else if v < 6 {
+        // Existing Postgres database: the SQLite-only migrations don't apply, but
+        // the portable ones below must still run (bumping straight to
+        // CURRENT_VERSION here would silently skip them).
+        v = 6;
         set_schema_version(pool, v).await?;
     }
 
     // ── Portable migrations (v7+) — run on BOTH SQLite and Postgres ───────────
     // Write in standard SQL only: no PRAGMA, no sqlite_master, no table recreation.
     // Add new entries here; increment CURRENT_VERSION at the top of this file.
-    if v < 7 { apply_v7(pool).await?; v = 7; set_schema_version(pool, v).await?; }
+    //
+    // v7 is intentionally unused: a pre-release fork build of multi-admin (#14)
+    // shipped a v7 (is_owner) that was dropped before merge. Skipping straight
+    // to v8 means such databases still receive the real migration.
+    if v < 8 { apply_v8(pool).await?; v = 8; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -374,27 +384,23 @@ pub(crate) async fn apply_v6(pool: &DbPool) -> Result<()> {
     Ok(())
 }
 
-// Migration 7: add is_owner to admin_users, for multi-admin support. Only
-// user-management itself (create/delete/reset-password of OTHER accounts) is
-// gated by this flag — every account still has full access to the rest of
-// ScreenGuard. Backfills exactly the single earliest-created admin (correct
-// today, when this migration first runs there is exactly one row; still
-// correct if this table ever legitimately holds more rows before v7 lands),
-// not a blanket UPDATE, so a pre-existing admin keeps owner rights across the
-// upgrade while any admin created after this migration defaults to false via
-// create_admin's explicit parameter.
-pub(crate) async fn apply_v7(pool: &DbPool) -> Result<()> {
-    sqlx::query("ALTER TABLE admin_users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0")
+// Migration 8: multi-admin support.
+// - must_change_password: set when an admin creates/resets another account, so the
+//   initial password chosen by someone else must be replaced on first login.
+// - The timezone is installation-wide (schedules are interpreted in it). It still
+//   lives on admin_users, but every row is kept identical; sync existing rows to
+//   the original admin's value.
+pub(crate) async fn apply_v8(pool: &DbPool) -> Result<()> {
+    sqlx::query("ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
         .execute(pool)
-        .await
-        .ok();
+        .await?;
     sqlx::query(
-        "UPDATE admin_users SET is_owner = 1
-         WHERE id = (SELECT id FROM admin_users ORDER BY created_at ASC LIMIT 1)",
+        "UPDATE admin_users SET timezone =
+         (SELECT timezone FROM admin_users ORDER BY created_at ASC LIMIT 1)",
     )
     .execute(pool)
     .await?;
-    tracing::info!("DB migration v7 applied (admin is_owner)");
+    tracing::info!("DB migration v8 applied (multi-admin)");
     Ok(())
 }
 
@@ -407,7 +413,7 @@ pub struct AdminUser {
     pub password_hash: String,
     pub created_at: i64,
     pub timezone: String,
-    pub is_owner: bool,
+    pub must_change_password: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -502,16 +508,20 @@ pub async fn create_admin(
     pool: &DbPool,
     username: &str,
     password_hash: &str,
-    is_owner: bool,
+    must_change_password: bool,
 ) -> Result<Uuid> {
     let id = Uuid::new_v4();
+    // New admins inherit the installation-wide timezone.
+    let timezone = get_admin_timezone(pool).await?;
     sqlx::query(
-        "INSERT INTO admin_users (id, username, password_hash, is_owner, created_at) VALUES ($1,$2,$3,$4,$5)",
+        "INSERT INTO admin_users (id, username, password_hash, timezone, must_change_password, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6)",
     )
     .bind(id.to_string())
     .bind(username)
     .bind(password_hash)
-    .bind(is_owner as i32)
+    .bind(timezone)
+    .bind(must_change_password as i32)
     .bind(Utc::now().timestamp())
     .execute(pool)
     .await?;
@@ -525,13 +535,13 @@ fn row_to_admin_user(r: sqlx::any::AnyRow) -> AdminUser {
         password_hash: r.get("password_hash"),
         created_at: r.get("created_at"),
         timezone: r.get("timezone"),
-        is_owner: r.get::<i32, _>("is_owner") != 0,
+        must_change_password: r.get::<i32, _>("must_change_password") != 0,
     }
 }
 
 pub async fn get_admin_by_username(pool: &DbPool, username: &str) -> Result<Option<AdminUser>> {
     let row = sqlx::query(
-        "SELECT id, username, password_hash, created_at, timezone, is_owner
+        "SELECT id, username, password_hash, created_at, timezone, must_change_password
          FROM admin_users WHERE username=$1",
     )
     .bind(username)
@@ -542,7 +552,7 @@ pub async fn get_admin_by_username(pool: &DbPool, username: &str) -> Result<Opti
 
 pub async fn get_admin_user_by_id(pool: &DbPool, id: Uuid) -> Result<Option<AdminUser>> {
     let row = sqlx::query(
-        "SELECT id, username, password_hash, created_at, timezone, is_owner
+        "SELECT id, username, password_hash, created_at, timezone, must_change_password
          FROM admin_users WHERE id=$1",
     )
     .bind(id.to_string())
@@ -553,7 +563,7 @@ pub async fn get_admin_user_by_id(pool: &DbPool, id: Uuid) -> Result<Option<Admi
 
 pub async fn list_admins(pool: &DbPool) -> Result<Vec<AdminUser>> {
     let rows = sqlx::query(
-        "SELECT id, username, password_hash, created_at, timezone, is_owner
+        "SELECT id, username, password_hash, created_at, timezone, must_change_password
          FROM admin_users ORDER BY created_at ASC",
     )
     .fetch_all(pool)
@@ -572,26 +582,37 @@ pub async fn delete_admin(pool: &DbPool, id: Uuid) -> Result<bool> {
     Ok(result.rows_affected() > 0)
 }
 
-pub async fn update_admin_password(pool: &DbPool, id: Uuid, password_hash: &str) -> Result<()> {
-    sqlx::query("UPDATE admin_users SET password_hash=$1 WHERE id=$2")
+/// Sets a new password. `must_change_password` is true when someone else chose
+/// it (admin reset) and false when the account owner set it themselves.
+pub async fn update_admin_password(
+    pool: &DbPool,
+    id: Uuid,
+    password_hash: &str,
+    must_change_password: bool,
+) -> Result<()> {
+    sqlx::query("UPDATE admin_users SET password_hash=$1, must_change_password=$2 WHERE id=$3")
         .bind(password_hash)
+        .bind(must_change_password as i32)
         .bind(id.to_string())
         .execute(pool)
         .await?;
     Ok(())
 }
 
+/// The installation-wide timezone schedules are interpreted in. Every admin row
+/// carries the same value; read the original admin's for determinism.
 pub async fn get_admin_timezone(pool: &DbPool) -> Result<String> {
-    let tz: Option<String> = sqlx::query_scalar("SELECT timezone FROM admin_users LIMIT 1")
+    let tz: Option<String> =
+        sqlx::query_scalar("SELECT timezone FROM admin_users ORDER BY created_at ASC LIMIT 1")
         .fetch_optional(pool)
         .await?;
     Ok(tz.unwrap_or_else(|| "UTC".to_string()))
 }
 
-pub async fn update_admin_timezone(pool: &DbPool, admin_id: Uuid, timezone: &str) -> Result<()> {
-    sqlx::query("UPDATE admin_users SET timezone=$1 WHERE id=$2")
+/// Sets the installation-wide timezone (on every admin row, see `get_admin_timezone`).
+pub async fn set_admin_timezone(pool: &DbPool, timezone: &str) -> Result<()> {
+    sqlx::query("UPDATE admin_users SET timezone=$1")
         .bind(timezone)
-        .bind(admin_id.to_string())
         .execute(pool)
         .await?;
     Ok(())
@@ -1642,6 +1663,21 @@ pub fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M").ok()
 }
 
+/// Fresh, fully migrated in-memory SQLite database for tests.
+#[cfg(test)]
+pub(crate) async fn open_in_memory() -> DbPool {
+    sqlx::any::install_default_drivers();
+    let pool = sqlx::pool::PoolOptions::<sqlx::Any>::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await.unwrap();
+    create_tables(&pool).await.unwrap();
+    run_migrations(&pool, true).await.unwrap();
+    pool
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1650,16 +1686,7 @@ mod tests {
     use common::models::LocalUser;
 
     async fn test_pool() -> DbPool {
-        sqlx::any::install_default_drivers();
-        let pool = sqlx::pool::PoolOptions::<sqlx::Any>::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await.unwrap();
-        create_tables(&pool).await.unwrap();
-        run_migrations(&pool, true).await.unwrap();
-        pool
+        open_in_memory().await
     }
 
     async fn test_pool_before_v5() -> DbPool {
@@ -2012,59 +2039,84 @@ mod tests {
         .unwrap()
     }
 
-    // ── multi-admin (is_owner) ──────────────────────────────────────────────
+    // ── multi-admin ─────────────────────────────────────────────────────────
 
-    async fn test_pool_before_v7() -> DbPool {
+    async fn test_pool_before_v8() -> DbPool {
         sqlx::any::install_default_drivers();
         let pool = sqlx::pool::PoolOptions::<sqlx::Any>::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
             .unwrap();
-        // admin_users WITHOUT is_owner (pre-v7 shape).
+        // admin_users WITHOUT must_change_password (pre-v8 shape).
         sqlx::query("CREATE TABLE admin_users (id TEXT NOT NULL PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, timezone TEXT NOT NULL DEFAULT 'UTC', created_at INTEGER NOT NULL)").execute(&pool).await.unwrap();
-        sqlx::query("CREATE TABLE _schema_version (version INTEGER NOT NULL DEFAULT 0)").execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO _schema_version (version) VALUES (6)").execute(&pool).await.unwrap();
         pool
     }
 
-    #[tokio::test]
-    async fn new_admin_defaults_to_non_owner() {
-        let pool = test_pool().await;
-        create_admin(&pool, "steffen", "hash", true).await.unwrap();
-        let helper_id = create_admin(&pool, "helper", "hash", false).await.unwrap();
-
-        let owner = get_admin_by_username(&pool, "steffen").await.unwrap().unwrap();
-        let helper = get_admin_user_by_id(&pool, helper_id).await.unwrap().unwrap();
-        assert!(owner.is_owner);
-        assert!(!helper.is_owner);
+    async fn insert_legacy_admin(pool: &DbPool, username: &str, timezone: &str, created_at: i64) {
+        sqlx::query(
+            "INSERT INTO admin_users (id, username, password_hash, timezone, created_at) VALUES ($1,$2,$3,$4,$5)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(username)
+        .bind("hash")
+        .bind(timezone)
+        .bind(created_at)
+        .execute(pool)
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
-    async fn migration_backfills_single_existing_admin_to_owner() {
-        let pool = test_pool_before_v7().await;
-        sqlx::query(
-            "INSERT INTO admin_users (id, username, password_hash, created_at) VALUES ($1,$2,$3,$4)",
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind("steffen")
-        .bind("hash")
-        .bind(1i64)
-        .execute(&pool)
-        .await
-        .unwrap();
+    async fn create_admin_stores_must_change_password() {
+        let pool = test_pool().await;
+        create_admin(&pool, "first", "hash", false).await.unwrap();
+        let helper_id = create_admin(&pool, "helper", "hash", true).await.unwrap();
 
-        apply_v7(&pool).await.unwrap();
+        let first = get_admin_by_username(&pool, "first").await.unwrap().unwrap();
+        let helper = get_admin_user_by_id(&pool, helper_id).await.unwrap().unwrap();
+        assert!(!first.must_change_password);
+        assert!(helper.must_change_password);
+    }
 
-        let admin = get_admin_by_username(&pool, "steffen").await.unwrap().unwrap();
-        assert!(admin.is_owner);
+    #[tokio::test]
+    async fn migration_v8_adds_flag_and_syncs_timezone_to_original_admin() {
+        let pool = test_pool_before_v8().await;
+        insert_legacy_admin(&pool, "original", "Europe/Warsaw", 1).await;
+        insert_legacy_admin(&pool, "later", "UTC", 2).await;
+
+        apply_v8(&pool).await.unwrap();
+
+        for name in ["original", "later"] {
+            let a = get_admin_by_username(&pool, name).await.unwrap().unwrap();
+            assert_eq!(a.timezone, "Europe/Warsaw");
+            assert!(!a.must_change_password);
+        }
+    }
+
+    #[tokio::test]
+    async fn timezone_is_installation_wide() {
+        let pool = test_pool().await;
+        let first = create_admin(&pool, "first", "hash", false).await.unwrap();
+        set_admin_timezone(&pool, "Europe/Berlin").await.unwrap();
+
+        // New admins inherit it...
+        let second = create_admin(&pool, "second", "hash", true).await.unwrap();
+        assert_eq!(get_admin_user_by_id(&pool, second).await.unwrap().unwrap().timezone, "Europe/Berlin");
+
+        // ...and a change by anyone applies to everyone.
+        set_admin_timezone(&pool, "America/New_York").await.unwrap();
+        assert_eq!(get_admin_timezone(&pool).await.unwrap(), "America/New_York");
+        for id in [first, second] {
+            assert_eq!(get_admin_user_by_id(&pool, id).await.unwrap().unwrap().timezone, "America/New_York");
+        }
     }
 
     #[tokio::test]
     async fn list_admins_returns_all_admins_ordered_by_creation() {
         let pool = test_pool().await;
-        create_admin(&pool, "first", "hash", true).await.unwrap();
-        create_admin(&pool, "second", "hash", false).await.unwrap();
+        create_admin(&pool, "first", "hash", false).await.unwrap();
+        create_admin(&pool, "second", "hash", true).await.unwrap();
 
         let admins = list_admins(&pool).await.unwrap();
         assert_eq!(admins.len(), 2);
@@ -2076,14 +2128,14 @@ mod tests {
     async fn admin_count_reflects_current_total() {
         let pool = test_pool().await;
         assert_eq!(admin_count(&pool).await.unwrap(), 0);
-        create_admin(&pool, "steffen", "hash", true).await.unwrap();
+        create_admin(&pool, "first", "hash", false).await.unwrap();
         assert_eq!(admin_count(&pool).await.unwrap(), 1);
     }
 
     #[tokio::test]
     async fn delete_admin_removes_the_row() {
         let pool = test_pool().await;
-        let id = create_admin(&pool, "helper", "hash", false).await.unwrap();
+        let id = create_admin(&pool, "helper", "hash", true).await.unwrap();
         assert!(delete_admin(&pool, id).await.unwrap());
         assert!(get_admin_user_by_id(&pool, id).await.unwrap().is_none());
         // Deleting an id that no longer exists is a no-op, not an error.
@@ -2091,15 +2143,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_admin_password_changes_hash_and_new_password_verifies() {
+    async fn update_admin_password_changes_hash_and_flag() {
         let pool = test_pool().await;
-        let id = create_admin(&pool, "helper", "old-hash", false).await.unwrap();
+        let id = create_admin(&pool, "helper", "old-hash", true).await.unwrap();
 
         let new_hash = crate::api::auth::hash_password("new-password").unwrap();
-        update_admin_password(&pool, id, &new_hash).await.unwrap();
+        update_admin_password(&pool, id, &new_hash, false).await.unwrap();
 
         let admin = get_admin_user_by_id(&pool, id).await.unwrap().unwrap();
         assert!(crate::api::auth::verify_password("new-password", &admin.password_hash).unwrap());
         assert!(!crate::api::auth::verify_password("old-password", &admin.password_hash).unwrap());
+        assert!(!admin.must_change_password);
+
+        update_admin_password(&pool, id, &new_hash, true).await.unwrap();
+        assert!(get_admin_user_by_id(&pool, id).await.unwrap().unwrap().must_change_password);
     }
 }

@@ -24,6 +24,8 @@ pub struct SetupBody {
 pub struct LoginResponse {
     pub token: String,
     pub expires_at: String,
+    /// The password was set by another admin; it must be changed before anything else.
+    pub must_change_password: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -65,14 +67,11 @@ pub async fn setup(
     }
 
     let hash = hash_password(&body.password).map_err(internal)?;
-    // The very first admin (setup only ever runs once, see the admin_count
-    // guard above) is always the owner — subsequent accounts are created via
-    // POST /users by an existing owner and default to is_owner=false there.
-    let admin_id = db::create_admin(&state.db, &body.username, &hash, true).await.map_err(internal)?;
+    db::create_admin(&state.db, &body.username, &hash, false).await.map_err(internal)?;
 
     if let Some(tz) = &body.timezone {
         if tz.parse::<chrono_tz::Tz>().is_ok() {
-            let _ = db::update_admin_timezone(&state.db, admin_id, tz).await;
+            let _ = db::set_admin_timezone(&state.db, tz).await;
         }
     }
 
@@ -105,7 +104,7 @@ pub async fn login(
         &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
     ).map_err(internal)?;
 
-    Ok(Json(LoginResponse { token, expires_at }))
+    Ok(Json(LoginResponse { token, expires_at, must_change_password: admin.must_change_password }))
 }
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
@@ -146,7 +145,7 @@ pub async fn get_me(
         "id": admin.id,
         "username": admin.username,
         "timezone": admin.timezone,
-        "is_owner": admin.is_owner,
+        "must_change_password": admin.must_change_password,
     })))
 }
 
@@ -157,17 +156,51 @@ pub struct PatchMeBody {
 
 pub async fn patch_me(
     State(state): State<Arc<AppState>>,
-    Extension(claims): Extension<Claims>,
     Json(body): Json<PatchMeBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let id: uuid::Uuid = claims.sub.parse()
-        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    // The timezone is installation-wide, not per admin.
     if let Some(tz) = &body.timezone {
         if tz.parse::<chrono_tz::Tz>().is_err() {
             return Err((StatusCode::UNPROCESSABLE_ENTITY,
                 Json(serde_json::json!({ "error": "Invalid timezone" }))));
         }
-        db::update_admin_timezone(&state.db, id, tz).await.map_err(internal)?;
+        db::set_admin_timezone(&state.db, tz).await.map_err(internal)?;
     }
     Ok(Json(serde_json::json!({ "message": "Profile updated" })))
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordBody {
+    /// Always required, including the forced change after a reset: otherwise any
+    /// session still open on the account (e.g. a kid on a parent's logged-in
+    /// browser) could pick the new password instead of the holder.
+    pub current_password: String,
+    pub new_password: String,
+}
+
+pub async fn change_password(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<ChangePasswordBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let id: uuid::Uuid = claims.sub.parse()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid token" }))))?;
+    let admin = db::get_admin_user_by_id(&state.db, id)
+        .await.map_err(internal)?
+        .ok_or_else(not_found)?;
+
+    if body.new_password.is_empty() {
+        return Err((StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "New password is required" }))));
+    }
+    if !verify_password(&body.current_password, &admin.password_hash).map_err(internal)? {
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
+            "error": "Current password is incorrect",
+            "code": "wrong_password",
+        }))));
+    }
+
+    let hash = hash_password(&body.new_password).map_err(internal)?;
+    db::update_admin_password(&state.db, id, &hash, false).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "message": "Password changed" })))
 }

@@ -152,8 +152,18 @@ def api(method, path, **kwargs):
                              timeout=5, **kwargs)
         if r.status_code == 401:
             g.session_expired = True
+        elif r.status_code == 403 and _error_code(r) == "password_change_required":
+            # Another admin reset our password while we were logged in.
+            session["must_change_password"] = True
         return r
     except requests.ConnectionError:
+        return None
+
+
+def _error_code(r):
+    try:
+        return r.json().get("code")
+    except ValueError:
         return None
 
 
@@ -162,12 +172,18 @@ def require_login(f):
     def wrapper(*args, **kwargs):
         if "token" not in session:
             return redirect(url_for("login"))
+        # The server refuses everything else until the password set by another
+        # admin is replaced; send the user straight to the form.
+        if session.get("must_change_password") and request.endpoint != "change_password":
+            return redirect(url_for("change_password"))
         g.session_expired = False
         result = f(*args, **kwargs)
         if g.session_expired:
             session.clear()
             flash(t("flash.session_expired"), "warning")
             return redirect(url_for("login"))
+        if session.get("must_change_password") and request.endpoint != "change_password":
+            return redirect(url_for("change_password"))
         return result
     return wrapper
 
@@ -226,6 +242,9 @@ def login():
                     session.permanent = True
                 session["token"] = data["token"]
                 session["username"] = username
+                if data.get("must_change_password"):
+                    session["must_change_password"] = True
+                    return redirect(url_for("change_password"))
                 return redirect(url_for("dashboard"))
             else:
                 flash(t("flash.invalid_credentials"), "danger")
@@ -628,22 +647,41 @@ def settings():
     return render_template("settings.html", me=me, timezones=COMMON_TIMEZONES)
 
 
+@app.route("/settings/password", methods=["GET", "POST"])
+@require_login
+def change_password():
+    forced = bool(session.get("must_change_password"))
+    if request.method == "POST":
+        new = request.form.get("new_password", "")
+        if new != request.form.get("confirm_password", ""):
+            flash(t("flash.password_mismatch"), "danger")
+            return redirect(url_for("change_password"))
+        r = api("POST", "/auth/password", json={
+            "current_password": request.form.get("current_password", ""),
+            "new_password": new,
+        })
+        if r and r.ok:
+            session.pop("must_change_password", None)
+            flash(t("flash.password_changed"), "success")
+            return redirect(url_for("dashboard") if forced else url_for("settings"))
+        if r is not None and _error_code(r) == "wrong_password":
+            flash(t("flash.wrong_password"), "danger")
+        else:
+            flash(t("flash.settings_error"), "danger")
+        return redirect(url_for("change_password"))
+    return render_template("change_password.html", forced=forced)
+
+
 # ── users ─────────────────────────────────────────────────────────────────────
-# Multiple admin accounts. Only the owner account (currently: the original
-# setup account) may manage other accounts — see /api/v1/users on the server,
-# which is the real security boundary. The is_owner check on the GET route
-# below is only for the UI (hiding the page/nav link from non-owners);
-# non-owners hitting the POST routes below still get a plain 403 from the
-# server API, they're not additionally blocked in Flask.
+# Multiple admin accounts, all equal: any admin can manage the others.
+# Passwords set here are temporary — the server makes the account holder
+# replace them on first login.
 
 @app.route("/settings/users")
 @require_login
 def manage_users():
     r = api("GET", "/auth/me")
     me = r.json() if r and r.ok else {}
-    if not me.get("is_owner"):
-        flash(t("flash.not_permitted"), "danger")
-        return redirect(url_for("settings"))
     r = api("GET", "/users")
     users = r.json().get("users", []) if r and r.ok else []
     return render_template("manage_users.html", me=me, users=users)
