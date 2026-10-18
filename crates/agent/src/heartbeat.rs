@@ -427,6 +427,8 @@ impl HeartbeatLoop {
                             entry.remaining_minutes as i64 * 60,
                             enforce_str(entry.enforce.clone()),
                             &lang,
+                            entry.limit_today_minutes.is_some()
+                                || entry.current_window_ends_at.is_some(),
                         ).await;
                     }
                 }

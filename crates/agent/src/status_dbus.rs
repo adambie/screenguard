@@ -10,6 +10,9 @@ struct PerUid {
     enforce: String,
     updated_at: u64,
     language: String,
+    /// False only when today has neither a daily limit nor a schedule window
+    /// capping the session, i.e. `remaining_seconds` is a placeholder, not a countdown.
+    limited: bool,
 }
 
 struct Shared {
@@ -32,6 +35,24 @@ impl AgentIface {
             None => (0i64, "allow".into(), 0u64, server_url, "en".into()),
         }
     }
+
+    /// Like `status`, plus whether a limit applies today. Separate method so trays
+    /// built against the old `Status` signature keep working across upgrades.
+    async fn status2(&self, uid: u32) -> (i64, String, u64, String, String, bool) {
+        let s = self.shared.lock().await;
+        let server_url = s.server_url.clone();
+        match s.per_uid.get(&uid) {
+            Some(u) => (
+                u.remaining_seconds,
+                u.enforce.clone(),
+                u.updated_at,
+                server_url,
+                u.language.clone(),
+                u.limited,
+            ),
+            None => (0i64, "allow".into(), 0u64, server_url, "en".into(), true),
+        }
+    }
 }
 
 pub struct Handle {
@@ -40,7 +61,14 @@ pub struct Handle {
 }
 
 impl Handle {
-    pub async fn update_uid(&self, uid: u32, remaining_seconds: i64, enforce: &str, language: &str) {
+    pub async fn update_uid(
+        &self,
+        uid: u32,
+        remaining_seconds: i64,
+        enforce: &str,
+        language: &str,
+        limited: bool,
+    ) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -51,6 +79,7 @@ impl Handle {
             enforce: enforce.to_string(),
             updated_at: now,
             language: language.to_string(),
+            limited,
         });
     }
 }

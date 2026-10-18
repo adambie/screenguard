@@ -17,6 +17,37 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, StructureBuilder, Value};
 trait AgentInterface {
     /// Returns (remaining_seconds, enforce, updated_at, server_http_url, language).
     async fn status(&self, uid: u32) -> zbus::Result<(i64, String, u64, String, String)>;
+
+    /// Like `status`, plus whether a daily limit or schedule window applies today.
+    async fn status2(&self, uid: u32) -> zbus::Result<(i64, String, u64, String, String, bool)>;
+}
+
+/// Agent status as seen by the tray. `limited` is `None` when talking to an
+/// older agent that only exposes `Status`.
+struct AgentStatus {
+    remaining_seconds: i64,
+    enforce: String,
+    updated_at: u64,
+    server_url: String,
+    language: String,
+    limited: Option<bool>,
+}
+
+async fn fetch_status(agent: &AgentInterfaceProxy<'_>, uid: u32) -> zbus::Result<AgentStatus> {
+    if let Ok((remaining_seconds, enforce, updated_at, server_url, language, limited)) =
+        agent.status2(uid).await
+    {
+        return Ok(AgentStatus {
+            remaining_seconds,
+            enforce,
+            updated_at,
+            server_url,
+            language,
+            limited: Some(limited),
+        });
+    }
+    let (remaining_seconds, enforce, updated_at, server_url, language) = agent.status(uid).await?;
+    Ok(AgentStatus { remaining_seconds, enforce, updated_at, server_url, language, limited: None })
 }
 
 // ── tray state ────────────────────────────────────────────────────────────────
@@ -39,12 +70,29 @@ impl TrayState {
         }
     }
 
-    fn from_values(remaining_seconds: i64, enforce: &str, updated_at: u64, lang: &str) -> Self {
+    fn from_status(st: &AgentStatus) -> Self {
         let now_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        Self::from_values(
+            st.remaining_seconds,
+            &st.enforce,
+            st.updated_at,
+            &st.language,
+            st.limited,
+            now_ts,
+        )
+    }
 
+    fn from_values(
+        remaining_seconds: i64,
+        enforce: &str,
+        updated_at: u64,
+        lang: &str,
+        limited: Option<bool>,
+        now_ts: u64,
+    ) -> Self {
         if updated_at == 0 || now_ts.saturating_sub(updated_at) > 120 {
             return Self::passive(lang);
         }
@@ -66,7 +114,13 @@ impl TrayState {
                 tooltip: i18n::tooltip_warning(lang, &fmt_remaining(effective)),
             },
             _ => {
-                let (title, tooltip) = if effective > 2 * 3600 {
+                // Older agents don't report `limited`; the server sends a full
+                // day (1440 min) when nothing caps today, so treat ~24h as unlimited.
+                let unlimited = match limited {
+                    Some(l) => !l,
+                    None => effective > 23 * 3600,
+                };
+                let (title, tooltip) = if unlimited {
                     ("Unlimited".into(), i18n::tooltip_unlimited(lang).into())
                 } else {
                     let t = fmt_remaining(effective);
@@ -482,8 +536,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for an Active state before registering with the SNI watcher.
     // GNOME AppIndicator caches the initial status and drops Passive icons.
     let initial_state = loop {
-        if let Ok((remaining, enforce, updated_at, _, lang)) = agent.status(uid).await {
-            let s = TrayState::from_values(remaining, &enforce, updated_at, &lang);
+        if let Ok(st) = fetch_status(&agent, uid).await {
+            let s = TrayState::from_status(&st);
             if s.is_active() {
                 break s;
             }
@@ -526,15 +580,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         ticker.tick().await;
 
-        let (remaining, enforce, updated_at, url, lang) =
-            match agent.status(uid).await {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+        let st = match fetch_status(&agent, uid).await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
-        *server_url.lock().unwrap() = url;
-
-        let new_state = TrayState::from_values(remaining, &enforce, updated_at, &lang);
+        let new_state = TrayState::from_status(&st);
+        *server_url.lock().unwrap() = st.server_url;
         let mut current = state.lock().await;
 
         if new_state != *current {
@@ -562,5 +614,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = Sni::new_tool_tip(&emitter).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: u64 = 1_000_000;
+
+    fn state(remaining: i64, enforce: &str, limited: Option<bool>) -> TrayState {
+        TrayState::from_values(remaining, enforce, NOW, "en", limited, NOW)
+    }
+
+    #[test]
+    fn long_limit_shows_countdown_not_unlimited() {
+        // #25: a 9h daily limit must not be reported as "No time limit today".
+        let s = state(9 * 3600, "allow", Some(true));
+        assert_eq!(s.title, "9h 00m");
+        assert_eq!(s.tooltip, "9h 00m remaining today");
+    }
+
+    #[test]
+    fn no_limit_shows_unlimited() {
+        let s = state(1440 * 60, "allow", Some(false));
+        assert_eq!(s.title, "Unlimited");
+        assert_eq!(s.tooltip, "No time limit today");
+        assert_eq!(pixmap_label(&s), "U");
+    }
+
+    #[test]
+    fn legacy_agent_full_day_is_unlimited() {
+        assert_eq!(state(1440 * 60, "allow", None).title, "Unlimited");
+    }
+
+    #[test]
+    fn legacy_agent_long_limit_shows_countdown() {
+        assert_eq!(state(9 * 3600, "allow", None).title, "9h 00m");
+    }
+
+    #[test]
+    fn short_remaining_shows_minutes() {
+        let s = state(45 * 60 + 30, "allow", Some(true));
+        assert_eq!(s.title, "45m 30s");
+        assert_eq!(pixmap_label(&s), "45m");
+    }
+
+    #[test]
+    fn elapsed_time_since_update_is_subtracted() {
+        let s = TrayState::from_values(3600, "allow", NOW - 60, "en", Some(true), NOW);
+        assert_eq!(s.title, "59m 00s");
+    }
+
+    #[test]
+    fn warn_state() {
+        let s = state(5 * 60, "warn", Some(true));
+        assert_eq!(s.icon_name, "dialog-warning");
+        assert_eq!(s.tooltip, "Warning — 5m 00s remaining");
+    }
+
+    #[test]
+    fn lock_state() {
+        let s = state(0, "lock", Some(true));
+        assert_eq!(s.status, "NeedsAttention");
+        assert_eq!(s.title, "Locked");
+        assert_eq!(pixmap_label(&s), "L!");
+    }
+
+    #[test]
+    fn stale_or_missing_update_is_passive() {
+        assert!(!TrayState::from_values(3600, "allow", 0, "en", Some(true), NOW).is_active());
+        let stale = TrayState::from_values(3600, "allow", NOW - 121, "en", Some(true), NOW);
+        assert!(!stale.is_active());
+    }
+
+    #[test]
+    fn localized_tooltip() {
+        let s = TrayState::from_values(2 * 3600, "allow", NOW, "de", Some(true), NOW);
+        assert_eq!(s.tooltip, "Noch 2h 00m heute");
     }
 }
