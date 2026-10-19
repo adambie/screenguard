@@ -161,6 +161,8 @@ image: ghcr.io/adambie/screenguard-webui:v0.10.12
 
 Images are published to GHCR for `linux/amd64` and `linux/arm64` on every release. To build from source instead, use the commented `build:` lines in the compose file.
 
+**Changing the server port:** with host networking a `ports:` mapping has no effect, so set `SCREENGUARD_SERVER_PORT` on the server (e.g. `"8089"`) and point the webui's `SERVER_URL` at the same port (`http://127.0.0.1:8089`). Agents using mDNS pick up the new port automatically; agents with a manual `server_url` need it updated.
+
 ### Postgres — `docker-compose.postgres.yml`
 
 Spins up a Postgres container alongside the server. Useful if you want a proper relational backend or plan to move the database off the server host later. Uses bridge networking — **mDNS auto-discovery does not work**, so agents must be pointed at the server manually:
@@ -323,6 +325,7 @@ Environment variable overrides:
 | `SCREENGUARD_SERVER_DB` | SQLite database path (default: `/var/lib/screenguard/server.db`) |
 | `DATABASE_URL` | Full database URL — overrides `db_path`. Use `postgres://…` for Postgres or `sqlite:/path` for SQLite |
 | `SCREENGUARD_SERVER_JWT_SECRET` | JWT signing secret |
+| `SCREENGUARD_SERVER_PORT` | Listen port — overrides `listen_port` (default: `8080`) |
 
 ## Web UI
 

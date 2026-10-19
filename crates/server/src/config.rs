@@ -9,6 +9,7 @@ const DB_PATH_ENV: &str = "SCREENGUARD_SERVER_DB";
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 const JWT_SECRET_ENV: &str = "SCREENGUARD_SERVER_JWT_SECRET";
 const GITHUB_REPO_ENV: &str = "SCREENGUARD_GITHUB_REPO";
+const PORT_ENV: &str = "SCREENGUARD_SERVER_PORT";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -75,18 +76,60 @@ pub fn load(path: Option<&str>) -> Result<ServerConfig> {
         ServerConfig::default()
     };
 
-    if let Ok(db) = std::env::var(DB_PATH_ENV) {
+    apply_env_overrides(&mut config, |key| std::env::var(key).ok())?;
+    Ok(config)
+}
+
+/// Environment variables take precedence over the config file (handy in Docker,
+/// where the image ships no server.toml).
+fn apply_env_overrides(config: &mut ServerConfig, env: impl Fn(&str) -> Option<String>) -> Result<()> {
+    if let Some(db) = env(DB_PATH_ENV) {
         config.db_path = db;
     }
-    if let Ok(url) = std::env::var(DATABASE_URL_ENV) {
+    if let Some(url) = env(DATABASE_URL_ENV) {
         config.database_url = Some(url);
     }
-    if let Ok(secret) = std::env::var(JWT_SECRET_ENV) {
+    if let Some(secret) = env(JWT_SECRET_ENV) {
         config.jwt_secret = Some(secret);
     }
-    if let Ok(repo) = std::env::var(GITHUB_REPO_ENV) {
+    if let Some(repo) = env(GITHUB_REPO_ENV) {
         config.github_repo = repo;
     }
+    if let Some(port) = env(PORT_ENV) {
+        config.listen_port = port
+            .trim()
+            .parse()
+            .with_context(|| format!("Invalid {PORT_ENV}: {port:?}"))?;
+    }
+    Ok(())
+}
 
-    Ok(config)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn with_env(vars: &[(&str, &str)]) -> Result<ServerConfig> {
+        let vars: HashMap<String, String> =
+            vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let mut config = ServerConfig::default();
+        apply_env_overrides(&mut config, |k| vars.get(k).cloned())?;
+        Ok(config)
+    }
+
+    #[test]
+    fn port_defaults_to_8080() {
+        assert_eq!(with_env(&[]).unwrap().listen_port, 8080);
+    }
+
+    #[test]
+    fn port_env_overrides_default() {
+        assert_eq!(with_env(&[(PORT_ENV, "8089")]).unwrap().listen_port, 8089);
+    }
+
+    #[test]
+    fn invalid_port_env_is_an_error() {
+        assert!(with_env(&[(PORT_ENV, "eighty")]).is_err());
+        assert!(with_env(&[(PORT_ENV, "70000")]).is_err());
+    }
 }

@@ -27,6 +27,7 @@ services:
     environment:
       SCREENGUARD_SERVER_DB: /data/server.db
       SCREENGUARD_SERVER_JWT_SECRET: change-me-in-production  # set a strong random value
+      # SCREENGUARD_SERVER_PORT: "8089"  # if 8080 is taken; update the webui's SERVER_URL to match
     restart: unless-stopped
 
   webui:
