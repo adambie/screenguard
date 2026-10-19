@@ -571,15 +571,45 @@ pub async fn list_admins(pool: &DbPool) -> Result<Vec<AdminUser>> {
     Ok(rows.into_iter().map(row_to_admin_user).collect())
 }
 
-/// Deletes an admin account. Callers are responsible for the last-admin
-/// lockout check (`admin_count`) before calling this — it does not check
-/// itself, so it stays a plain, unconditional delete at the DB layer.
-pub async fn delete_admin(pool: &DbPool, id: Uuid) -> Result<bool> {
-    let result = sqlx::query("DELETE FROM admin_users WHERE id=$1")
-        .bind(id.to_string())
-        .execute(pool)
+#[derive(Debug, PartialEq, Eq)]
+pub enum DeleteAdmin {
+    Deleted,
+    NotFound,
+    /// Refused: it is the only admin left. With zero admins /auth/setup would
+    /// reopen to anyone on the network.
+    LastAdmin,
+}
+
+/// Deletes an admin account, never the last one — even when two admins delete
+/// each other at the same moment. A count-then-delete (or a DELETE with a COUNT
+/// subquery) races on Postgres, so first touch every admin row inside the
+/// transaction: that takes row locks on Postgres and the write lock on SQLite,
+/// serialising concurrent deletes so the second one sees the first's result.
+pub async fn delete_admin(pool: &DbPool, id: Uuid) -> Result<DeleteAdmin> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE admin_users SET username = username")
+        .execute(&mut *tx)
         .await?;
-    Ok(result.rows_affected() > 0)
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users")
+        .fetch_one(&mut *tx)
+        .await?;
+    let exists: Option<String> = sqlx::query_scalar("SELECT id FROM admin_users WHERE id=$1")
+        .bind(id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
+    let outcome = if exists.is_none() {
+        DeleteAdmin::NotFound
+    } else if count <= 1 {
+        DeleteAdmin::LastAdmin
+    } else {
+        sqlx::query("DELETE FROM admin_users WHERE id=$1")
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        DeleteAdmin::Deleted
+    };
+    tx.commit().await?;
+    Ok(outcome)
 }
 
 /// Sets a new password. `must_change_password` is true when someone else chose
@@ -2133,13 +2163,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_admin_removes_the_row() {
+    async fn delete_admin_removes_the_row_but_never_the_last() {
         let pool = test_pool().await;
+        let first = create_admin(&pool, "first", "hash", false).await.unwrap();
         let id = create_admin(&pool, "helper", "hash", true).await.unwrap();
-        assert!(delete_admin(&pool, id).await.unwrap());
+        assert_eq!(delete_admin(&pool, id).await.unwrap(), DeleteAdmin::Deleted);
         assert!(get_admin_user_by_id(&pool, id).await.unwrap().is_none());
-        // Deleting an id that no longer exists is a no-op, not an error.
-        assert!(!delete_admin(&pool, id).await.unwrap());
+        assert_eq!(delete_admin(&pool, id).await.unwrap(), DeleteAdmin::NotFound);
+        assert_eq!(delete_admin(&pool, first).await.unwrap(), DeleteAdmin::LastAdmin);
+        assert_eq!(admin_count(&pool).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_mutual_deletes_leave_one_admin() {
+        // File-backed so the pool really has several connections racing.
+        let dir = std::env::temp_dir().join(format!("sg-del-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        sqlx::any::install_default_drivers();
+        let url = format!("sqlite:{}?mode=rwc", dir.join("t.db").display());
+        let pool = sqlx::pool::PoolOptions::<sqlx::Any>::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await.unwrap();
+        create_tables(&pool).await.unwrap();
+        run_migrations(&pool, true).await.unwrap();
+
+        for _ in 0..20 {
+            let a = create_admin(&pool, &format!("a-{}", Uuid::new_v4()), "h", false).await.unwrap();
+            let b = create_admin(&pool, &format!("b-{}", Uuid::new_v4()), "h", false).await.unwrap();
+            let (ra, rb) = tokio::join!(delete_admin(&pool, a), delete_admin(&pool, b));
+            let outcomes = [ra.unwrap(), rb.unwrap()];
+            assert!(outcomes.contains(&DeleteAdmin::Deleted), "{outcomes:?}");
+            assert!(outcomes.contains(&DeleteAdmin::LastAdmin), "{outcomes:?}");
+            assert_eq!(admin_count(&pool).await.unwrap(), 1);
+            // Reset for the next round.
+            sqlx::query("DELETE FROM admin_users").execute(&pool).await.unwrap();
+        }
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

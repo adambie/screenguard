@@ -98,22 +98,17 @@ pub async fn delete_user(
         ));
     }
 
-    if db::get_admin_user_by_id(&state.db, id).await.map_err(internal)?.is_none() {
-        return Err(not_found());
-    }
-    let count = db::admin_count(&state.db).await.map_err(internal)?;
-    if count <= 1 {
-        return Err((
+    match db::delete_admin(&state.db, id).await.map_err(internal)? {
+        db::DeleteAdmin::Deleted => Ok(Json(serde_json::json!({ "message": "User deleted" }))),
+        db::DeleteAdmin::NotFound => Err(not_found()),
+        db::DeleteAdmin::LastAdmin => Err((
             StatusCode::CONFLICT,
             Json(serde_json::json!({
                 "error": "Cannot delete the last remaining admin account",
                 "code": "last_admin",
             })),
-        ));
+        )),
     }
-
-    db::delete_admin(&state.db, id).await.map_err(internal)?;
-    Ok(Json(serde_json::json!({ "message": "User deleted" })))
 }
 
 #[derive(Deserialize)]
