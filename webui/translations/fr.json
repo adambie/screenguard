@@ -123,7 +123,6 @@
   "agent.placeholder_display_name": "Nom affiché",
   "agent.btn_save_name": "Enregistrer",
   "agent.card_pending_approval": "En attente d'approbation",
-  "agent.pairing_code": "Code d'appairage :",
   "agent.btn_accept": "Accepter l'agent",
   "agent.card_managed_users": "Utilisateurs gérés",
   "agent.col_username": "Identifiant",
@@ -239,5 +238,15 @@
   "password.btn_save": "Enregistrer le mot de passe",
   "flash.password_changed": "Mot de passe modifié.",
   "flash.password_mismatch": "Les mots de passe ne correspondent pas.",
-  "flash.wrong_password": "Le mot de passe actuel est incorrect."
+  "flash.wrong_password": "Le mot de passe actuel est incorrect.",
+  "agents.status_pairing_requested": "Appairage demandé",
+  "agents.code_placeholder": "Code",
+  "agent.label_pairing_code": "Code d'appairage",
+  "agent.pairing_hint": "Saisissez le code d'appairage affiché sur cette machine. Pour l'y afficher, exécutez :",
+  "agent.pairing_not_connected": "L'agent n'est pas connecté pour le moment. Dès qu'il se reconnectera, il affichera un nouveau code d'appairage.",
+  "flash.wrong_pairing_code": "Code d'appairage incorrect ({attempts_left} essais restants).",
+  "flash.pairing_attempts_exhausted": "Trop de codes incorrects — l'agent affichera bientôt un nouveau code d'appairage.",
+  "flash.agent_not_waiting": "Cet agent n'attend pas d'approbation pour le moment. Vérifiez qu'il fonctionne, puis saisissez le code qu'il affiche actuellement.",
+  "flash.agent_accept_failed": "Impossible d'accepter l'agent : {error}",
+  "agent.pairing_hint_old": "Agents antérieurs à 0.10.17 :"
 }

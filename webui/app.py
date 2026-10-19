@@ -293,12 +293,23 @@ def agent_detail(agent_id):
 @app.route("/agents/<agent_id>/accept", methods=["POST"])
 @require_login
 def accept_agent(agent_id):
-    r = api("POST", f"/agents/{agent_id}/accept")
-    if r and r.ok:
+    code = request.form.get("pairing_code", "").strip()
+    r = api("POST", f"/agents/{agent_id}/accept", json={"pairing_code": code})
+    if r is not None and r.ok:
         flash(t("flash.agent_accepted"), "success")
+        return redirect(url_for("agents"))
+    err = r.json() if r is not None and r.headers.get("content-type", "").startswith("application/json") else {}
+    if err.get("code") == "wrong_code":
+        left = err.get("attempts_left", 0)
+        flash(t("flash.wrong_pairing_code", attempts_left=left) if left
+              else t("flash.pairing_attempts_exhausted"), "danger")
+    elif err.get("code") == "not_waiting":
+        flash(t("flash.agent_not_waiting"), "warning")
     else:
-        flash(t("flash.adjustment_failed", error=r.json().get('error') if r else 'no response'), "danger")
-    return redirect(url_for("agents"))
+        flash(t("flash.agent_accept_failed", error=err.get("error", "no response")), "danger")
+    # Back to wherever the code was entered (list or detail page), same site only.
+    ref = request.referrer or ""
+    return redirect(ref if ref.startswith(request.host_url) else url_for("agents"))
 
 
 @app.route("/agents/<agent_id>/delete", methods=["POST"])

@@ -123,7 +123,6 @@
   "agent.placeholder_display_name": "Anzeigename",
   "agent.btn_save_name": "Name speichern",
   "agent.card_pending_approval": "Genehmigung ausstehend",
-  "agent.pairing_code": "Kopplungscode:",
   "agent.btn_accept": "Agent akzeptieren",
   "agent.card_managed_users": "Verwaltete Benutzer",
   "agent.col_username": "Benutzername",
@@ -239,5 +238,15 @@
   "password.btn_save": "Passwort speichern",
   "flash.password_changed": "Passwort geändert.",
   "flash.password_mismatch": "Die Passwörter stimmen nicht überein.",
-  "flash.wrong_password": "Das aktuelle Passwort ist falsch."
+  "flash.wrong_password": "Das aktuelle Passwort ist falsch.",
+  "agents.status_pairing_requested": "Kopplung angefragt",
+  "agents.code_placeholder": "Code",
+  "agent.label_pairing_code": "Kopplungscode",
+  "agent.pairing_hint": "Geben Sie den auf diesem Gerät angezeigten Kopplungscode ein. Um ihn dort anzuzeigen, führen Sie aus:",
+  "agent.pairing_not_connected": "Der Agent ist gerade nicht verbunden. Sobald er sich wieder verbindet, zeigt er einen neuen Kopplungscode an.",
+  "flash.wrong_pairing_code": "Falscher Kopplungscode (noch {attempts_left} Versuche).",
+  "flash.pairing_attempts_exhausted": "Zu viele falsche Codes — der Agent zeigt in Kürze einen neuen Kopplungscode an.",
+  "flash.agent_not_waiting": "Dieser Agent wartet gerade nicht auf eine Freigabe. Stellen Sie sicher, dass er läuft, und geben Sie dann den aktuell angezeigten Code ein.",
+  "flash.agent_accept_failed": "Agent konnte nicht angenommen werden: {error}",
+  "agent.pairing_hint_old": "Agents älter als 0.10.17:"
 }

@@ -41,6 +41,8 @@
               <span class="badge text-bg-danger">{{ t('agents.status_pending_delete') }}</span>
             {% elif a.status == 'pending' %}
               <span class="badge text-bg-warning">{{ t('agents.status_pending') }}</span>
+            {% elif a.pairing_requested %}
+              <span class="badge text-bg-warning">{{ t('agents.status_pairing_requested') }}</span>
             {% elif a.online %}
               <span class="badge text-bg-success">{{ t('agents.status_online') }}</span>
             {% else %}
@@ -72,8 +74,11 @@
                 <button class="btn btn-outline-danger">{{ t('agents.btn_force_remove') }}</button>
               </form>
             {% else %}
-              {% if a.status == 'pending' %}
-                <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}">
+              {% if a.pairing_requested %}
+                <form method="post" action="{{ url_for('accept_agent', agent_id=a.id) }}" class="d-flex gap-1">
+                  <input name="pairing_code" class="form-control" required autocomplete="off"
+                         placeholder="{{ t('agents.code_placeholder') }}" maxlength="12"
+                         style="width:110px;text-transform:uppercase;letter-spacing:.06em">
                   <button class="btn btn-primary">{{ t('agents.btn_accept') }}</button>
                 </form>
               {% endif %}

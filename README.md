@@ -215,11 +215,13 @@ sudo firewall-cmd --reload
 
 2. **Create a profile**: in the web UI, go to Profiles → New profile. Set schedules and daily limits.
 
-3. **Pair an agent**: go to Agents. Each unpaired agent shows a pairing code in its logs:
+3. **Pair an agent**: the installer prints the agent's pairing code when it finishes. To show it again on the managed machine:
    ```
-   journalctl -u screenguard-agent -f
+   sudo screenguard-agent --show-pairing-code
+   # agents older than 0.10.17:
+   sudo journalctl -u screenguard-agent | grep 'PAIRING CODE' | tail -1
    ```
-   Accept the code in the web UI to pair the agent with the server.
+   In the web UI go to Agents, enter that code next to the machine and click Accept. The code proves you control the machine, so it is never shown in the web UI itself. It is valid for 5 minutes (the agent then issues a new one), and 5 wrong attempts make the agent start over with a fresh code.
 
 4. **Assign users**: on the agent detail page, assign each local user account to a profile.
 

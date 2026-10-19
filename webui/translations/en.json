@@ -125,7 +125,6 @@
   "agent.placeholder_display_name": "Display name",
   "agent.btn_save_name": "Save name",
   "agent.card_pending_approval": "Pending approval",
-  "agent.pairing_code": "Pairing code:",
   "agent.btn_accept": "Accept agent",
   "agent.card_managed_users": "Managed users",
   "agent.col_username": "Username",
@@ -258,5 +257,15 @@
   "password.btn_save": "Save password",
   "flash.password_changed": "Password changed.",
   "flash.password_mismatch": "The passwords don't match.",
-  "flash.wrong_password": "Current password is incorrect."
+  "flash.wrong_password": "Current password is incorrect.",
+  "agents.status_pairing_requested": "Pairing requested",
+  "agents.code_placeholder": "Code",
+  "agent.label_pairing_code": "Pairing code",
+  "agent.pairing_hint": "Enter the pairing code shown on that machine. To display it there, run:",
+  "agent.pairing_not_connected": "The agent isn't connected right now. Once it reconnects it will show a new pairing code.",
+  "flash.wrong_pairing_code": "Wrong pairing code ({attempts_left} attempts left).",
+  "flash.pairing_attempts_exhausted": "Too many wrong codes — the agent will show a new pairing code shortly.",
+  "flash.agent_not_waiting": "This agent isn't waiting for approval right now. Make sure it's running, then enter the code it currently shows.",
+  "flash.agent_accept_failed": "Failed to accept agent: {error}",
+  "agent.pairing_hint_old": "Agents older than 0.10.17:"
 }

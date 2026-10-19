@@ -123,7 +123,6 @@
   "agent.placeholder_display_name": "Nazwa wyświetlana",
   "agent.btn_save_name": "Zapisz nazwę",
   "agent.card_pending_approval": "Oczekuje na zatwierdzenie",
-  "agent.pairing_code": "Kod parowania:",
   "agent.btn_accept": "Zatwierdź agenta",
   "agent.card_managed_users": "Zarządzani użytkownicy",
   "agent.col_username": "Użytkownik",
@@ -239,5 +238,15 @@
   "password.btn_save": "Zapisz hasło",
   "flash.password_changed": "Hasło zostało zmienione.",
   "flash.password_mismatch": "Hasła nie są takie same.",
-  "flash.wrong_password": "Obecne hasło jest nieprawidłowe."
+  "flash.wrong_password": "Obecne hasło jest nieprawidłowe.",
+  "agents.status_pairing_requested": "Prośba o parowanie",
+  "agents.code_placeholder": "Kod",
+  "agent.label_pairing_code": "Kod parowania",
+  "agent.pairing_hint": "Wpisz kod parowania wyświetlany na tym komputerze. Aby go tam wyświetlić, uruchom:",
+  "agent.pairing_not_connected": "Agent nie jest teraz połączony. Po ponownym połączeniu wyświetli nowy kod parowania.",
+  "flash.wrong_pairing_code": "Nieprawidłowy kod parowania (pozostało prób: {attempts_left}).",
+  "flash.pairing_attempts_exhausted": "Zbyt wiele błędnych kodów — agent wkrótce wyświetli nowy kod parowania.",
+  "flash.agent_not_waiting": "Ten agent nie czeka teraz na zatwierdzenie. Upewnij się, że działa, a potem wpisz kod, który obecnie wyświetla.",
+  "flash.agent_accept_failed": "Nie udało się zaakceptować agenta: {error}",
+  "agent.pairing_hint_old": "Agenci starsi niż 0.10.17:"
 }

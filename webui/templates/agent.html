@@ -101,19 +101,24 @@
       </div>
     </div>
 
-    {% if agent.status == 'pending' %}
+    {% if agent.pairing_requested or agent.status == 'pending' %}
     <div class="card" style="border-color:rgba(217,119,6,.4)">
       <div class="card-header" style="color:var(--wa)">{{ t('agent.card_pending_approval') }}</div>
       <div class="card-body">
-        <p class="mb-3" style="font-size:13px;color:var(--t2)">
-          {{ t('agent.pairing_code') }}
-          <code style="font-size:15px;font-weight:700;color:var(--t1);letter-spacing:.06em">
-            {{ agent.pairing_code }}
-          </code>
-        </p>
-        <form method="post" action="{{ url_for('accept_agent', agent_id=agent.id) }}">
-          <button class="btn btn-primary">{{ t('agent.btn_accept') }}</button>
+        {% if agent.pairing_requested %}
+        <p class="mb-2" style="font-size:13px;color:var(--t2)">{{ t('agent.pairing_hint') }}</p>
+        <code class="d-block mb-2" style="font-size:12.5px">sudo screenguard-agent --show-pairing-code</code>
+        <p class="mb-1" style="font-size:12px;color:var(--t2)">{{ t('agent.pairing_hint_old') }}</p>
+        <code class="d-block mb-3" style="font-size:12px">sudo journalctl -u screenguard-agent | grep 'PAIRING CODE' | tail -1</code>
+        <form method="post" action="{{ url_for('accept_agent', agent_id=agent.id) }}" class="d-flex gap-2">
+          <input name="pairing_code" class="form-control" required autocomplete="off" autofocus
+                 placeholder="{{ t('agent.label_pairing_code') }}" maxlength="12"
+                 style="max-width:180px;text-transform:uppercase;letter-spacing:.06em">
+          <button class="btn btn-primary text-nowrap">{{ t('agent.btn_accept') }}</button>
         </form>
+        {% else %}
+        <p class="mb-0" style="font-size:13px;color:var(--t2)">{{ t('agent.pairing_not_connected') }}</p>
+        {% endif %}
       </div>
     </div>
     {% endif %}

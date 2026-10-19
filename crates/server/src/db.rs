@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 8;
+const CURRENT_VERSION: i32 = 9;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -58,6 +58,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
             status               TEXT NOT NULL DEFAULT 'pending'
                                  CHECK (status IN ('pending','paired','disabled','pending_delete')),
             auth_token_hash      TEXT,
+            token_verified       INTEGER NOT NULL DEFAULT 0,
             agent_version        TEXT,
             paired_at            INTEGER,
             last_seen_at         INTEGER,
@@ -199,6 +200,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     // shipped a v7 (is_owner) that was dropped before merge. Skipping straight
     // to v8 means such databases still receive the real migration.
     if v < 8 { apply_v8(pool).await?; v = 8; set_schema_version(pool, v).await?; }
+    if v < 9 { apply_v9(pool).await?; v = 9; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -401,6 +403,19 @@ pub(crate) async fn apply_v8(pool: &DbPool) -> Result<()> {
     .execute(pool)
     .await?;
     tracing::info!("DB migration v8 applied (multi-admin)");
+    Ok(())
+}
+
+// Migration 9: agent auth tokens are now verified on connect. Older servers
+// never checked them, and a double "accept" could overwrite the stored hash
+// with a token the agent never received — so existing pairings start
+// unverified and adopt the token they present on their first connect
+// (see `verify_agent_token`) instead of being locked out.
+pub(crate) async fn apply_v9(pool: &DbPool) -> Result<()> {
+    sqlx::query("ALTER TABLE agents ADD COLUMN token_verified INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await?;
+    tracing::info!("DB migration v9 applied (agent token verification)");
     Ok(())
 }
 
@@ -667,7 +682,7 @@ pub async fn upsert_agent_pending(
     let id = if let Some(id_str) = existing {
         sqlx::query(
             "UPDATE agents SET hostname=$1, timezone=$2, agent_version=$3, last_seen_at=$4,
-             status=CASE WHEN status='disabled' THEN 'disabled' ELSE 'pending' END
+             status=CASE WHEN status IN ('disabled','paired') THEN status ELSE 'pending' END
              WHERE machine_id=$5",
         )
         .bind(hostname)
@@ -737,7 +752,7 @@ pub async fn list_agents(pool: &DbPool) -> Result<Vec<Agent>> {
 pub async fn accept_agent(pool: &DbPool, id: Uuid, auth_token_hash: &str) -> Result<()> {
     let now = Utc::now().timestamp();
     sqlx::query(
-        "UPDATE agents SET status='paired', auth_token_hash=$1, paired_at=$2 WHERE id=$3",
+        "UPDATE agents SET status='paired', auth_token_hash=$1, token_verified=1, paired_at=$2 WHERE id=$3",
     )
     .bind(auth_token_hash)
     .bind(now)
@@ -745,6 +760,57 @@ pub async fn accept_agent(pool: &DbPool, id: Uuid, auth_token_hash: &str) -> Res
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TokenCheck {
+    Valid,
+    /// First connect of a pairing made before tokens were verified: the
+    /// presented token has been adopted as this agent's token.
+    Adopted,
+    /// Pre-verification pairing that presented no token: let through as before,
+    /// but nothing is adopted — an empty token must never become the credential.
+    UnverifiedNoToken,
+    Invalid,
+}
+
+/// Checks the bearer token (as its hash; `None` = no token sent) an agent
+/// presented when connecting.
+pub async fn verify_agent_token(pool: &DbPool, agent_id: Uuid, token_hash: Option<&str>) -> Result<TokenCheck> {
+    let row = sqlx::query("SELECT auth_token_hash, token_verified FROM agents WHERE id=$1")
+        .bind(agent_id.to_string())
+        .fetch_optional(pool)
+        .await?;
+    let Some(row) = row else { return Ok(TokenCheck::Invalid) };
+    let stored: Option<String> = row.get("auth_token_hash");
+    let verified = row.get::<i32, _>("token_verified") != 0;
+
+    let Some(token_hash) = token_hash else {
+        return Ok(if verified { TokenCheck::Invalid } else { TokenCheck::UnverifiedNoToken });
+    };
+    if stored.as_deref() == Some(token_hash) {
+        if !verified {
+            sqlx::query("UPDATE agents SET token_verified=1 WHERE id=$1")
+                .bind(agent_id.to_string())
+                .execute(pool)
+                .await?;
+        }
+        return Ok(TokenCheck::Valid);
+    }
+    if verified {
+        return Ok(TokenCheck::Invalid);
+    }
+    // Legacy pairing: adopt atomically, so only the first presenter wins.
+    let adopted = sqlx::query(
+        "UPDATE agents SET auth_token_hash=$1, token_verified=1 WHERE id=$2 AND token_verified=0",
+    )
+    .bind(token_hash)
+    .bind(agent_id.to_string())
+    .execute(pool)
+    .await?
+    .rows_affected()
+        > 0;
+    Ok(if adopted { TokenCheck::Adopted } else { TokenCheck::Invalid })
 }
 
 pub async fn update_agent_last_seen(pool: &DbPool, id: Uuid) -> Result<()> {
@@ -2160,6 +2226,69 @@ mod tests {
         assert_eq!(admin_count(&pool).await.unwrap(), 0);
         create_admin(&pool, "first", "hash", false).await.unwrap();
         assert_eq!(admin_count(&pool).await.unwrap(), 1);
+    }
+
+    // ── agent token verification ──────────────────────────────────────────────
+
+    async fn paired_agent(pool: &DbPool, token_hash: &str, verified: bool) -> Uuid {
+        let agent = upsert_agent_pending(pool, "m1", "kid-pc", "UTC", "").await.unwrap();
+        accept_agent(pool, agent.id, token_hash).await.unwrap();
+        if !verified {
+            sqlx::query("UPDATE agents SET token_verified=0").execute(pool).await.unwrap();
+        }
+        agent.id
+    }
+
+    #[tokio::test]
+    async fn verified_agent_token_must_match() {
+        let pool = test_pool().await;
+        let id = paired_agent(&pool, "good", true).await;
+        assert_eq!(verify_agent_token(&pool, id, Some("good")).await.unwrap(), TokenCheck::Valid);
+        assert_eq!(verify_agent_token(&pool, id, Some("bad")).await.unwrap(), TokenCheck::Invalid);
+    }
+
+    #[tokio::test]
+    async fn legacy_pairing_adopts_its_first_token_then_enforces_it() {
+        // A pairing from before verification whose stored hash doesn't match the
+        // agent's token (e.g. a double "accept" overwrote it): kept, not locked out.
+        let pool = test_pool().await;
+        let id = paired_agent(&pool, "overwritten", false).await;
+        assert_eq!(verify_agent_token(&pool, id, Some("agents-real")).await.unwrap(), TokenCheck::Adopted);
+        assert_eq!(verify_agent_token(&pool, id, Some("agents-real")).await.unwrap(), TokenCheck::Valid);
+        assert_eq!(verify_agent_token(&pool, id, Some("overwritten")).await.unwrap(), TokenCheck::Invalid);
+    }
+
+    #[tokio::test]
+    async fn legacy_pairing_with_matching_token_becomes_verified() {
+        let pool = test_pool().await;
+        let id = paired_agent(&pool, "good", false).await;
+        assert_eq!(verify_agent_token(&pool, id, Some("good")).await.unwrap(), TokenCheck::Valid);
+        assert_eq!(verify_agent_token(&pool, id, Some("other")).await.unwrap(), TokenCheck::Invalid);
+    }
+
+    #[tokio::test]
+    async fn missing_token_is_never_adopted() {
+        let pool = test_pool().await;
+        let id = paired_agent(&pool, "real", false).await;
+        // Unverified pairing without a token: let through, nothing stored.
+        assert_eq!(verify_agent_token(&pool, id, None).await.unwrap(), TokenCheck::UnverifiedNoToken);
+        assert_eq!(verify_agent_token(&pool, id, None).await.unwrap(), TokenCheck::UnverifiedNoToken);
+        // The real token still works afterwards.
+        assert_eq!(verify_agent_token(&pool, id, Some("real")).await.unwrap(), TokenCheck::Valid);
+        // Once verified, no token means rejected.
+        assert_eq!(verify_agent_token(&pool, id, None).await.unwrap(), TokenCheck::Invalid);
+    }
+
+    #[tokio::test]
+    async fn migration_v9_leaves_existing_pairings_unverified() {
+        let pool = test_pool().await;
+        let id = paired_agent(&pool, "h", true).await;
+        sqlx::query("ALTER TABLE agents DROP COLUMN token_verified").execute(&pool).await.unwrap();
+        apply_v9(&pool).await.unwrap();
+        let a = get_agent_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(a.status, "paired");
+        assert_eq!(a.auth_token_hash.as_deref(), Some("h"));
+        assert_eq!(verify_agent_token(&pool, id, Some("agents-real")).await.unwrap(), TokenCheck::Adopted);
     }
 
     #[tokio::test]

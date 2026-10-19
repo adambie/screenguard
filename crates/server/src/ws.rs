@@ -16,13 +16,13 @@ use crate::db;
 use crate::remaining;
 use crate::state::{AgentHandle, AppState, DEFAULT_TENANT, PairingDecision, PairingHandle};
 
-pub async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
-    if let Err(e) = handle_ws_inner(socket, state).await {
+pub async fn handle_ws(socket: WebSocket, state: Arc<AppState>, bearer: Option<String>) {
+    if let Err(e) = handle_ws_inner(socket, state, bearer).await {
         tracing::warn!("WebSocket handler error: {e}");
     }
 }
 
-async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> {
+async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>, bearer: Option<String>) -> Result<()> {
     let (mut sink, mut stream) = socket.split();
     let (out_tx, mut out_rx) = mpsc::channel::<WssMessage>(64);
 
@@ -53,12 +53,34 @@ async fn handle_ws_inner(socket: WebSocket, state: Arc<AppState>) -> Result<()> 
     let (machine_id, agent_db_id) = match envelope.msg_type.as_str() {
         MSG_PAIRING_REQUEST => {
             let req: PairingRequest = envelope.parse_payload()?;
-            handle_pairing_request(req, &state, out_tx.clone()).await?;
+            handle_pairing_request(req, &state, out_tx.clone(), &mut stream).await?;
             return Ok(());
         }
         MSG_AGENT_HELLO => {
             let hello: AgentHello = envelope.parse_payload()?;
             if let Ok(Some(agent)) = db::get_agent_by_machine_id(&state.db, &hello.machine_id).await {
+                // machine-id is world-readable, so it identifies nothing on its
+                // own: the agent must present the token issued at pairing.
+                let token_hash = bearer
+                    .as_deref()
+                    .filter(|t| !t.is_empty())
+                    .map(crate::api::agents::hash_token);
+                match db::verify_agent_token(&state.db, agent.id, token_hash.as_deref()).await? {
+                    db::TokenCheck::Valid => {}
+                    db::TokenCheck::Adopted => tracing::warn!(
+                        "Agent {} paired before token verification — adopted its token",
+                        hello.machine_id
+                    ),
+                    db::TokenCheck::UnverifiedNoToken => tracing::warn!(
+                        "Agent {} sent no auth token; allowed because its pairing predates \
+                         token verification — update the agent",
+                        hello.machine_id
+                    ),
+                    db::TokenCheck::Invalid => {
+                        tracing::warn!("Agent {} rejected: invalid auth token", hello.machine_id);
+                        return Ok(());
+                    }
+                }
                 if agent.status == "pending_delete" {
                     tracing::info!("Agent {} is pending_delete — sending unpair", hello.machine_id);
                     let msg = WssMessage::new(MSG_UNPAIR, &Unpair {})?;
@@ -110,11 +132,11 @@ async fn handle_pairing_request(
     req: PairingRequest,
     state: &Arc<AppState>,
     out_tx: mpsc::Sender<WssMessage>,
+    stream: &mut (impl StreamExt<Item = Result<Message, axum::Error>> + Unpin),
 ) -> Result<()> {
-    tracing::info!(
-        "Pairing request from '{}' (machine_id={}, code={})",
-        req.hostname, req.machine_id, req.pairing_code
-    );
+    // The pairing code is deliberately never logged or returned by the API: the
+    // admin must read it from the agent's own console to prove they control it.
+    tracing::info!("Pairing request from '{}' (machine_id={})", req.hostname, req.machine_id);
 
     let agent = db::upsert_agent_pending(
         &state.db,
@@ -124,23 +146,33 @@ async fn handle_pairing_request(
         "",
     ).await?;
 
+    let key = (DEFAULT_TENANT.to_string(), req.machine_id.clone());
+    let conn_id = Uuid::new_v4();
     let (tx, rx) = oneshot::channel::<PairingDecision>();
-    {
+    state.pending.write().await.insert(key.clone(), PairingHandle {
+        pairing_code: req.pairing_code.clone(),
+        tx,
+        conn_id,
+        failed_attempts: 0,
+    });
+
+    tracing::info!("Agent '{}' ({}) waiting for approval with its pairing code", req.hostname, agent.id);
+
+    // Wait for the admin's decision, but stop as soon as the agent goes away
+    // (its own 5 min timeout, restart, ...): a request can only be accepted
+    // while the agent is actually there to receive the token.
+    let decision = tokio::select! {
+        d = rx => d.ok(),
+        _ = async { while let Some(Ok(_)) = stream.next().await {} } => None,
+    };
+    let Some(decision) = decision else {
         let mut pending = state.pending.write().await;
-        pending.insert((DEFAULT_TENANT.to_string(), req.machine_id.clone()), PairingHandle {
-            pairing_code: req.pairing_code.clone(),
-            tx,
-        });
-    }
-
-    tracing::info!(
-        "Agent '{}' pending — pairing code: {}. Run: POST /api/v1/agents/{}/accept",
-        req.hostname, req.pairing_code, agent.id
-    );
-
-    let decision = rx.await?;
-
-    state.pending.write().await.remove(&(DEFAULT_TENANT.to_string(), req.machine_id.clone()));
+        if pending.get(&key).is_some_and(|h| h.conn_id == conn_id) {
+            pending.remove(&key);
+        }
+        tracing::info!("Pairing request from '{}' ended without approval", req.hostname);
+        return Ok(());
+    };
 
     let accepted = PairingAccepted {
         agent_id: decision.agent_db_id.to_string(),

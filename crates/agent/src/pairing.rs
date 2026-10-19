@@ -10,6 +10,53 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 const PAIRING_CODE_LEN: usize = 6;
 const PAIRING_TIMEOUT_SECS: u64 = 300;
 
+/// Root-only file holding the code while a pairing request is open, so
+/// `screenguard-agent --show-pairing-code` (and the installer) can show it
+/// without digging through the journal.
+pub const PAIRING_CODE_FILE: &str = "/var/lib/screenguard/pairing-code";
+
+/// Writes `code` and its expiry (unix seconds) to `path`, readable by root only.
+fn write_code_file(path: &std::path::Path, code: &str, expires_at: u64) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let _ = std::fs::remove_file(path);
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    writeln!(f, "{code}\n{expires_at}")
+}
+
+/// The code from `path` if it is still valid at `now` (unix seconds).
+pub fn read_code_file(path: &std::path::Path, now: u64) -> std::io::Result<Option<String>> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut lines = text.lines();
+    let code = lines.next().unwrap_or("").trim().to_string();
+    let expires_at: u64 = lines.next().and_then(|l| l.trim().parse().ok()).unwrap_or(0);
+    Ok((!code.is_empty() && now < expires_at).then_some(code))
+}
+
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Removes the code file when pairing ends, however it ends.
+struct CodeFileGuard(&'static str);
+
+impl Drop for CodeFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(self.0);
+    }
+}
+
 fn generate_pairing_code() -> String {
     const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I ambiguity
     let mut rng = rand::thread_rng();
@@ -41,7 +88,8 @@ pub async fn run_pairing(server_url: &str, cloud_account: Option<&str>) -> Resul
     let code = generate_pairing_code();
 
     println!("\n=== PAIRING CODE: {code} ===");
-    println!("Show this code to the admin in the UI to approve pairing.\n");
+    println!("Enter this code in the ScreenGuard web UI to approve this machine.");
+    println!("(Show it again any time with: sudo screenguard-agent --show-pairing-code)\n");
     tracing::info!("Pairing code: {code}");
 
     let (ws_stream, _) = connect_async(server_url)
@@ -58,6 +106,16 @@ pub async fn run_pairing(server_url: &str, cloud_account: Option<&str>) -> Resul
     };
     let msg = WssMessage::new(MSG_PAIRING_REQUEST, &request)?;
     write.send(Message::Text(msg.to_json()?)).await?;
+
+    // Only now is the code valid on the server.
+    let _code_file = CodeFileGuard(PAIRING_CODE_FILE);
+    if let Err(e) = write_code_file(
+        std::path::Path::new(PAIRING_CODE_FILE),
+        &request.pairing_code,
+        unix_now() + PAIRING_TIMEOUT_SECS,
+    ) {
+        tracing::warn!("Could not write {PAIRING_CODE_FILE}: {e}");
+    }
 
     let deadline = tokio::time::Instant::now()
         + std::time::Duration::from_secs(PAIRING_TIMEOUT_SECS);
@@ -92,4 +150,29 @@ fn gethostname() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn code_file_round_trip_and_expiry() {
+        let dir = std::env::temp_dir().join(format!("sg-pair-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pairing-code");
+
+        assert_eq!(read_code_file(&path, 100).unwrap(), None);
+        write_code_file(&path, "ABCDEF", 200).unwrap();
+        assert_eq!(read_code_file(&path, 100).unwrap().as_deref(), Some("ABCDEF"));
+        assert_eq!(read_code_file(&path, 200).unwrap(), None, "expired");
+
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+
+        // Rewriting replaces the old code.
+        write_code_file(&path, "GHJKLM", 300).unwrap();
+        assert_eq!(read_code_file(&path, 100).unwrap().as_deref(), Some("GHJKLM"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

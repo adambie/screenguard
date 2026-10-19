@@ -125,8 +125,102 @@ mod tests {
     use tower::ServiceExt;
 
     async fn app() -> Router {
+        app_with_state().await.0
+    }
+
+    async fn app_with_state() -> (Router, Arc<AppState>) {
         let pool = crate::db::open_in_memory().await;
-        router(AppState::new(pool, "test-secret".into(), 1))
+        let state = AppState::new(pool, "test-secret".into(), 1);
+        (router(state.clone()), state)
+    }
+
+    async fn admin_token(app: &Router) -> String {
+        call(app, Method::POST, "/auth/setup", None, Some(json!({ "username": "mom", "password": "pw" }))).await;
+        login(app, "mom", "pw").await.1["token"].as_str().unwrap().to_string()
+    }
+
+    /// Simulates an agent connected and waiting, as ws::handle_pairing_request leaves it.
+    async fn pending_agent(state: &Arc<AppState>, machine_id: &str, code: &str)
+        -> (uuid::Uuid, tokio::sync::oneshot::Receiver<crate::state::PairingDecision>)
+    {
+        let agent = crate::db::upsert_agent_pending(&state.db, machine_id, "kid-pc", "UTC", "").await.unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        state.pending.write().await.insert(
+            (crate::state::DEFAULT_TENANT.to_string(), machine_id.to_string()),
+            crate::state::PairingHandle { pairing_code: code.into(), tx, conn_id: uuid::Uuid::new_v4(), failed_attempts: 0 },
+        );
+        (agent.id, rx)
+    }
+
+    #[tokio::test]
+    async fn accept_requires_the_agents_pairing_code() {
+        let (app, state) = app_with_state().await;
+        let tok = admin_token(&app).await;
+        let (id, rx) = pending_agent(&state, "m1", "ABCDEF").await;
+        let accept = |code: &'static str| {
+            let (app, tok) = (app.clone(), tok.clone());
+            async move {
+                call(&app, Method::POST, &format!("/agents/{id}/accept"), Some(&tok), Some(json!({ "pairing_code": code }))).await
+            }
+        };
+
+        // The code is never exposed by the API.
+        let (_, list) = call(&app, Method::GET, "/agents", Some(&tok), None).await;
+        assert!(!list.to_string().contains("ABCDEF"));
+        assert_eq!(list["agents"][0]["pairing_requested"], true);
+        let (_, detail) = call(&app, Method::GET, &format!("/agents/{id}"), Some(&tok), None).await;
+        assert!(!detail.to_string().contains("ABCDEF"));
+
+        let (s, body) = accept("ZZZZZZ").await;
+        assert_eq!((s, body["code"].as_str(), body["attempts_left"].as_u64()), (StatusCode::FORBIDDEN, Some("wrong_code"), Some(4)));
+        assert_eq!(crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap().status, "pending");
+
+        // Separators and case don't matter.
+        let (s, _) = accept("abc-def").await;
+        assert_eq!(s, StatusCode::OK);
+        let decision = rx.await.unwrap();
+        assert_eq!(decision.agent_db_id, id);
+        let agent = crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap();
+        assert_eq!(agent.status, "paired");
+        assert_eq!(agent.auth_token_hash.as_deref(), Some(agents::hash_token(&decision.auth_token).as_str()));
+
+        // One-time: a second accept finds nothing waiting and changes nothing.
+        let (s, body) = accept("ABCDEF").await;
+        assert_eq!((s, body["code"].as_str()), (StatusCode::CONFLICT, Some("not_waiting")));
+        assert_eq!(crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap().auth_token_hash, agent.auth_token_hash);
+    }
+
+    #[tokio::test]
+    async fn too_many_wrong_codes_drop_the_request() {
+        let (app, state) = app_with_state().await;
+        let tok = admin_token(&app).await;
+        let (id, rx) = pending_agent(&state, "m1", "ABCDEF").await;
+        for left in (0..5).rev() {
+            let (s, body) = call(&app, Method::POST, &format!("/agents/{id}/accept"), Some(&tok),
+                Some(json!({ "pairing_code": "WRONG1" }))).await;
+            assert_eq!((s, body["attempts_left"].as_u64()), (StatusCode::FORBIDDEN, Some(left)));
+        }
+        assert!(rx.await.is_err(), "dropping the handle ends the agent's pairing connection");
+        let (s, body) = call(&app, Method::POST, &format!("/agents/{id}/accept"), Some(&tok),
+            Some(json!({ "pairing_code": "ABCDEF" }))).await;
+        assert_eq!((s, body["code"].as_str()), (StatusCode::CONFLICT, Some("not_waiting")));
+        assert_eq!(crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap().status, "pending");
+    }
+
+    #[tokio::test]
+    async fn pairing_request_does_not_unpair_a_paired_agent() {
+        let (app, state) = app_with_state().await;
+        let tok = admin_token(&app).await;
+        let (id, rx) = pending_agent(&state, "m1", "ABCDEF").await;
+        call(&app, Method::POST, &format!("/agents/{id}/accept"), Some(&tok), Some(json!({ "pairing_code": "ABCDEF" }))).await;
+        let token_hash = crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap().auth_token_hash;
+        drop(rx);
+
+        // Someone sends a pairing request with the same (world-readable) machine-id.
+        let _rx2 = pending_agent(&state, "m1", "EVIL22").await;
+        let agent = crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap();
+        assert_eq!(agent.status, "paired");
+        assert_eq!(agent.auth_token_hash, token_hash);
     }
 
     async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {

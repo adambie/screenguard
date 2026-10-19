@@ -54,6 +54,40 @@ fn should_rebind(paired: bool, stored: Option<&str>, requested: Option<&str>) ->
     }
 }
 
+fn show_pairing_code() -> i32 {
+    let paired = Db::open(None)
+        .and_then(|db| db.get_agent_mode())
+        .map(|m| m != AgentMode::Unpaired);
+    match paired {
+        Ok(true) => {
+            println!("This agent is already paired. To pair it again, run: screenguard-agent --reset");
+            return 3;
+        }
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("Cannot read agent state ({e:#}). Run this as root (sudo).");
+            return 1;
+        }
+    }
+    match pairing::read_code_file(std::path::Path::new(pairing::PAIRING_CODE_FILE), pairing::unix_now()) {
+        Ok(Some(code)) => {
+            println!("{code}");
+            0
+        }
+        Ok(None) => {
+            println!(
+                "No pairing code yet — the agent is still looking for the server. \
+                 Check: journalctl -u screenguard-agent -f"
+            );
+            2
+        }
+        Err(e) => {
+            eprintln!("Cannot read {} ({e}). Run this as root (sudo).", pairing::PAIRING_CODE_FILE);
+            1
+        }
+    }
+}
+
 fn wss_to_http(url: &str) -> String {
     let s = url.replacen("wss://", "https://", 1).replacen("ws://", "http://", 1);
     if let Some((scheme, rest)) = s.split_once("//") {
@@ -100,6 +134,12 @@ async fn main() -> Result<()> {
             tracing::warn!("Notification failed: {e}");
         }
         return Ok(());
+    }
+
+    // Handle --show-pairing-code: print the code of the open pairing request and exit.
+    // Exit status: 0 = code printed, 2 = no code yet, 3 = already paired.
+    if args.iter().any(|a| a == "--show-pairing-code") {
+        std::process::exit(show_pairing_code());
     }
 
     // Handle --reset: clear pairing state and exit.

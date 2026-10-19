@@ -631,9 +631,25 @@ if [[ $INSTALL_WEBUI -eq 1 ]]; then
     info "screenguard-webui enabled and started"
 fi
 
+PAIRING_CODE=""
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     systemctl enable --now screenguard-agent
     info "screenguard-agent enabled and started"
+    if [[ -z $CLOUD_ACCOUNT ]]; then
+        # Wait for the agent to find the server and open a pairing request.
+        # Exit status 3 = already paired (e.g. reinstall over an existing pairing).
+        info "Waiting for the agent to contact the server..."
+        for _ in $(seq 30); do
+            if PAIRING_CODE=$("${INSTALL_DIR}/screenguard-agent" --show-pairing-code 2>/dev/null); then
+                break
+            elif [[ $? -eq 3 ]]; then
+                PAIRING_CODE="(already paired)"
+                break
+            fi
+            PAIRING_CODE=""
+            sleep 1
+        done
+    fi
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────────
@@ -669,8 +685,18 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
         echo
         echo -e "  Cloud mode (experimental): account ${CLOUD_ACCOUNT}"
         echo -e "  The machine will show as 'pending' in that account — approve it there to pair."
+    elif [[ $PAIRING_CODE == "(already paired)" ]]; then
+        echo -e "  Pairing: this machine is already paired with the server."
+    elif [[ -n $PAIRING_CODE ]]; then
+        echo
+        echo -e "  ${BOLD}Pairing code: ${PAIRING_CODE}${RESET}"
+        echo -e "  In the web UI open Agents, click Accept on this machine and enter the code."
+        echo -e "  The code is valid for 5 minutes; a new one is issued after that. Show the current one with:"
+        echo -e "    sudo screenguard-agent --show-pairing-code"
     else
-        echo -e "  Pairing: watch the logs for a pairing code, then accept it in the web UI."
+        echo -e "  Pairing: the agent hasn't reached the server yet. Once it does, show its code with:"
+        echo -e "    sudo screenguard-agent --show-pairing-code"
+        echo -e "  then enter it in the web UI (Agents → Accept)."
     fi
 fi
 

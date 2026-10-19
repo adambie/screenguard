@@ -123,7 +123,6 @@
   "agent.placeholder_display_name": "Nome de exibição",
   "agent.btn_save_name": "Guardar nome",
   "agent.card_pending_approval": "Aprovação pendente",
-  "agent.pairing_code": "Código de emparelhamento:",
   "agent.btn_accept": "Aceitar agente",
   "agent.card_managed_users": "Utilizadores geridos",
   "agent.col_username": "Utilizador",
@@ -239,5 +238,15 @@
   "password.btn_save": "Salvar senha",
   "flash.password_changed": "Senha alterada.",
   "flash.password_mismatch": "As senhas não coincidem.",
-  "flash.wrong_password": "A senha atual está incorreta."
+  "flash.wrong_password": "A senha atual está incorreta.",
+  "agents.status_pairing_requested": "Emparelhamento solicitado",
+  "agents.code_placeholder": "Código",
+  "agent.label_pairing_code": "Código de emparelhamento",
+  "agent.pairing_hint": "Digite o código de emparelhamento exibido nessa máquina. Para exibi-lo lá, execute:",
+  "agent.pairing_not_connected": "O agente não está conectado no momento. Quando se reconectar, exibirá um novo código de emparelhamento.",
+  "flash.wrong_pairing_code": "Código de emparelhamento incorreto ({attempts_left} tentativas restantes).",
+  "flash.pairing_attempts_exhausted": "Muitos códigos incorretos — o agente exibirá um novo código de emparelhamento em breve.",
+  "flash.agent_not_waiting": "Este agente não está aguardando aprovação no momento. Verifique se ele está em execução e digite o código exibido agora.",
+  "flash.agent_accept_failed": "Falha ao aceitar o agente: {error}",
+  "agent.pairing_hint_old": "Agentes anteriores à 0.10.17:"
 }

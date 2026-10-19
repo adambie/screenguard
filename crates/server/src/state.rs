@@ -24,9 +24,13 @@ pub struct AgentHandle {
 
 /// Per-pending-agent channel: REST /accept sends pairing_accepted down this.
 pub struct PairingHandle {
-    #[allow(dead_code)]
+    /// Code the agent printed on its own console; the admin must enter it to accept.
     pub pairing_code: String,
     pub tx: oneshot::Sender<PairingDecision>,
+    /// Identifies the WebSocket connection, so a closing connection only removes
+    /// its own handle and not a newer request from the same machine.
+    pub conn_id: Uuid,
+    pub failed_attempts: u32,
 }
 
 pub struct PairingDecision {

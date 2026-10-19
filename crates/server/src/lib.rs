@@ -90,8 +90,15 @@ pub async fn run() -> Result<()> {
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
-    ws.on_upgrade(move |socket| ws::handle_ws(socket, state))
+    // Paired agents authenticate with the token issued at pairing; checked on hello.
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_string);
+    ws.on_upgrade(move |socket| ws::handle_ws(socket, state, bearer))
 }
 
 fn register_mdns(port: u16) -> mdns_sd::ServiceDaemon {
