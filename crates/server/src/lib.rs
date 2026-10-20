@@ -1,4 +1,5 @@
 pub mod api;
+pub mod app_usage;
 pub mod config;
 pub mod db;
 pub mod release_check;

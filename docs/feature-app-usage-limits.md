@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.11 (`app_tracking` switch) — **agent side of Phase 1 done**
-- **Next step:** 1.12 — server migration v10 (`app_catalog`, `app_usage`)
+- **Last completed step:** 1.14 (server migration v10, ingestion, capability)
+- **Next step:** 1.15 — reports API `GET /api/v1/profiles/{id}/app-usage`
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -493,17 +493,36 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 1C. Server — storage, ingestion, reports (`crates/server`)
 
-- [ ] **1.12 Migration v10** — tables:
+- [x] **1.12 Migration v10** — tables:
   - `app_catalog(app_id PK, display_name, icon, first_seen, last_seen)`
   - `app_usage(agent_user_id FK, date, app_id, seconds, PRIMARY KEY(agent_user_id, date, app_id))`
   Portable SQL only. *Done when:* migration tests on SQLite pass and an
   upgrade from 0.10.17 is verified on SQLite **and** Postgres (docker).
-- [ ] **1.13 Ingestion** — handle `MSG_APP_USAGE_SYNC` in `ws.rs`: upsert
+  → `APP_USAGE_DDL` (used by `create_tables` for fresh installs and by
+  `apply_v10` for upgrades), plus `agents.app_usage_available` (1.14) in the
+  same migration; `CURRENT_VERSION = 10`, index on `app_usage(date)`. Unit test
+  `migration_v10_adds_app_usage_and_keeps_pairings`.
+  - Upgrade verified with `docs/spikes/upgrade-test.sh` (v0.10.17 built from its
+    tag → this build) on SQLite **and** Postgres 16 in docker: schema 9 → 10; the
+    paired agent (token hash, verified flag), the managed user, screen-time usage
+    and `web_filter_available` are intact; admin login and `GET /agents` work;
+    the restart is idempotent.
+- [x] **1.13 Ingestion** — handle `MSG_APP_USAGE_SYNC` in `ws.rs`: upsert
   `app_usage` with `seconds = MAX(existing, reported)` (totals are monotonic per
   day), upsert catalog name/icon/last_seen. Reject ids failing `AppId` validation.
   *Done when:* tests cover retry (same total twice), growth, and bad ids.
-- [ ] **1.14 Capability storage** — store `"app_usage"` capability per agent
+  → `crates/server/src/app_usage.rs::ingest()`, called from the `ws.rs` arm.
+  - Rejects: ids failing `AppId::parse`, `exe:` ids, dates more than a day after
+    the server's date, unknown local users.
+  - Clamps seconds to 86 400 and cleans names/icons (control chars, length).
+  - Upsert keeps the larger total (portable `CASE`, like `reconcile_usage_seconds`).
+  - 3 SQLite tests plus an ignored `postgres_ingest` test (`SG_TEST_PG_URL`),
+    which passed against Postgres 16.
+- [x] **1.14 Capability storage** — store `"app_usage"` capability per agent
   (like `web_filter_available`), expose in agent API.
+  → `agents.app_usage_available` (v10), set on every hello
+  (`update_agent_app_usage`), `app_usage_available` in `GET /agents` and
+  `GET /agents/{id}` (`null` until the agent connects with a new version).
 - [ ] **1.15 Reports API** — `GET /api/v1/profiles/{id}/app-usage?range=day|week|total&date=YYYY-MM-DD`
   → per app: display name, icon, seconds; summed across all agents of the profile
   (profile-level, like screen time). Also per-day series for the week view.
@@ -677,3 +696,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.9 done: `app_usage_log` table + DB functions (2 tests), tracker wired into `HeartbeatLoop` (5 s), prune > 35 days; clippy clean on new code | 1.10 sync |
 | 2026-10-20 | 1.10 done: `send_app_usage_sync` (60 s + on connect with 2-day resend), test | 1.11 config switch |
 | 2026-10-20 | 1.11 done: `app_tracking` config (default on), capability follows it. Agent side (1A–1B) complete | 1.12 server migration |
+| 2026-10-20 | 1.12–1.14 done: v10 (`app_catalog`, `app_usage`, `agents.app_usage_available`), upgrade from 0.10.17 verified on SQLite + Postgres; `app_usage::ingest` with MAX upsert (tests on both DBs); capability stored and in agents API | 1.15 reports API |

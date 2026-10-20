@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 9;
+const CURRENT_VERSION: i32 = 10;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -63,7 +63,8 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
             paired_at            INTEGER,
             last_seen_at         INTEGER,
             created_at           INTEGER NOT NULL,
-            web_filter_available INTEGER
+            web_filter_available INTEGER,
+            app_usage_available  INTEGER
         )",
         "CREATE TABLE IF NOT EXISTS user_profiles (
             id              TEXT NOT NULL PRIMARY KEY,
@@ -143,18 +144,38 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
             created_at INTEGER NOT NULL,
             UNIQUE (profile_id, domain)
         )",
-        "CREATE INDEX IF NOT EXISTS idx_agent_users_agent    ON agent_users(agent_id)",
+"CREATE INDEX IF NOT EXISTS idx_agent_users_agent    ON agent_users(agent_id)",
         "CREATE INDEX IF NOT EXISTS idx_agent_users_profile  ON agent_users(profile_id)",
         "CREATE INDEX IF NOT EXISTS idx_schedules_profile    ON schedules(profile_id)",
         "CREATE INDEX IF NOT EXISTS idx_daily_usage_date     ON daily_usage(date)",
         "CREATE INDEX IF NOT EXISTS idx_adjustments_profile  ON time_adjustments(profile_id, target_date)",
         "CREATE INDEX IF NOT EXISTS idx_blocked_domains_profile ON blocked_domains(profile_id)",
     ];
-    for stmt in &stmts {
+    for stmt in stmts.iter().chain(APP_USAGE_DDL.iter()) {
         sqlx::query(stmt).execute(pool).await?;
     }
     Ok(())
 }
+
+/// Per-app usage tables (#27): created by `create_tables` on fresh installs and
+/// by migration v10 on upgrades.
+const APP_USAGE_DDL: [&str; 3] = [
+    "CREATE TABLE IF NOT EXISTS app_catalog (
+        app_id       TEXT NOT NULL PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        icon         TEXT,
+        first_seen   INTEGER NOT NULL,
+        last_seen    INTEGER NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS app_usage (
+        agent_user_id TEXT NOT NULL REFERENCES agent_users(id) ON DELETE CASCADE,
+        date          TEXT NOT NULL,
+        app_id        TEXT NOT NULL,
+        seconds       INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (agent_user_id, date, app_id)
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_app_usage_date ON app_usage(date)",
+];
 
 async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     let mut v = get_schema_version(pool, is_sqlite).await?;
@@ -201,6 +222,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     // to v8 means such databases still receive the real migration.
     if v < 8 { apply_v8(pool).await?; v = 8; set_schema_version(pool, v).await?; }
     if v < 9 { apply_v9(pool).await?; v = 9; set_schema_version(pool, v).await?; }
+    if v < 10 { apply_v10(pool).await?; v = 10; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -419,6 +441,19 @@ pub(crate) async fn apply_v9(pool: &DbPool) -> Result<()> {
     Ok(())
 }
 
+// Migration 10: per-app usage reports (#27). Day totals per agent user and app,
+// a catalogue of names/icons, and the agents' `app_usage` capability.
+pub(crate) async fn apply_v10(pool: &DbPool) -> Result<()> {
+    for stmt in APP_USAGE_DDL {
+        sqlx::query(stmt).execute(pool).await?;
+    }
+    sqlx::query("ALTER TABLE agents ADD COLUMN app_usage_available INTEGER")
+        .execute(pool)
+        .await?;
+    tracing::info!("DB migration v10 applied (per-app usage)");
+    Ok(())
+}
+
 // ── models ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,6 +480,7 @@ pub struct Agent {
     pub last_seen_at: Option<i64>,
     pub created_at: i64,
     pub web_filter_available: Option<bool>,
+    pub app_usage_available: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -717,7 +753,8 @@ pub async fn upsert_agent_pending(
 pub async fn get_agent_by_id(pool: &DbPool, id: Uuid) -> Result<Option<Agent>> {
     let row = sqlx::query(
         "SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,
-                agent_version,paired_at,last_seen_at,created_at,web_filter_available
+                agent_version,paired_at,last_seen_at,created_at,web_filter_available,
+                app_usage_available
          FROM agents WHERE id=$1",
     )
     .bind(id.to_string())
@@ -729,7 +766,8 @@ pub async fn get_agent_by_id(pool: &DbPool, id: Uuid) -> Result<Option<Agent>> {
 pub async fn get_agent_by_machine_id(pool: &DbPool, machine_id: &str) -> Result<Option<Agent>> {
     let row = sqlx::query(
         "SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,
-                agent_version,paired_at,last_seen_at,created_at,web_filter_available
+                agent_version,paired_at,last_seen_at,created_at,web_filter_available,
+                app_usage_available
          FROM agents WHERE machine_id=$1",
     )
     .bind(machine_id)
@@ -741,7 +779,8 @@ pub async fn get_agent_by_machine_id(pool: &DbPool, machine_id: &str) -> Result<
 pub async fn list_agents(pool: &DbPool) -> Result<Vec<Agent>> {
     let rows = sqlx::query(
         "SELECT id,machine_id,display_name,hostname,timezone,status,auth_token_hash,
-                agent_version,paired_at,last_seen_at,created_at,web_filter_available
+                agent_version,paired_at,last_seen_at,created_at,web_filter_available,
+                app_usage_available
          FROM agents ORDER BY created_at DESC",
     )
     .fetch_all(pool)
@@ -891,6 +930,15 @@ pub async fn delete_agent(pool: &DbPool, id: Uuid) -> Result<()> {
     Ok(())
 }
 
+pub async fn update_agent_app_usage(pool: &DbPool, id: Uuid, available: bool) -> Result<()> {
+    sqlx::query("UPDATE agents SET app_usage_available=$1 WHERE id=$2")
+        .bind(available as i32)
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn update_agent_web_filter(pool: &DbPool, id: Uuid, available: bool) -> Result<()> {
     sqlx::query("UPDATE agents SET web_filter_available=$1 WHERE id=$2")
         .bind(available as i32)
@@ -902,6 +950,7 @@ pub async fn update_agent_web_filter(pool: &DbPool, id: Uuid, available: bool) -
 
 fn row_to_agent(r: sqlx::any::AnyRow) -> Agent {
     let wf: Option<i32> = r.get("web_filter_available");
+    let au: Option<i32> = r.get("app_usage_available");
     Agent {
         id: r.get::<String, _>("id").parse().unwrap_or_default(),
         machine_id: r.get("machine_id"),
@@ -915,6 +964,7 @@ fn row_to_agent(r: sqlx::any::AnyRow) -> Agent {
         last_seen_at: r.get("last_seen_at"),
         created_at: r.get("created_at"),
         web_filter_available: wf.map(|v| v != 0),
+        app_usage_available: au.map(|v| v != 0),
     }
 }
 
@@ -2289,6 +2339,27 @@ mod tests {
         assert_eq!(a.status, "paired");
         assert_eq!(a.auth_token_hash.as_deref(), Some("h"));
         assert_eq!(verify_agent_token(&pool, id, Some("agents-real")).await.unwrap(), TokenCheck::Adopted);
+    }
+
+    #[tokio::test]
+    async fn migration_v10_adds_app_usage_and_keeps_pairings() {
+        let pool = test_pool().await;
+        let id = paired_agent(&pool, "h", true).await;
+        // back to the v9 shape
+        for stmt in ["DROP TABLE app_usage", "DROP TABLE app_catalog", "ALTER TABLE agents DROP COLUMN app_usage_available"] {
+            sqlx::query(stmt).execute(&pool).await.unwrap();
+        }
+        set_schema_version(&pool, 9).await.unwrap();
+        run_migrations(&pool, true).await.unwrap();
+
+        let a = get_agent_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!((a.status.as_str(), a.auth_token_hash.as_deref(), a.app_usage_available), ("paired", Some("h"), None));
+        assert_eq!(verify_agent_token(&pool, id, Some("h")).await.unwrap(), TokenCheck::Valid);
+        update_agent_app_usage(&pool, id, true).await.unwrap();
+        assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 10);
     }
 
     #[tokio::test]

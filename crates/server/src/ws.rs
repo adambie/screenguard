@@ -1,8 +1,9 @@
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use common::messages::{
-    AgentHello, Heartbeat, LogResponse, PairingAccepted, PairingRequest, RemainingUpdate, Unpair,
-    UsageSync, UserListUpdate, MSG_AGENT_HELLO, MSG_CONFIG_PUSH, MSG_HEARTBEAT,
+    AgentHello, AppUsageSync, Heartbeat, LogResponse, PairingAccepted, PairingRequest,
+    RemainingUpdate, Unpair, UsageSync, UserListUpdate, MSG_AGENT_HELLO, MSG_APP_USAGE_SYNC,
+    MSG_CONFIG_PUSH, MSG_HEARTBEAT,
     MSG_LOG_RESPONSE, MSG_PAIRING_ACCEPTED, MSG_PAIRING_REQUEST, MSG_REMAINING_UPDATE, MSG_UNPAIR,
     MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
 };
@@ -204,6 +205,8 @@ async fn handle_agent_hello(
     db::update_agent_hello(&state.db, agent.id, &hello.hostname, &hello.timezone, &hello.agent_version).await?;
     let web_filter_available = hello.capabilities.iter().any(|c| c == "web_filter");
     db::update_agent_web_filter(&state.db, agent.id, web_filter_available).await?;
+    let app_usage_available = hello.capabilities.iter().any(|c| c == "app_usage");
+    db::update_agent_app_usage(&state.db, agent.id, app_usage_available).await?;
     tracing::info!("Agent '{}' connected (v{}, config_v{}, capabilities={:?})", hello.hostname, hello.agent_version, hello.last_config_version, hello.capabilities);
 
     let agent_users = db::list_agent_users(&state.db, agent.id).await?;
@@ -324,6 +327,17 @@ async fn handle_agent_message(
                     // day (a snapshot), not a delta — reconcile, don't add (#13).
                     db::reconcile_usage_seconds(&state.db, au.id, &date_str, entry.used_seconds as i64).await?;
                 }
+            }
+        }
+
+        MSG_APP_USAGE_SYNC => {
+            let sync: AppUsageSync = envelope.parse_payload()?;
+            let today = chrono::Utc::now().date_naive();
+            let r = crate::app_usage::ingest(&state.db, agent_id, &sync, today).await?;
+            if r.rejected > 0 {
+                tracing::warn!("Agent {agent_id}: app usage sync rejected {} of {} entries", r.rejected, sync.entries.len());
+            } else {
+                tracing::debug!("Agent {agent_id}: app usage sync ({} entries)", r.stored);
             }
         }
 

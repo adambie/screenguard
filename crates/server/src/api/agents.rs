@@ -29,6 +29,8 @@ pub struct AgentResponse {
     pub pairing_requested: bool,
     pub upgradeable: bool,
     pub web_filter_available: Option<bool>,
+    /// Agent reports per-app usage (#27); `None` before it first connected.
+    pub app_usage_available: Option<bool>,
 }
 
 pub async fn list_agents(
@@ -62,6 +64,7 @@ pub async fn list_agents(
             pairing_requested,
             upgradeable,
             web_filter_available: a.web_filter_available,
+            app_usage_available: a.app_usage_available,
         });
     }
     Ok(Json(serde_json::json!({ "agents": result })))
@@ -87,6 +90,7 @@ pub async fn get_agent(
         last_seen_at: a.last_seen_at, agent_version: a.agent_version,
         user_count, pairing_requested, upgradeable,
         web_filter_available: a.web_filter_available,
+        app_usage_available: a.app_usage_available,
     })))
 }
 
