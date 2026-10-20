@@ -186,6 +186,7 @@ pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i6
             .unwrap_or_else(|| "en".to_string());
         let blocked_domains = db::get_enabled_blocked_domains(pool, profile_id).await?;
         let group_limits = crate::app_groups::limits(pool, &profile_id.to_string()).await?;
+        let group_adjustments = crate::app_groups::adjustments(pool, &profile_id.to_string(), &today).await?;
         let app_groups = groups
             .iter()
             .map(|g| common::models::AppGroupConfig {
@@ -199,6 +200,7 @@ pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i6
                     .flatten()
                     .map(|&(day_of_week, mins)| ModelDailyLimit { day_of_week, allowed_minutes: mins as u32 })
                     .collect(),
+                adjustment_today: group_adjustments.get(&g.id).copied().unwrap_or(0),
             })
             .collect();
 

@@ -303,5 +303,8 @@
   "flash.app_limits_failed": "Não foi possível guardar os limites de apps.",
   "flash.app_limits_invalid": "Use h:mm (p. ex. 1:30) ou minutos, até 24 horas.",
 
-  "apps.of_limit": "de {limit}"
+  "apps.of_limit": "de {limit}",
+
+  "app_limits.today": "Tempo extra hoje:",
+  "flash.app_extra_saved": "Tempo extra guardado — a criança é avisada."
 }

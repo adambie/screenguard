@@ -261,6 +261,7 @@ mod tests {
             builtin: None,
             rules: vec![GroupRule { kind, value: value.into(), exclude: false }],
             daily_limits: vec![],
+            adjustment_today: 0,
         };
         let groups = vec![
             group("browsers", RuleKind::Category, "WebBrowser"),

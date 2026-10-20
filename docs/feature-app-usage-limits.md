@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.13 interaction with the overall screen-time lock, 2.14 extra time per group. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2D: 2.15 combined real-machine run, 2.16 compatibility (old agents + UI showing which agents enforce); then 2E new-app approval. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -832,11 +832,28 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   → Real machine: Games set to 0 today; a game started straight from a shell
   (process-tree identification) was closed 2.6 s later with "Games: not allowed
   today — SG Test Game 2 was closed".
-- [ ] **2.13 Interaction with the overall limit** — group time also counts toward
+- [x] **2.13 Interaction with the overall limit** — group time also counts toward
   daily screen time (it already does, since it's session time); when the overall
   limit is hit the existing lock logic wins. Verify no double-locking/kill races.
-- [ ] **2.14 Extra time for a group** — "+15 min Games today" from the profile
+  → By construction:
+  - The closer never locks sessions, so there's no double locking.
+  - Group time is session time, already in the daily total.
+  - The closer acts only on exhausted/blocked groups, independent of the
+    screen-time lock; with "preserve tasks", an app of an exhausted group behind
+    the lock still gets closed, which is consistent with its limit.
+
+  A combined real-machine run (daily limit and group limit hit in one session)
+  is part of 2.15.
+- [x] **2.14 Extra time for a group** — "+15 min Games today" from the profile
   page (adjustments per group), mirroring existing time adjustments.
+  → Server v14 `app_group_adjustments` and `POST /profiles/{id}/app-group-adjustments
+  {group_id, minutes, date?}` (±1440, not 0), which bumps the config. Config:
+  `AppGroupConfig.adjustment_today`. The agent adds it to the allowance (a
+  blocked day stays blocked) and notifies the child ("15 extra minutes today",
+  6 languages) when it changes. UI: +15/+30/+60/−15 buttons per limited group
+  with today's total; the App usage day view shows the raised limit.
+  - Real machine: Games at 3 min (used up), "+15" clicked in the web UI → config
+    push, "adjusted by 15 min" logged, a game started afterwards kept running.
 
 ### 2D. Verification and release
 

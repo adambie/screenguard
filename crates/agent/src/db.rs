@@ -1146,6 +1146,7 @@ mod tests {
             builtin: Some("games".into()),
             rules: vec![GroupRule { kind: RuleKind::Category, value: "Game".into(), exclude: false }],
             daily_limits: vec![DailyLimit { day_of_week: 0, allowed_minutes: 60 }],
+            adjustment_today: 0,
         }];
         db.apply_config_push(&[cfg]).unwrap();
         let g = db.get_cached_app_groups(1000).unwrap();

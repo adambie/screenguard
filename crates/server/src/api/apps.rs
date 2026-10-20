@@ -103,6 +103,8 @@ pub async fn get_group_limits(State(state): State<Arc<AppState>>, Path(id): Path
     crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
     let groups = app_groups::list_groups(&state.db).await.map_err(internal)?;
     let limits = app_groups::limits(&state.db, &id.to_string()).await.map_err(internal)?;
+    let today = chrono::Local::now().date_naive().to_string();
+    let adjustments = app_groups::adjustments(&state.db, &id.to_string(), &today).await.map_err(internal)?;
     let out: Vec<serde_json::Value> = groups
         .iter()
         .map(|g| {
@@ -112,7 +114,8 @@ pub async fn get_group_limits(State(state): State<Arc<AppState>>, Path(id): Path
                 .flatten()
                 .map(|(dow, mins)| serde_json::json!({ "day_of_week": dow, "allowed_minutes": mins }))
                 .collect();
-            serde_json::json!({ "id": g.id, "name": g.name, "builtin": g.builtin, "limits": l })
+            let adj = adjustments.get(&g.id).copied().unwrap_or(0);
+            serde_json::json!({ "id": g.id, "name": g.name, "builtin": g.builtin, "limits": l, "adjustment_today": adj })
         })
         .collect();
     Ok(Json(serde_json::json!({ "groups": out })))
@@ -143,6 +146,33 @@ pub async fn put_group_limits(
     app_groups::replace_limits(&state.db, &id.to_string(), &group_id, &entries).await.map_err(bad)?;
     let version = crate::api::profiles::bump_and_propagate(&state, id).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "message": "Group limits updated", "config_version": version })))
+}
+
+#[derive(Deserialize)]
+pub struct AdjustmentBody {
+    pub group_id: String,
+    pub minutes: i32,
+    /// YYYY-MM-DD, default today (server's local date).
+    pub date: Option<String>,
+}
+
+/// `POST /profiles/{id}/app-group-adjustments` — extra time for a group today.
+pub async fn add_group_adjustment(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<uuid::Uuid>,
+    Json(body): Json<AdjustmentBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    if !app_groups::group_exists(&state.db, &body.group_id).await.map_err(internal)? {
+        return Err(not_found());
+    }
+    let date = match body.date {
+        Some(d) => d.parse::<chrono::NaiveDate>().map_err(|_| bad("date must be YYYY-MM-DD"))?.to_string(),
+        None => chrono::Local::now().date_naive().to_string(),
+    };
+    app_groups::add_adjustment(&state.db, &id.to_string(), &body.group_id, &date, body.minutes).await.map_err(bad)?;
+    let version = crate::api::profiles::bump_and_propagate(&state, id).await.map_err(internal)?;
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "message": "Adjustment added", "config_version": version }))))
 }
 
 #[derive(Deserialize)]

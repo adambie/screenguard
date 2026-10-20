@@ -49,6 +49,13 @@ pub struct AppGroupConfig {
     /// Empty = no limit; 0 minutes = blocked that day.
     #[serde(default)]
     pub daily_limits: Vec<DailyLimit>,
+    /// Extra (or fewer, if negative) minutes for today, granted by a parent.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub adjustment_today: i32,
+}
+
+fn is_zero(v: &i32) -> bool {
+    *v == 0
 }
 
 fn default_lang() -> String { "en".to_string() }

@@ -67,6 +67,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/app-groups/{id}/membership", post(apps::set_membership))
         .route("/profiles/{id}/app-group-limits", get(apps::get_group_limits))
         .route("/profiles/{id}/app-group-limits/{group_id}", axum::routing::put(apps::put_group_limits))
+        .route("/profiles/{id}/app-group-adjustments", post(apps::add_group_adjustment))
         // Usage & dashboard
         .route("/profiles/{id}/usage", get(usage::get_usage))
         .route("/profiles/{id}/app-usage", get(usage::get_app_usage))
@@ -366,6 +367,15 @@ mod tests {
         assert_eq!(s, StatusCode::BAD_REQUEST);
         let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/nope"), Some(json!({"limits": []}))).await;
         assert_eq!(s, StatusCode::NOT_FOUND);
+
+        // extra time today
+        let (s, _) = c(Method::POST, &format!("/profiles/{pid}/app-group-adjustments"), Some(json!({"group_id": games, "minutes": 15}))).await;
+        assert_eq!(s, StatusCode::CREATED);
+        let (s, _) = c(Method::POST, &format!("/profiles/{pid}/app-group-adjustments"), Some(json!({"group_id": games, "minutes": 0}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (_, l) = c(Method::GET, &format!("/profiles/{pid}/app-group-limits"), None).await;
+        let g = l["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
+        assert_eq!(g["adjustment_today"], 15);
     }
 
     async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {

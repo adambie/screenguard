@@ -728,6 +728,19 @@ def update_app_limits(profile_id, group_id):
     return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
 
 
+@app.route("/profiles/<profile_id>/app-limits/<group_id>/extra", methods=["POST"])
+@require_login
+def app_limits_extra(profile_id, group_id):
+    try:
+        minutes = int(request.form.get("minutes", "0"))
+    except ValueError:
+        minutes = 0
+    r = api("POST", f"/profiles/{profile_id}/app-group-adjustments", json={"group_id": group_id, "minutes": minutes})
+    flash(t("flash.app_extra_saved") if (r and r.ok) else t("flash.app_limits_failed"),
+          "success" if (r and r.ok) else "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
+
+
 @app.route("/profiles/<profile_id>/rename", methods=["POST"])
 @require_login
 def rename_profile(profile_id):

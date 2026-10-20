@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 13;
+const CURRENT_VERSION: i32 = 14;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
 
 /// Per-app usage tables (#27): created by `create_tables` on fresh installs and
 /// by migration v10 on upgrades.
-const APP_USAGE_DDL: [&str; 7] = [
+const APP_USAGE_DDL: [&str; 8] = [
     "CREATE TABLE IF NOT EXISTS app_catalog (
         app_id       TEXT NOT NULL PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -205,6 +205,15 @@ const APP_USAGE_DDL: [&str; 7] = [
         group_id      TEXT NOT NULL,
         seconds       INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (agent_user_id, date, group_id)
+    )",
+    // extra time per group and day (v14), like time_adjustments for screen time
+    "CREATE TABLE IF NOT EXISTS app_group_adjustments (
+        id          TEXT NOT NULL PRIMARY KEY,
+        profile_id  TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+        group_id    TEXT NOT NULL REFERENCES app_groups(id) ON DELETE CASCADE,
+        target_date TEXT NOT NULL,
+        minutes     INTEGER NOT NULL,
+        created_at  INTEGER NOT NULL
     )",
 ];
 
@@ -259,6 +268,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 11 { apply_v11(pool).await?; v = 11; set_schema_version(pool, v).await?; }
     if v < 12 { apply_v12(pool).await?; v = 12; set_schema_version(pool, v).await?; }
     if v < 13 { apply_v13(pool).await?; v = 13; set_schema_version(pool, v).await?; }
+    if v < 14 { apply_v14(pool).await?; v = 14; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -519,6 +529,13 @@ pub(crate) async fn apply_v12(pool: &DbPool) -> Result<()> {
 pub(crate) async fn apply_v13(pool: &DbPool) -> Result<()> {
     sqlx::query(APP_USAGE_DDL[6]).execute(pool).await?;
     tracing::info!("DB migration v13 applied (app group usage)");
+    Ok(())
+}
+
+// Migration 14: extra time per app group and day.
+pub(crate) async fn apply_v14(pool: &DbPool) -> Result<()> {
+    sqlx::query(APP_USAGE_DDL[7]).execute(pool).await?;
+    tracing::info!("DB migration v14 applied (app group adjustments)");
     Ok(())
 }
 
@@ -2431,7 +2448,7 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 13);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 14);
     }
 
     #[tokio::test]

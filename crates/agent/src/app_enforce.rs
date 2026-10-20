@@ -226,6 +226,7 @@ mod tests {
             builtin: Some("games".into()),
             rules: vec![GroupRule { kind: RuleKind::Category, value: "Game".into(), exclude: false }, GroupRule { kind: RuleKind::Prefix, value: "steam:".into(), exclude: false }],
             daily_limits: vec![DailyLimit { day_of_week: 0, allowed_minutes: limit }],
+            adjustment_today: 0,
         };
         let st = GroupStatus { group_id: "games".into(), name: "Games".into(), limit_minutes: limit, used_seconds: 0, remaining_seconds: remaining };
         let names: HashMap<(u32, AppId), Shown> = [

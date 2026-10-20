@@ -323,5 +323,8 @@
   "flash.app_limits_failed": "Couldn't save the app limits.",
   "flash.app_limits_invalid": "Use h:mm (e.g. 1:30) or minutes, up to 24 hours.",
 
-  "apps.of_limit": "of {limit}"
+  "apps.of_limit": "of {limit}",
+
+  "app_limits.today": "Extra time today:",
+  "flash.app_extra_saved": "Extra time saved — the child is notified."
 }

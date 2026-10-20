@@ -127,6 +127,7 @@ pub async fn get_app_usage(
     let groups = crate::app_groups::list_groups(&state.db).await.map_err(internal)?;
     let reported = app_usage::group_totals(&state.db, id, from, to).await.map_err(internal)?;
     let limits = crate::app_groups::limits(&state.db, &id.to_string()).await.map_err(internal)?;
+    let adjustments = crate::app_groups::adjustments(&state.db, &id.to_string(), &date.to_string()).await.map_err(internal)?;
     let dow = date.weekday().num_days_from_monday() as u8;
     let groups_out: Vec<serde_json::Value> = groups
         .iter()
@@ -138,6 +139,8 @@ pub async fn get_app_usage(
             let limit = (range == "day")
                 .then(|| limits.get(&g.id).and_then(|l| l.iter().find(|(d, _)| *d == dow)).map(|(_, m)| *m))
                 .flatten();
+            // a blocked day stays blocked; otherwise extra time raises the limit
+            let limit = limit.map(|m| if m == 0 { 0 } else { (m + adjustments.get(&g.id).copied().unwrap_or(0)).max(0) });
             serde_json::json!({ "id": g.id, "name": g.name, "builtin": g.builtin, "seconds": seconds, "limit_minutes": limit })
         })
         .collect();

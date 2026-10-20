@@ -327,7 +327,8 @@ impl HeartbeatLoop {
         for u in users {
             let local = db.get_group_usage(u.uid, today).unwrap_or_default();
             let elsewhere = db.get_group_elsewhere(u.uid, today).unwrap_or_default();
-            let s = crate::app_limits::group_status(&u.groups, weekday, &local, &elsewhere, &HashMap::new(), &u.language);
+            let adjustments: HashMap<String, i32> = u.groups.iter().map(|g| (g.id.clone(), g.adjustment_today)).collect();
+            let s = crate::app_limits::group_status(&u.groups, weekday, &local, &elsewhere, &adjustments, &u.language);
             let before = self.group_status.get(&u.uid);
             for g in s.iter().filter(|g| g.exhausted()) {
                 let was = before.and_then(|b| b.iter().find(|o| o.group_id == g.group_id)).is_some_and(|o| o.exhausted());
@@ -478,10 +479,39 @@ impl HeartbeatLoop {
                     }).collect()
                 };
 
+                let old_groups: HashMap<u32, Vec<common::models::AppGroupConfig>> = {
+                    let db = self.db.lock().await;
+                    push.users.iter().map(|u| (u.local_uid, db.get_cached_app_groups(u.local_uid).unwrap_or_default())).collect()
+                };
+
                 {
                     let db = self.db.lock().await;
                     db.apply_config_push(&push.users)?;
                     db.save_config_version(push.config_version)?;
+                }
+
+                // Tell the child about extra (or less) time for an app group.
+                for u in &push.users {
+                    let lang = u.language.clone();
+                    for g in &u.app_groups {
+                        let before = old_groups
+                            .get(&u.local_uid)
+                            .and_then(|o| o.iter().find(|o| o.id == g.id))
+                            .map_or(0, |o| o.adjustment_today);
+                        let delta = g.adjustment_today - before;
+                        if delta == 0 || g.daily_limits.is_empty() {
+                            continue;
+                        }
+                        let (uid, title, body) = (
+                            u.local_uid,
+                            crate::i18n::group_name(g.builtin.as_deref(), &g.name, &lang),
+                            crate::i18n::notif_group_extra_body(&lang, delta),
+                        );
+                        tracing::info!("uid={uid}: app group '{title}' adjusted by {delta} min");
+                        tokio::spawn(async move {
+                            let _ = crate::dbus::send_desktop_notification(uid, &title, &body).await;
+                        });
+                    }
                 }
 
                 // If preserve_tasks_on_lock is off for a uid currently armed in the re-lock

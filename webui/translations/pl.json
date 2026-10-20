@@ -303,5 +303,8 @@
   "flash.app_limits_failed": "Nie udało się zapisać limitów aplikacji.",
   "flash.app_limits_invalid": "Użyj g:mm (np. 1:30) lub minut, maksymalnie 24 godziny.",
 
-  "apps.of_limit": "z {limit}"
+  "apps.of_limit": "z {limit}",
+
+  "app_limits.today": "Dodatkowy czas dziś:",
+  "flash.app_extra_saved": "Zapisano dodatkowy czas — dziecko dostanie powiadomienie."
 }

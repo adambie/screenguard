@@ -208,3 +208,23 @@ pub fn notif_app_closed_body(lang: &str, app: &str) -> String {
         _ => format!("{app} was closed."),
     }
 }
+
+/// "15 extra minutes today." (or fewer, when negative)
+pub fn notif_group_extra_body(lang: &str, delta: i32) -> String {
+    let n = delta.abs();
+    let mins = plural_mins(lang, n);
+    match (lang, delta > 0) {
+        ("es", true) => format!("{n} {mins} más por hoy."),
+        ("es", false) => format!("{n} {mins} menos por hoy."),
+        ("fr", true) => format!("{n} {mins} de plus aujourd'hui."),
+        ("fr", false) => format!("{n} {mins} de moins aujourd'hui."),
+        ("de", true) => format!("Heute {n} {mins} mehr."),
+        ("de", false) => format!("Heute {n} {mins} weniger."),
+        ("pt", true) => format!("Mais {n} {mins} por hoje."),
+        ("pt", false) => format!("Menos {n} {mins} por hoje."),
+        ("pl", true) => format!("Dodatkowe {n} {mins} na dziś."),
+        ("pl", false) => format!("{n} {mins} mniej na dziś."),
+        (_, true) => format!("{n} extra {mins} today."),
+        (_, false) => format!("{n} {mins} less today."),
+    }
+}

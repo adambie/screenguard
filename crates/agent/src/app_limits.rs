@@ -97,6 +97,7 @@ mod tests {
             builtin: builtin.map(str::to_string),
             rules: vec![GroupRule { kind: RuleKind::Category, value: "Game".into(), exclude: false }],
             daily_limits: limits.iter().map(|&(day_of_week, allowed_minutes)| DailyLimit { day_of_week, allowed_minutes }).collect(),
+            adjustment_today: 0,
         }
     }
 

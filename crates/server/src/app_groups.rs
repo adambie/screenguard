@@ -113,6 +113,7 @@ pub async fn delete_group(pool: &DbPool, id: &str) -> Result<bool> {
     // explicit, so it doesn't depend on foreign keys being enabled
     sqlx::query("DELETE FROM app_group_rules WHERE group_id = $1").bind(id).execute(pool).await?;
     sqlx::query("DELETE FROM app_group_limits WHERE group_id = $1").bind(id).execute(pool).await?;
+    sqlx::query("DELETE FROM app_group_adjustments WHERE group_id = $1").bind(id).execute(pool).await?;
     let r = sqlx::query("DELETE FROM app_groups WHERE id = $1").bind(id).execute(pool).await?;
     Ok(r.rows_affected() > 0)
 }
@@ -258,6 +259,37 @@ pub async fn replace_limits(pool: &DbPool, profile_id: &str, group_id: &str, ent
     Ok(())
 }
 
+/// Adds extra (or, if negative, fewer) minutes for a group on a date.
+pub async fn add_adjustment(pool: &DbPool, profile_id: &str, group_id: &str, date: &str, minutes: i32) -> Result<()> {
+    if minutes == 0 || !(-1440..=1440).contains(&minutes) {
+        bail!("adjustment must be between -1440 and 1440 minutes, not 0");
+    }
+    sqlx::query(
+        "INSERT INTO app_group_adjustments (id, profile_id, group_id, target_date, minutes, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(profile_id)
+    .bind(group_id)
+    .bind(date)
+    .bind(minutes)
+    .bind(Utc::now().timestamp())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Sum of a profile's adjustments per group on a date.
+pub async fn adjustments(pool: &DbPool, profile_id: &str, date: &str) -> Result<std::collections::HashMap<String, i32>> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT group_id, SUM(minutes) FROM app_group_adjustments WHERE profile_id = $1 AND target_date = $2 GROUP BY group_id",
+    )
+    .bind(profile_id)
+    .bind(date)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(g, m)| (g, m as i32)).collect())
+}
+
 pub async fn group_exists(pool: &DbPool, id: &str) -> Result<bool> {
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_groups WHERE id = $1").bind(id).fetch_one(pool).await?;
     Ok(n > 0)
@@ -352,6 +384,25 @@ mod tests {
         assert_eq!((g.builtin.as_deref(), g.daily_limits.len(), g.daily_limits[0].allowed_minutes), (Some("games"), 1, 120));
         assert!(groups.iter().find(|g| g.id != games).unwrap().daily_limits.is_empty());
         assert!(common::apps::group_matches(&g.rules, "steam:570", &[]));
+    }
+
+    #[tokio::test]
+    async fn adjustments_sum_per_day_and_reach_the_config() {
+        let pool = db::open_in_memory().await;
+        let (agent, au) = crate::app_usage::tests::agent_with_user(&pool, "m1", 1001).await;
+        let p = db::create_profile(&pool, "Kid").await.unwrap().id;
+        db::update_agent_user(&pool, au, Some(p), Some("managed")).await.unwrap();
+        let games = list_groups(&pool).await.unwrap()[0].id.clone();
+        let today = chrono::Local::now().date_naive().to_string();
+        add_adjustment(&pool, &p.to_string(), &games, &today, 15).await.unwrap();
+        add_adjustment(&pool, &p.to_string(), &games, &today, 30).await.unwrap();
+        add_adjustment(&pool, &p.to_string(), &games, "2020-01-01", 60).await.unwrap();
+        assert!(add_adjustment(&pool, &p.to_string(), &games, &today, 0).await.is_err());
+        assert!(add_adjustment(&pool, &p.to_string(), &games, &today, 2000).await.is_err());
+        assert_eq!(adjustments(&pool, &p.to_string(), &today).await.unwrap()[&games], 45);
+        let push = crate::remaining::build_config_push(&pool, agent, 1).await.unwrap();
+        let g = push.users[0].app_groups.iter().find(|g| g.id == games).unwrap();
+        assert_eq!(g.adjustment_today, 45);
     }
 
     #[tokio::test]
