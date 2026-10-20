@@ -92,6 +92,7 @@ impl HeartbeatLoop {
         status_handle: Option<Arc<crate::status_dbus::Handle>>,
         web_filter_available: bool,
         cloud_account: Option<String>,
+        app_tracking: bool,
     ) -> Self {
         Self {
             db,
@@ -109,7 +110,7 @@ impl HeartbeatLoop {
             status_handle,
             web_filter: WebFilter::new(web_filter_available),
             cloud_account,
-            app_tracker: crate::app_scan::supported().then(AppTracker::new),
+            app_tracker: (app_tracking && crate::app_scan::supported()).then(AppTracker::new),
         }
     }
 
@@ -858,7 +859,7 @@ impl HeartbeatLoop {
                     if db.get_capability("web_filter").unwrap_or(None).unwrap_or(false) {
                         caps.push("web_filter".to_string());
                     }
-                    if crate::app_scan::supported() {
+                    if self.app_tracker.is_some() {
                         caps.push("app_usage".to_string());
                     }
                     caps
@@ -1106,6 +1107,7 @@ mod tests {
             None,
             false,
             None,
+            true,
         );
         (hb, outbound_rx)
     }

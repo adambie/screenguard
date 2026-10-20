@@ -40,12 +40,18 @@ pub struct AgentConfig {
 
     #[serde(default = "default_min_uid")]
     pub min_uid: u32,
+
+    /// Per-app usage reports (#27). `app_tracking = false` turns off scanning,
+    /// storing and sending per-app usage on this machine.
+    #[serde(default = "default_app_tracking")]
+    pub app_tracking: bool,
 }
 
 fn default_heartbeat_interval() -> u64 { 10 }
 fn default_user_scan_interval() -> u64 { 300 }
 fn default_cache_ttl_hours() -> u64 { 48 }
 fn default_min_uid() -> u32 { 1000 }
+fn default_app_tracking() -> bool { true }
 
 impl Default for AgentConfig {
     fn default() -> Self {
@@ -58,6 +64,7 @@ impl Default for AgentConfig {
             user_scan_interval: default_user_scan_interval(),
             cache_ttl_hours: default_cache_ttl_hours(),
             min_uid: default_min_uid(),
+            app_tracking: default_app_tracking(),
         }
     }
 }
@@ -74,4 +81,18 @@ pub fn load(path: Option<&str>) -> Result<AgentConfig> {
     let config: AgentConfig = toml::from_str(&raw)
         .with_context(|| format!("Failed to parse config file: {path}"))?;
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_tracking_defaults_on_and_can_be_disabled() {
+        let cfg: AgentConfig = toml::from_str("").unwrap();
+        assert!(cfg.app_tracking);
+        assert!(AgentConfig::default().app_tracking);
+        let cfg: AgentConfig = toml::from_str("app_tracking = false").unwrap();
+        assert!(!cfg.app_tracking);
+    }
 }

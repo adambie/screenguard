@@ -334,6 +334,7 @@ async fn main() -> Result<()> {
         status_handle,
         nft_available,
         effective_account,
+        cfg.app_tracking,
     );
 
     // SIGTERM: notify systemd STOPPING=1 then exit.

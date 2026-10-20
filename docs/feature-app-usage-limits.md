@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.10 (agent → server sync)
-- **Next step:** 1.11 — agent config switch `app_tracking`
+- **Last completed step:** 1.11 (`app_tracking` switch) — **agent side of Phase 1 done**
+- **Next step:** 1.12 — server migration v10 (`app_catalog`, `app_usage`)
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -484,8 +484,12 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   Agent-side test: growing totals, nothing sent when unchanged, resend after a
   reconnect. "Without double counting server-side" is the server's MAX upsert
   (1.13).
-- [ ] **1.11 Feature switch** — agent config `app_tracking = true|false`
+- [x] **1.11 Feature switch** — agent config `app_tracking = true|false`
   (default true) so it can be disabled per machine without a rebuild.
+  → `AgentConfig.app_tracking`, passed to `HeartbeatLoop::new`. Off (or no
+  cgroup v2) means no tracker, no ticker, no sync and no `app_usage` capability.
+  Not added to the installer templates, which don't list optional keys; the README
+  documents it (1.21).
 
 ### 1C. Server — storage, ingestion, reports (`crates/server`)
 
@@ -672,3 +676,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.8 done: `AppAccounting` (fake-clock tests: exact totals, carry, 2× cap) + `AppTracker`; `AppId` now `Ord` | 1.9 storage + wiring |
 | 2026-10-20 | 1.9 done: `app_usage_log` table + DB functions (2 tests), tracker wired into `HeartbeatLoop` (5 s), prune > 35 days; clippy clean on new code | 1.10 sync |
 | 2026-10-20 | 1.10 done: `send_app_usage_sync` (60 s + on connect with 2-day resend), test | 1.11 config switch |
+| 2026-10-20 | 1.11 done: `app_tracking` config (default on), capability follows it. Agent side (1A–1B) complete | 1.12 server migration |
