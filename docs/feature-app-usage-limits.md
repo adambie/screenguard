@@ -44,9 +44,9 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 0 — Detection research
-- **Last completed step:** 0.4 (signal matrix, identification algorithm, app filter)
-- **Next step:** 0.5 — implement the algorithm in `docs/spikes/app-scan.py` and
-  sanity-check on Hyprland + the KDE test machine (root needed for `environ`)
+- **Last completed step:** 0.5 (algorithm implemented in `docs/spikes/app-scan.py`,
+  sanity-checked on Hyprland + KDE)
+- **Next step:** 0.6 — measure scan cost (`app-scan.py --time`) and pick the interval
 - **In progress / half-done:** —
 - **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
@@ -195,18 +195,18 @@ combinations). Real machines are only used to sanity-check the result
   [Identification algorithm](#identification-algorithm).
 - [x] **0.4 Define a desktop-independent "is this an app?" filter** (no per-desktop
   ignore lists) → [What counts as an app](#what-counts-as-an-app).
-- [ ] **0.5 Sanity-check the algorithm** on the available machines by extending
+- [x] **0.5 Sanity-check the algorithm** on the available machines by extending
   `app-scan.py` to implement it (incl. `environ` and process-tree steps; needs
   root for other users' `environ`/`exe`). *Done when:* on Hyprland and KDE every
   real app the user opened maps to the right `app_id` and no desktop component is
-  listed as an app.
+  listed as an app. → Passed 2026-10-20, see [Sanity check results](#sanity-check-results-05).
 - [ ] **0.6 Measure cost:** time one full scan (incl. `environ` reads) on the
   slowest available machine; pick the scan interval (target ≤ 1 % CPU; expected 5 s).
 
 **Exit criteria (Phase 0):**
 - [x] Identification rules defined independently of the desktop
 - [x] "Is it an app" filter defined without per-desktop lists
-- [ ] Sanity check passed on available machines (0.5)
+- [x] Sanity check passed on available machines (0.5)
 - [ ] Scan interval decided (0.6)
 
 ### Signal matrix
@@ -231,31 +231,69 @@ self-scope, autostart), `docs/spikes/kde-cachyos.txt` (`app-<id>@<uuid>.service`
 
 ### Identification algorithm
 
-For each process of a managed child (real UID), first match wins:
+For each process of a managed child (real UID), first match wins (validated in
+0.5; reference implementation: `docs/spikes/app-scan.py`, `identify()`):
 
-1. **Flatpak / Snap unit** → `flatpak:<id>` / `snap:<name>`.
-2. **App unit** (`app-…` under `app.slice`) → parse launcher + application id →
-   resolve to a `.desktop` file (see resolution chain below) → `desktop:<id>`.
-3. **GIO launch env**: if `environ` has `GIO_LAUNCHED_DESKTOP_FILE` and the process
-   is `GIO_LAUNCHED_DESKTOP_FILE_PID` or a descendant of it → `desktop:<id>` from
-   that path.
-4. **Special cases** (checked on the process and its ancestors): Steam `reaper`
-   ancestor → `steam:<AppId>`; Minecraft Java → `minecraft:java`; Wine/Proton
-   `.exe` → `wine:<exe>`. These take precedence over 1–3 when they match, because
-   e.g. a Steam game otherwise inherits Steam's own unit/env.
-5. **Process tree**: walk up to the **launch root** — the highest ancestor still
-   owned by the child that isn't a session/desktop process (parent is
-   `systemd --user`, the login session leader, the desktop shell or PID 1) —
-   then resolve the root's exe via the resolution chain → `desktop:<id>`.
-6. **No `.desktop` match** → not an app (see filter below), kept only as
+0. **Special cases** (checked on the process and its ancestors) — first, because
+   e.g. a Steam game otherwise inherits Steam's own unit/env:
+   - an ancestor whose `argv[0]` basename is `reaper`, with a `SteamLaunch` argument
+     and an `AppId=<n>` argument → `steam:<n>`. Match exact arguments only; a loose
+     substring search matched an unrelated shell script that merely contained the text;
+   - `argv[0]` is `java*` with a Minecraft main class or jar (`net.minecraft`,
+     `minecraft*.jar`, `cpw.mods`, `fabricmc`, `quiltmc`) → `minecraft:java`;
+   - `argv[0]`/`argv[1]` ends in `.exe` → `wine:<exe>`.
+1. **Service units are never apps**: non-`app-` units under `app.slice` (user
+   services, portals, input methods) and anything in `background.slice` → "other".
+   `session.slice` is *not* excluded: under uwsm, apps started from a compositor
+   keybinding without `uwsm app` stay in the compositor's unit there (the tree
+   step handles them).
+2. **Flatpak / Snap unit** → `flatpak:<id>` / `snap:<name>`.
+3. **GIO launch env**: `environ` has `GIO_LAUNCHED_DESKTOP_FILE`, and
+   `GIO_LAUNCHED_DESKTOP_FILE_PID` is the process or an ancestor, is not PID 1,
+   is owned by the child and started no later than the process (otherwise the env
+   is stale or the PID was reused) → `desktop:<id>` from that path. Checked
+   **before** the unit: a GIO launch from inside another app (a file manager
+   opening a PDF) inherits that app's unit, but the env names the new app.
+4. **App unit** (`app-…` under `app.slice`) → parse launcher + application id →
+   resolve to a `.desktop` file (resolution chain below). If the id doesn't
+   resolve (uwsm/xdg-terminal-exec units carry a command, e.g.
+   `app-Hyprland-xdg\x2dterminal\x2dexec-….scope`), resolve the **oldest process
+   in the unit** instead → `desktop:<id>`.
+   - **Unit = the first `.scope`/`.service` below the slice.** Only slices nest;
+     deeper cgroups are sub-cgroups the app made itself (Konsole:
+     `app-org.kde.konsole-<pid>.scope/main.scope`, one per tab).
+   - **Chromium self-scope** `app-org.chromium.Chromium-<pid>.scope`: Chromium *and
+     every Electron app* move their main process into a scope with this id, so it
+     says nothing about the app (seen: Bitwarden). Ignore the id; use the unit of
+     the process's children (they stay in the launcher's unit), else continue
+     with step 5.
+5. **Process tree**: walk up from the process until the parent is PID 1, the
+   user's `systemd`, or another user; the **launch root** is the highest process
+   on that path that resolves to a visible `.desktop` entry → `desktop:<id>`.
+   Desktop shells/panels have no visible entry, so they're skipped naturally; a
+   terminal or file manager owns what it starts (Q6).
+6. **No visible `.desktop` match** → not an app (see filter below), kept only as
    `exe:<name>` in a hidden "other" bucket for diagnostics.
 
-**Resolution chain** (unit id or exe → `.desktop` file): `<id>.desktop`
-(case-insensitive) → `.desktop` whose `Exec=`/`TryExec=` binary equals the exe
-(prefer an entry whose file id equals the binary and has no extra args; seen:
-`foot` vs `foot-server`) → `StartupWMClass` match. Search
-`$XDG_DATA_DIRS/applications` + the child's `~/.local/share/applications` +
-Flatpak/Snap export dirs. Always strip ` (deleted)` from `/proc/<pid>/exe`.
+**Resolution chain.**
+- Unit id → `<id>.desktop` (case-insensitive) → `StartupWMClass` match.
+- Process → try the names exe basename, `argv[0]` basename, `comm`; each via the
+  `.desktop` whose `Exec=`/`TryExec=` binary equals the name, then
+  `StartupWMClass`, then the last dotted component of the desktop id.
+  - `Exec=` parsing drops field codes (`%u` …) and leading `env VAR=…`; only the
+    `[Desktop Entry]` group counts, not `[Desktop Action …]`.
+  - Tie-break between several entries: visible first, then id equal to the name,
+    then `Exec` without extra args (seen: `foot` vs `foot-server`).
+- **Interpreters** (`electron*`, `python*`, `java`, `node`, shells, `wine*`, …): use
+  the script/archive in `argv` instead. Try its basename without extension, then
+  its parent directories, e.g. `electron39 /usr/lib/bitwarden/app.asar` →
+  `bitwarden` → `bitwarden.desktop`.
+- Search `$XDG_DATA_HOME` (the child's), `$XDG_DATA_DIRS`, and the Flatpak/Snap
+  export dirs; recurse into subdirectories (desktop id = relative path with `/`
+  replaced by `-`); an earlier dir wins.
+- Always strip ` (deleted)` from `/proc/<pid>/exe`.
+- Electron/Chromium processes are non-dumpable, so even their own user can't read
+  their `exe`/`environ`. Root can; `argv` works either way.
 
 ### What counts as an app
 
@@ -266,14 +304,42 @@ menu**:
   not `Hidden=true`; **and**
 - it is not an autostart launch (`@autostart.service` unit, or the root process
   matches an entry in `/etc/xdg/autostart` / `~/.config/autostart` and started
-  within the first minutes of the session) — autostart apps are tracked but not
+  within 60 s of the session's first process) — autostart apps are tracked but not
   counted as usage by default; **and**
-- it is not in `session.slice` / `background.slice`, and not a non-`app-` unit
-  under `app.slice` (user services).
+- it is not in `background.slice` and not a non-`app-` unit under `app.slice`
+  (user services). `session.slice` processes may be apps (see step 1).
 
 Desktop components (panels, shells, portals, daemons) either have no visible
 `.desktop` entry or are `NoDisplay`/autostart, so they drop out **without any
 per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
+
+### Sanity check results (0.5)
+
+2026-10-20, `app-scan.py` run unprivileged (own processes only):
+
+- **Hyprland via uwsm (Arch), maintainer's machine.** Apps: Chromium (30 processes;
+  main in the Chromium self-scope, the rest in `app-Hyprland-chromium-….scope`),
+  foot (via the `xdg-terminal-exec` unit → oldest process). Autostart: Bitwarden
+  (Electron self-scope → children's `@autostart` unit), Nextcloud. "Other": 41
+  desktop components (Hyprland, quickshell, portals, pipewire, gvfs, syncthing,
+  fcitx5 service, uwsm, …). Nothing misclassified.
+- **KDE Plasma 6 Wayland (CachyOS), screenguardTest.** Apps opened for the test
+  through KIO (`kioclient exec`, as Plasma's launcher does) and GIO (`gtk-launch`):
+  Firefox (17 processes incl. sandbox helpers), Dolphin (incl. kioworkers), KCalc,
+  Konsole (self-scope with `main.scope` sub-cgroup), Alacritty — all via
+  `app-<id>@<uuid>.service` units — and KWrite via the GIO env (no unit;
+  upstream GLib). "Other": 42 components (plasmashell, kwin, kded6, ksmserver,
+  portals, kdeconnectd, tray apps, …). Nothing misclassified.
+- **Simulated** (fake processes on Hyprland): GIO env with a valid PID →
+  `desktop:<id>`; stale GIO env (PID 1) → ignored; `reaper SteamLaunch
+  AppId=570 -- …` with a child → `steam:570` for both; Minecraft `java … net.minecraft…`
+  → `minecraft:java`; `Game.exe` → `wine:game.exe`.
+- **Bugs found and fixed in the algorithm:** innermost cgroup taken as the unit
+  (Konsole); the Chromium self-scope id; services not excluded (fcitx5); the Steam
+  match too loose; stale GIO PIDs accepted. All are reflected in the algorithm
+  above.
+- Not covered by real machines (by design, see the decision log): GNOME, Cinnamon/MATE,
+  XFCE, Flatpak/Snap, real Steam/Minecraft. Phase 1 fixture tests (1.6) cover them.
 
 ## Phase 1 — Per-app usage reports (observe only, no enforcement)
 
@@ -484,6 +550,11 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | "Is it an app" = resolves to a visible `.desktop` launcher entry and isn't autostart/session/background — no per-desktop ignore lists | Desktop components lack visible `.desktop` entries, so they drop out on any desktop |
 | 2026-10-20 | Autostart units (`@autostart.service`, tray apps like Nextcloud, Bitwarden, screenguard-tray) are tracked but **not counted as usage by default**; enforcement still applies to them if they're in a limited group | Background tray apps would otherwise accumulate "usage" all day |
 | 2026-10-20 | Strip a trailing ` (deleted)` from `/proc/<pid>/exe` targets | Binary updated while running (seen: screenguard-tray) |
+| 2026-10-20 | The unit is the **first** `.scope`/`.service` below the slice; deeper cgroups belong to it | Only slices nest in systemd; Konsole creates `main.scope`/tab sub-cgroups inside its scope |
+| 2026-10-20 | Ignore the `org.chromium.Chromium` self-scope id; use the children's unit or the process tree | Chromium and every Electron app use this id (Bitwarden landed in it) |
+| 2026-10-20 | GIO env is checked before the app unit, but only with a live `_PID` ancestor owned by the child | Nested GIO launches inherit the parent app's unit; a stale env must not misattribute |
+| 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
+| 2026-10-20 | `session.slice` isn't excluded, only `background.slice` and non-`app-` user services | uwsm compositor keybinding launches without `uwsm app` stay in the compositor's unit |
 
 ---
 
@@ -494,3 +565,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | Concept agreed, plan written (this file) | Phase 0, step 0.1 |
 | 2026-10-20 | 0.1 done (scan script). Samples: Hyprland (maintainer's machine), KDE (screenguardTest, sparse). Findings logged in decision log | Richer KDE sample; GNOME + Cinnamon access |
 | 2026-10-20 | Switched Phase 0 from sampling desktops to research: signal matrix, desktop-independent algorithm and app filter written (0.2–0.4) | 0.5 sanity check on Hyprland + KDE |
+| 2026-10-20 | 0.5 done: full algorithm in `app-scan.py`; Hyprland + KDE (KIO and GIO launches) + simulated GIO/Steam/Minecraft/Wine all correct after 5 algorithm fixes (see Sanity check results) | 0.6 measure cost |
