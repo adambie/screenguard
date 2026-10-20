@@ -664,4 +664,26 @@ mod real {
             }
         }
     }
+
+    /// Cost of a full tracker tick (scan + identify + names), step 0.6 / exit
+    /// criterion: `cargo test --release -p agent bench_tracker_tick -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_tracker_tick() {
+        use crate::app_usage::{AppTracker, TrackedUser};
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        let uid: u32 = status.lines().find_map(|l| l.strip_prefix("Uid:")).unwrap().split_whitespace().next().unwrap().parse().unwrap();
+        let users = [TrackedUser { uid, home: std::env::var("HOME").unwrap().into(), language: "en".into(), counting: true }];
+        let mut tracker = AppTracker::new();
+        let t0 = std::time::Instant::now();
+        tracker.tick(t0, &users); // first tick: full reads + catalogue load
+        let first = t0.elapsed();
+        let n = 200;
+        let start = std::time::Instant::now();
+        for i in 0..n {
+            tracker.tick(t0 + std::time::Duration::from_secs(5 * (i + 1)), &users);
+        }
+        let per = start.elapsed() / n as u32;
+        println!("first tick {first:?}; steady tick {per:?} = {:.3} % of one core at 5 s", per.as_secs_f64() / 5.0 * 100.0);
+    }
 }

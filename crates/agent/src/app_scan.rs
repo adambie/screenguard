@@ -80,7 +80,13 @@ impl ProcScanner {
             };
             let Some(stat) = self.read_stat(pid) else { continue };
             let cached = match self.cache.remove(&pid) {
-                Some(c) if c.start_ticks == stat.start_ticks && c.comm == stat.comm => c,
+                Some(mut c) if c.start_ticks == stat.start_ticks && c.comm == stat.comm => {
+                    // reparenting (double fork, launcher exited) changes ppid
+                    if let Some(info) = c.info.as_mut() {
+                        info.ppid = stat.ppid;
+                    }
+                    c
+                }
                 _ => match self.read_full(pid, &stat, uids) {
                     Some(c) => c,
                     None => continue, // exited while reading
@@ -312,6 +318,12 @@ mod tests {
         // exec changes comm -> re-read
         fp.add(P { pid: 10, comm: "electron", argv: &["electron", "/usr/lib/app/app.asar"], ..Default::default() });
         assert_eq!(sc.scan(&uids(&[1000]))[&10].argv[0], "electron");
+
+        // reparented: ppid is refreshed even though the rest stays cached
+        fp.add(P { pid: 10, ppid: 1, comm: "electron", argv: &["ignored"], ..Default::default() });
+        fp.add(P { pid: 10, ppid: 900, comm: "electron", argv: &["ignored"], ..Default::default() });
+        let p = &sc.scan(&uids(&[1000]))[&10];
+        assert_eq!((p.ppid, p.argv[0].as_str()), (900, "electron"));
 
         // PID reused by a new process -> re-read
         fp.add(P { pid: 10, start: 2000, comm: "electron", argv: &["other"], ..Default::default() });

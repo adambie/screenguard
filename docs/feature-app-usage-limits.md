@@ -213,6 +213,8 @@ combinations). Real machines are only used to sanity-check the result
 
   Cost scales with the child's process count (~25–55 µs each), not the CPU; a
   heavy session with 500 processes would still be ~0.5 % full / ~0.2 % cached.
+  Full tracker tick (scan + identification + names), measured later with
+  `bench_tracker_tick`: 6 ms steady, 27 ms first tick = **0.12 %** at 5 s.
   **Decision: 5 s interval; cache identities by `(pid, start time)`** so a tick
   only lists `/proc` and checks owner + start time, doing the full reads and
   identification only for new processes. The `.desktop` catalogue is cached and
@@ -392,6 +394,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   real UID is a managed child, read cgroup path, ppid, `exe` basename, cmdline and
   the two `GIO_LAUNCHED_DESKTOP_FILE*` variables from `environ` (local only).
   Cache per `(pid, start time)`; only new processes get the full reads (0.6).
+  `ppid` is refreshed from `stat` on every tick (reparenting).
   *Done when:* unit tests run against a fake `/proc` tree fixture (tempdir).
   → `ProcScanner::scan(uids)` → `ProcInfo`s. Notes:
   - Real UID comes from `status`: non-dumpable processes (Electron) have
@@ -573,7 +576,13 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 1E. Verification and release
 
-- [ ] **1.19 End-to-end on a real test machine** — install the new agent,
+- [ ] **1.19 End-to-end on a real test machine**
+  Prerequisites checked 2026-10-20:
+  - `deploy/screenguard-agent.service` has no `CapabilityBoundingSet` (root
+    keeps `CAP_SYS_PTRACE`, so it can read other users' `exe`/`environ`) and no
+    `ProtectProc`/`ProcSubset`.
+  - Its `ProtectHome=read-only` still lets the agent read the child's
+    `.desktop` files and Steam manifests. — install the new agent,
   use apps for a while, compare reported minutes with a stopwatch (±1 tick).
   Also confirm the server log shows `app_usage` in the agent's capabilities (1.3).
 - [ ] **1.20 Compatibility checks** — new server + old agent (no app data, no
@@ -755,3 +764,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.17 done: de/es/fr/pt/pl, profile header wraps on phones; noted 17 untranslated web-filter keys (older gap) | 1.18 optional / 1.19 e2e |
 | 2026-10-20 | 1.18 skipped (optional). 1.20 mostly done via `sim-agent.py` (old server ignores the message, new server ingests); real old agent pending | 1.21 docs, then 1.19 with maintainer |
 | 2026-10-20 | 1.21 done: README section + corrected privacy statement | 1.19 real-machine e2e (maintainer), 1.22 release |
+| 2026-10-20 | Review follow-ups: unit hardening OK for 1.19, ppid refreshed per tick, full tick measured (0.12 % CPU), README desktop claim limited to what was tested | 1.19 (maintainer) |

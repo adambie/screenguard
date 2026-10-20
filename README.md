@@ -240,7 +240,7 @@ In both modes, **Lock now** zeroes the user's remaining allowance. The preserve-
 
 Each profile has an **App usage** page (button on the profile page) showing which apps were used and for how long — per day, per week (Monday–Sunday) or in total, summed over all the child's computers.
 
-How it works: every 5 seconds the agent looks at the child's running processes and works out which app each belongs to — from the systemd unit the desktop starts apps in, the launch information GTK/GNOME-style desktops leave behind, or the process tree — and matches it to the app's menu entry. It works on any desktop (GNOME, KDE, Cinnamon, XFCE, Hyprland/Sway, …) with cgroup v2 (every current distribution).
+How it works: every 5 seconds the agent looks at the child's running processes and works out which app each belongs to — from the systemd unit the desktop starts apps in, the launch information GTK/GNOME-style desktops leave behind, or the process tree — and matches it to the app's menu entry. It is designed to work on any desktop with cgroup v2 (every current distribution) and has been tested on KDE Plasma and Hyprland; GNOME, Cinnamon, XFCE and others are covered by tests of their documented behaviour.
 
 What counts:
 
