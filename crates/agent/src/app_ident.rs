@@ -52,30 +52,41 @@ enum CgKind {
     Other,
 }
 
-/// Name and icon to report for an identified app, in the profile's language.
-pub fn display(id: &Identified, cat: &Catalog, lang: &str, home: &Path) -> (String, Option<String>) {
-    let entry = id.desktop_id.as_deref().and_then(|d| cat.get(d));
-    if let Some(e) = entry {
-        return (e.name_for(lang).to_string(), e.icon.clone());
-    }
+/// What the reports show for an app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shown {
+    pub name: String,
+    pub icon: Option<String>,
+    /// freedesktop categories; Steam games and Minecraft always include `Game`.
+    pub categories: Vec<String>,
+}
+
+/// Name, icon and categories to report for an identified app, in the profile's language.
+pub fn display(id: &Identified, cat: &Catalog, lang: &str, home: &Path) -> Shown {
+    let from = |e: &DesktopEntry| Shown { name: e.name_for(lang).to_string(), icon: e.icon.clone(), categories: e.categories.clone() };
+    let plain = |name: String, icon: Option<&str>| Shown { name, icon: icon.map(str::to_string), categories: Vec::new() };
     let name = id.app_id.name.as_str();
-    let from = |e: &DesktopEntry| (e.name_for(lang).to_string(), e.icon.clone());
-    match id.app_id.kind {
-        AppKind::Steam => cat
+    let mut shown = match (id.desktop_id.as_deref().and_then(|d| cat.get(d)), id.app_id.kind) {
+        (Some(e), _) => from(e),
+        (None, AppKind::Steam) => cat
             .steam_shortcut(name)
             .map(from)
-            .or_else(|| steam_manifest_name(home, name).map(|n| (n, None)))
-            .unwrap_or_else(|| (format!("Steam game {name}"), None)),
-        AppKind::Snap => cat
+            .or_else(|| steam_manifest_name(home, name).map(|n| plain(n, None)))
+            .unwrap_or_else(|| plain(format!("Steam game {name}"), None)),
+        (None, AppKind::Snap) => cat
             .get(&format!("{name}_{name}"))
             .or_else(|| cat.by_name(name))
             .map(from)
-            .unwrap_or_else(|| (name.to_string(), None)),
-        AppKind::Flatpak => cat.get(name).map(from).unwrap_or_else(|| (name.to_string(), None)),
-        AppKind::Minecraft => ("Minecraft".to_string(), Some("minecraft".to_string())),
-        AppKind::Wine => (name.strip_suffix(".exe").unwrap_or(name).to_string(), None),
-        AppKind::Desktop | AppKind::Exe => (name.to_string(), None),
+            .unwrap_or_else(|| plain(name.to_string(), None)),
+        (None, AppKind::Flatpak) => cat.get(name).map(from).unwrap_or_else(|| plain(name.to_string(), None)),
+        (None, AppKind::Minecraft) => plain("Minecraft".to_string(), Some("minecraft")),
+        (None, AppKind::Wine) => plain(name.strip_suffix(".exe").unwrap_or(name).to_string(), None),
+        (None, AppKind::Desktop | AppKind::Exe) => plain(name.to_string(), None),
+    };
+    if matches!(id.app_id.kind, AppKind::Steam | AppKind::Minecraft) && !shown.categories.iter().any(|c| c == "Game") {
+        shown.categories.push("Game".to_string());
     }
+    shown
 }
 
 /// `"name"` from `steamapps/appmanifest_<id>.acf` in Steam's default library.
@@ -412,10 +423,19 @@ mod tests {
         let apps = w.fp.path().join("share/applications");
         fixture::standard(&apps, &w.fp.path().join("autostart"));
         let cat = Catalog::load(&[apps], &[]);
-        let show = |app_id: &str, desktop_id: Option<&str>, lang: &str| {
+        let full = |app_id: &str, desktop_id: Option<&str>, lang: &str| {
             let id = Identified { app_id: AppId::parse(app_id).unwrap(), launch: Launch::App, desktop_id: desktop_id.map(str::to_string) };
             display(&id, &cat, lang, &home)
         };
+        let show = |app_id: &str, desktop_id: Option<&str>, lang: &str| {
+            let s = full(app_id, desktop_id, lang);
+            (s.name, s.icon)
+        };
+        assert_eq!(full("desktop:firefox", Some("firefox"), "en").categories, vec!["Network", "WebBrowser"]);
+        assert_eq!(full("steam:570", None, "en").categories, vec!["Game"]); // from the shortcut
+        assert_eq!(full("steam:42", None, "en").categories, vec!["Game"]); // added
+        assert_eq!(full("minecraft:java", None, "en").categories, vec!["Game"]);
+        assert!(full("wine:game.exe", None, "en").categories.is_empty());
         assert_eq!(show("desktop:org.kde.dolphin", Some("org.kde.dolphin"), "de"), ("Dolphin-Dateiverwaltung".into(), Some("system-file-manager".into())));
         assert_eq!(show("steam:570", None, "en"), ("Dota 2".into(), Some("steam_icon_570".into())));
         assert_eq!(show("steam:1091500", None, "en").0, "Cyberpunk 2077");

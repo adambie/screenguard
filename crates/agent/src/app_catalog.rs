@@ -29,6 +29,8 @@ pub struct DesktopEntry {
     pub wmclass: Option<String>,
     /// Steam game shortcut: `Exec=steam steam://rungameid/<id>`.
     pub steam_appid: Option<String>,
+    /// freedesktop `Categories=` (e.g. `Game`, `WebBrowser`), main and additional.
+    pub categories: Vec<String>,
 }
 
 #[derive(Default)]
@@ -341,6 +343,10 @@ fn parse_entry(text: &str, id: &str) -> Option<DesktopEntry> {
         binaries,
         plain,
         wmclass: kv.get("StartupWMClass").map(|s| s.to_lowercase()),
+        categories: kv
+            .get("Categories")
+            .map(|c| c.split(';').map(str::trim).filter(|c| !c.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default(),
         steam_appid: kv.get("Exec").and_then(|e| {
             let id: String = e.split("steam://rungameid/").nth(1)?.chars().take_while(char::is_ascii_digit).collect();
             (!id.is_empty()).then_some(id)
@@ -424,7 +430,7 @@ pub(crate) mod fixture {
             ("org.kde.konsole.desktop", "Name=Konsole\nExec=konsole\nTryExec=konsole\nIcon=utilities-terminal\n\n[Desktop Action NewTab]\nExec=konsole --new-tab"),
             ("org.kde.kded6.desktop", "Name=KDED\nExec=kded6\nNoDisplay=true"),
             ("org.kde.plasmashell.desktop", "Name=Plasma\nExec=plasmashell\nNoDisplay=true"),
-            ("firefox.desktop", "Name=Firefox\nExec=/usr/lib/firefox/firefox %u\nIcon=firefox\nStartupWMClass=firefox"),
+            ("firefox.desktop", "Name=Firefox\nExec=/usr/lib/firefox/firefox %u\nIcon=firefox\nStartupWMClass=firefox\nCategories=Network;WebBrowser;"),
             ("chromium.desktop", "Name=Chromium\nExec=/usr/bin/chromium %U\nIcon=chromium\nStartupWMClass=chromium"),
             ("bitwarden.desktop", "Name=Bitwarden\nExec=bitwarden-desktop %u\nIcon=bitwarden\nStartupWMClass=Bitwarden"),
             ("foot.desktop", "Name=Foot\nExec=foot\nIcon=foot"),
@@ -437,7 +443,8 @@ pub(crate) mod fixture {
             ("nextcloud.desktop", "Name=Nextcloud\nExec=nextcloud\nIcon=Nextcloud"),
             ("org.mozilla.firefox.desktop", "Name=Firefox (Flatpak)\nExec=/usr/bin/flatpak run --branch=stable --command=firefox org.mozilla.firefox @@u %u @@\nIcon=org.mozilla.firefox"),
             ("wine/Programs/Game Name.desktop", "Name=Game Name\nExec=env WINEPREFIX=\"/home/kid/.wine\" wine C:\\\\Games\\\\game.exe"),
-            ("Dota 2.desktop", "Name=Dota 2\nExec=steam steam://rungameid/570\nIcon=steam_icon_570\nTerminal=false"),
+            ("Dota 2.desktop", "Name=Dota 2\nExec=steam steam://rungameid/570\nIcon=steam_icon_570\nTerminal=false\nCategories=Game;"),
+            ("org.supertuxproject.SuperTux.desktop", "Name=SuperTux\nExec=supertux2\nIcon=supertux\nCategories=Game;ArcadeGame;"),
             ("spotify_spotify.desktop", "Name=Spotify\nExec=env BAMF_DESKTOP_FILE_HINT=/var/lib/snapd/desktop/applications/spotify_spotify.desktop /snap/bin/spotify %U\nIcon=/snap/spotify/80/usr/share/spotify/icons/spotify-linux-128.png"),
             ("brave.desktop", "Name=Brave\nExec=brave\nIcon=brave\nHidden=true"),
         ] {
@@ -481,6 +488,8 @@ mod tests {
         assert_eq!(cat.get("org.kde.dolphin").unwrap().name, "Dolphin");
         assert_eq!(cat.get("org.kde.dolphin").unwrap().icon.as_deref(), Some("system-file-manager"));
         assert_eq!(cat.get("org.kde.kded6").unwrap().icon, None);
+        assert_eq!(cat.get("firefox").unwrap().categories, vec!["Network", "WebBrowser"]);
+        assert!(cat.get("org.kde.dolphin").unwrap().categories.is_empty());
         assert_eq!(cat.get("ORG.KDE.DOLPHIN").unwrap().id, "org.kde.dolphin");
         assert_eq!(cat.get("wine-Programs-Game Name").unwrap().name, "Game Name");
         // [Desktop Action] Exec doesn't count

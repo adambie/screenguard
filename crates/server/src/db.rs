@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 10;
+const CURRENT_VERSION: i32 = 11;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -164,6 +164,7 @@ const APP_USAGE_DDL: [&str; 3] = [
         app_id       TEXT NOT NULL PRIMARY KEY,
         display_name TEXT NOT NULL,
         icon         TEXT,
+        categories   TEXT NOT NULL DEFAULT '',
         first_seen   INTEGER NOT NULL,
         last_seen    INTEGER NOT NULL
     )",
@@ -223,6 +224,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 8 { apply_v8(pool).await?; v = 8; set_schema_version(pool, v).await?; }
     if v < 9 { apply_v9(pool).await?; v = 9; set_schema_version(pool, v).await?; }
     if v < 10 { apply_v10(pool).await?; v = 10; set_schema_version(pool, v).await?; }
+    if v < 11 { apply_v11(pool).await?; v = 11; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -451,6 +453,20 @@ pub(crate) async fn apply_v10(pool: &DbPool) -> Result<()> {
         .execute(pool)
         .await?;
     tracing::info!("DB migration v10 applied (per-app usage)");
+    Ok(())
+}
+
+// Migration 11: app categories (`Game`, `WebBrowser`, …) for predefined groups.
+// `create_tables` runs first and already builds the final `app_catalog` on a
+// database that didn't have it, so only add the column where it's missing.
+pub(crate) async fn apply_v11(pool: &DbPool) -> Result<()> {
+    let has_column = sqlx::query("SELECT categories FROM app_catalog LIMIT 1").fetch_optional(pool).await.is_ok();
+    if !has_column {
+        sqlx::query("ALTER TABLE app_catalog ADD COLUMN categories TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await?;
+    }
+    tracing::info!("DB migration v11 applied (app categories)");
     Ok(())
 }
 
@@ -2351,6 +2367,7 @@ mod tests {
         }
         set_schema_version(&pool, 9).await.unwrap();
         run_migrations(&pool, true).await.unwrap();
+        sqlx::query("SELECT categories FROM app_catalog").fetch_all(&pool).await.unwrap();
 
         let a = get_agent_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!((a.status.as_str(), a.auth_token_hash.as_deref(), a.app_usage_available), ("paired", Some("h"), None));
@@ -2359,7 +2376,22 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 10);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 11);
+    }
+
+    #[tokio::test]
+    async fn migration_v11_adds_categories_to_a_v10_catalog() {
+        let pool = test_pool().await;
+        // a v10 catalog: no categories column
+        sqlx::query("DROP TABLE app_catalog").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE app_catalog (app_id TEXT NOT NULL PRIMARY KEY, display_name TEXT NOT NULL, icon TEXT, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL)").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO app_catalog VALUES ('steam:570','Dota 2',NULL,1,1)").execute(&pool).await.unwrap();
+        set_schema_version(&pool, 10).await.unwrap();
+        run_migrations(&pool, true).await.unwrap();
+        let c: String = sqlx::query_scalar("SELECT categories FROM app_catalog").fetch_one(&pool).await.unwrap();
+        assert_eq!(c, "");
+        // and running it again (column present) is a no-op
+        apply_v11(&pool).await.unwrap();
     }
 
     #[tokio::test]

@@ -14,6 +14,7 @@ use crate::db::{self, DbPool};
 const MAX_SECONDS_PER_DAY: u64 = 86_400;
 const MAX_NAME_CHARS: usize = 200;
 const MAX_ICON_CHARS: usize = 512;
+const MAX_CATEGORIES: usize = 20;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Ingested {
@@ -52,6 +53,15 @@ pub async fn ingest(pool: &DbPool, agent_id: Uuid, sync: &AppUsageSync, today: N
         };
         let name = clean(&e.display_name, MAX_NAME_CHARS).unwrap_or_else(|| app.name.clone());
         let icon = e.icon.as_deref().and_then(|i| clean(i, MAX_ICON_CHARS));
+        // freedesktop category names are plain words (`Game`, `X-Foo-Bar`)
+        let categories = e
+            .categories
+            .iter()
+            .filter(|c| !c.is_empty() && c.len() <= 64 && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'))
+            .take(MAX_CATEGORIES)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(";");
         let seconds = e.seconds_total.min(MAX_SECONDS_PER_DAY) as i64;
 
         sqlx::query(
@@ -69,13 +79,15 @@ pub async fn ingest(pool: &DbPool, agent_id: Uuid, sync: &AppUsageSync, today: N
         .execute(pool)
         .await?;
         sqlx::query(
-            "INSERT INTO app_catalog (app_id, display_name, icon, first_seen, last_seen) VALUES ($1,$2,$3,$4,$4)
+            "INSERT INTO app_catalog (app_id, display_name, icon, categories, first_seen, last_seen) VALUES ($1,$2,$3,$4,$5,$5)
              ON CONFLICT(app_id)
-             DO UPDATE SET display_name=EXCLUDED.display_name, icon=EXCLUDED.icon, last_seen=EXCLUDED.last_seen",
+             DO UPDATE SET display_name=EXCLUDED.display_name, icon=EXCLUDED.icon,
+                           categories=EXCLUDED.categories, last_seen=EXCLUDED.last_seen",
         )
         .bind(app.to_string())
         .bind(name)
         .bind(icon)
+        .bind(categories)
         .bind(now)
         .execute(pool)
         .await?;
@@ -89,19 +101,20 @@ pub struct AppTotal {
     pub app_id: String,
     pub name: String,
     pub icon: Option<String>,
+    pub categories: Vec<String>,
     pub seconds: i64,
 }
 
 /// Per-app totals of a profile between two dates (inclusive), summed over all
 /// its agents; longest first. `None` dates mean unbounded.
 pub async fn totals(pool: &DbPool, profile_id: Uuid, from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<Vec<AppTotal>> {
-    let rows: Vec<(String, Option<String>, Option<String>, i64)> = sqlx::query_as(
-        "SELECT u.app_id, c.display_name, c.icon, SUM(u.seconds) AS total
+    let rows: Vec<(String, Option<String>, Option<String>, Option<String>, i64)> = sqlx::query_as(
+        "SELECT u.app_id, c.display_name, c.icon, c.categories, SUM(u.seconds) AS total
          FROM app_usage u
          JOIN agent_users au ON au.id = u.agent_user_id
          LEFT JOIN app_catalog c ON c.app_id = u.app_id
          WHERE au.profile_id = $1 AND u.date >= $2 AND u.date <= $3
-         GROUP BY u.app_id, c.display_name, c.icon",
+         GROUP BY u.app_id, c.display_name, c.icon, c.categories",
     )
     .bind(profile_id.to_string())
     .bind(from.map_or("0000-00-00".to_string(), |d| d.to_string()))
@@ -110,10 +123,11 @@ pub async fn totals(pool: &DbPool, profile_id: Uuid, from: Option<NaiveDate>, to
     .await?;
     let mut out: Vec<AppTotal> = rows
         .into_iter()
-        .map(|(app_id, name, icon, seconds)| AppTotal {
+        .map(|(app_id, name, icon, categories, seconds)| AppTotal {
             name: name.unwrap_or_else(|| app_id.split_once(':').map_or(app_id.clone(), |(_, n)| n.to_string())),
             app_id,
             icon,
+            categories: split_categories(categories.as_deref().unwrap_or("")),
             seconds,
         })
         .collect();
@@ -150,6 +164,10 @@ pub async fn profile_has_capability(pool: &DbPool, profile_id: Uuid) -> Result<b
     Ok(n > 0)
 }
 
+pub fn split_categories(s: &str) -> Vec<String> {
+    s.split(';').filter(|c| !c.is_empty()).map(str::to_string).collect()
+}
+
 /// Trimmed, without control characters, at most `max` chars; `None` if empty.
 fn clean(s: &str, max: usize) -> Option<String> {
     let s: String = s.chars().filter(|c| !c.is_control()).take(max).collect();
@@ -179,6 +197,7 @@ pub(crate) mod tests {
             app_id: app.into(),
             display_name: name.into(),
             icon: Some("icon".into()),
+            categories: if app.starts_with("steam:") { vec!["Game".into()] } else { vec![] },
             seconds_total: secs,
         }
     }
@@ -299,6 +318,7 @@ pub(crate) mod tests {
         assert_eq!(t(None, None).await, vec![("steam:570".into(), 4200), ("desktop:firefox".into(), 3000), ("desktop:foot".into(), 60)]);
         let first = &totals(&pool, profile, None, None).await.unwrap()[0];
         assert_eq!((first.name.as_str(), first.icon.as_deref()), ("Dota 2", Some("icon")));
+        assert_eq!(first.categories, vec!["Game"]);
 
         let days = daily(&pool, profile, day("2026-10-19"), day("2026-10-25")).await.unwrap();
         assert_eq!(days, vec![
@@ -327,9 +347,10 @@ pub(crate) mod tests {
         ingest(&pool, agent, &AppUsageSync { entries: vec![e.clone()] }, day("2026-10-20")).await.unwrap();
         e.display_name = "  Dota\u{7} 2  ".into();
         e.icon = Some("".into());
+        e.categories = vec!["Game".into(), "Bad;Inject".into(), "".into(), "X-Valve".into()];
         ingest(&pool, agent, &AppUsageSync { entries: vec![e] }, day("2026-10-20")).await.unwrap();
-        let (name, icon): (String, Option<String>) =
-            sqlx::query_as("SELECT display_name, icon FROM app_catalog WHERE app_id='steam:570'").fetch_one(&pool).await.unwrap();
-        assert_eq!((name.as_str(), icon), ("Dota 2", None));
+        let (name, icon, cats): (String, Option<String>, String) =
+            sqlx::query_as("SELECT display_name, icon, categories FROM app_catalog WHERE app_id='steam:570'").fetch_one(&pool).await.unwrap();
+        assert_eq!((name.as_str(), icon, cats.as_str()), ("Dota 2", None, "Game;X-Valve"));
     }
 }

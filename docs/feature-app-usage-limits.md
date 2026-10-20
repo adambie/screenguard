@@ -45,8 +45,8 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.0 app categories, then 2.1–2.3 (groups + "Apps"
-  admin page). Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.1 `AppMatcher`, 2.2 migration v12 (groups,
+  predefined Games/Web browsers), 2.3 groups API + "Apps" admin page. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -645,17 +645,26 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 ## Phase 2 — App groups, group limits, enforcement
 
 > **Release decision (2026-10-20, maintainer):** no release after Phase 1 alone —
-> Phase 1 + Phase 2 ship together as one working feature (seeing apps, grouping,
-> limits, closing). Step 1.22 is folded into 2.17.
+> Phase 1 + Phase 2 (including 2E new-app approval) ship together as one working
+> feature. Step 1.22 is folded into 2.17.
 
 ### 2A. Model and admin UI
 
-- [ ] **2.0 App categories** — the agent sends each app's freedesktop
+- [x] **2.0 App categories** — the agent sends each app's freedesktop
   `Categories=` (from its `.desktop` entry) in `AppUsageEntry.categories`
   (`#[serde(default)]`, so old servers/agents are unaffected); `steam:` and
   `minecraft:` ids get `Game` automatically. Server stores them in
   `app_catalog.categories`. *Done when:* catalogue + ingest tests; real-machine
   check that Firefox → `WebBrowser`, a game → `Game`.
+  → `DesktopEntry.categories`, `app_ident::Shown { name, icon, categories }`, agent
+  DB column `app_usage_log.categories` (added to old DBs in `migrate`),
+  `AppUsageEntry.categories` (omitted when empty). Server migration **v11** adds
+  `app_catalog.categories`, only if missing: `create_tables` runs before the
+  migrations and already builds the final table on a v9 database. Categories are
+  validated (plain words, ≤ 20) and returned by the reports API.
+  - Real machine: the test machine's agent and the local server were updated (the live
+    DB migrated 10 → 11). Firefox → `GNOME;GTK;Network;WebBrowser`, a test entry with
+    `Categories=Game;ArcadeGame;` → `Game;ArcadeGame`, end to end.
 - [ ] **2.1 Matching rules in `common`** — `AppMatcher` shared by server and agent
   so they always agree. Rule kinds: `app_id` (exact), `app_id_prefix`
   (e.g. `steam:` = all Steam games), `category` (freedesktop category, e.g.
@@ -663,11 +672,10 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   take one app out of a category-based group. No regex rules (decided: keep it
   simple; revisit only if real use needs it).
   *Done when:* table-driven tests.
-- [ ] **2.2 Migration v11** —
+- [ ] **2.2 Migration v12** (v11 = categories, 2.0) —
   `app_groups(id, name, builtin, created_at)`,
   `app_group_members(group_id FK, kind, value, exclude)`,
   `app_group_limits(profile_id FK, group_id FK, day_of_week, allowed_minutes)` (0 = blocked),
-  `app_catalog.categories`.
   Groups are global (shared by all children); limits are per profile.
   **Predefined groups** created by the migration (maintainer's request: most
   parents don't know which games/browsers exist):
@@ -853,3 +861,4 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-20 | Review follow-ups: unit hardening OK for 1.19, ppid refreshed per tick, full tick measured (0.12 % CPU), README desktop claim limited to what was tested | 1.19 (maintainer) |
 | 2026-10-20 | 1.19 passed on screenguardTest against a local server: per-app seconds exact, lock = 0 s, server matches agent, UI OK; noted possible screen-time undercount (separate issue) | 1.20 real old agent, 1.22 release |
 | 2026-10-20 | Found and fixed a screen-time undercount (~10 %, heartbeat dropped the remainder) — verified on the test machine. Plan revised: release after Phase 2, predefined Games/Web browsers groups via categories, 2E new-app approval | Phase 2.0 |
+| 2026-10-20 | 2.0 done: categories agent → server (v11), verified on the test machine | 2.1 matcher, 2.2 v12 groups |

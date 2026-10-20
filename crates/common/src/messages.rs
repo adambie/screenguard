@@ -86,6 +86,9 @@ pub struct AppUsageEntry {
     /// Icon theme name from `Icon=` (never image data).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// freedesktop categories (`Game`, `WebBrowser`, …); absent from older agents.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
     pub seconds_total: u64,
 }
 
@@ -180,6 +183,7 @@ mod tests {
                     app_id: "desktop:org.kde.dolphin".into(),
                     display_name: "Dolphin".into(),
                     icon: Some("system-file-manager".into()),
+                    categories: vec!["System".into(), "FileManager".into()],
                     seconds_total: 3600,
                 },
                 AppUsageEntry {
@@ -188,6 +192,7 @@ mod tests {
                     app_id: "steam:570".into(),
                     display_name: "Steam game 570".into(),
                     icon: None,
+                    categories: vec![],
                     seconds_total: 5,
                 },
             ],
@@ -196,6 +201,7 @@ mod tests {
         let json = msg.to_json().unwrap();
         assert!(json.contains(r#""date":"2026-10-20""#));
         assert!(!json.contains(r#""icon":null"#));
+        assert_eq!(json.matches("categories").count(), 1); // empty list omitted
         let back: AppUsageSync = WssMessage::from_json(&json).unwrap().parse_payload().unwrap();
         assert_eq!(back, sync);
     }

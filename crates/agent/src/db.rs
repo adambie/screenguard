@@ -59,10 +59,15 @@ impl Db {
                 app_id          TEXT NOT NULL,
                 display_name    TEXT NOT NULL,
                 icon            TEXT,
+                categories      TEXT NOT NULL DEFAULT '',
                 seconds         INTEGER NOT NULL DEFAULT 0,
                 synced          INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (local_uid, date, app_id)
             )",
+        );
+        // App categories (#27 Phase 2) — on DBs created before the column existed.
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE app_usage_log ADD COLUMN categories TEXT NOT NULL DEFAULT ''",
         );
         let _ = self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS cached_blocked_domains (
@@ -143,6 +148,7 @@ impl Db {
                 app_id          TEXT NOT NULL,
                 display_name    TEXT NOT NULL,
                 icon            TEXT,
+                categories      TEXT NOT NULL DEFAULT '',
                 seconds         INTEGER NOT NULL DEFAULT 0,
                 synced          INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (local_uid, date, app_id)
@@ -413,19 +419,22 @@ pub struct AppUsageRow {
     pub app_id: String,
     pub display_name: String,
     pub icon: Option<String>,
+    /// `;`-separated freedesktop categories.
+    pub categories: String,
     pub seconds: u64,
 }
 
 impl Db {
     /// Adds seconds to the day's total and flags the row for the next sync; the
     /// name/icon are refreshed (language or `.desktop` may have changed).
-    pub fn add_app_usage(&self, uid: u32, date: &str, app_id: &str, name: &str, icon: Option<&str>, seconds: u64) -> Result<()> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_app_usage(&self, uid: u32, date: &str, app_id: &str, name: &str, icon: Option<&str>, categories: &str, seconds: u64) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO app_usage_log (local_uid, date, app_id, display_name, icon, seconds, synced)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
+            "INSERT INTO app_usage_log (local_uid, date, app_id, display_name, icon, categories, seconds, synced)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)
              ON CONFLICT(local_uid, date, app_id) DO UPDATE SET
-                seconds = seconds + ?6, display_name = ?4, icon = ?5, synced = 0",
-            params![uid, date, app_id, name, icon, seconds],
+                seconds = seconds + ?7, display_name = ?4, icon = ?5, categories = ?6, synced = 0",
+            params![uid, date, app_id, name, icon, categories, seconds],
         )?;
         Ok(())
     }
@@ -435,7 +444,7 @@ impl Db {
     /// never have arrived. The server keeps the larger total, so resending is safe.
     pub fn get_unsynced_app_usage(&self, resend_since: Option<&str>) -> Result<Vec<AppUsageRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT local_uid, date, app_id, display_name, icon, seconds FROM app_usage_log
+            "SELECT local_uid, date, app_id, display_name, icon, categories, seconds FROM app_usage_log
              WHERE synced = 0 OR date >= ?1 ORDER BY date, local_uid, app_id",
         )?;
         // '~' sorts after any date: no resend
@@ -447,7 +456,8 @@ impl Db {
                     app_id: r.get(2)?,
                     display_name: r.get(3)?,
                     icon: r.get(4)?,
-                    seconds: r.get(5)?,
+                    categories: r.get(5)?,
+                    seconds: r.get(6)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -920,9 +930,9 @@ mod tests {
     #[test]
     fn app_usage_accumulates_syncs_and_prunes() {
         let db = Db::open(Some(":memory:")).unwrap();
-        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
-        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
-        db.add_app_usage(1000, "2026-09-01", "steam:570", "Dota 2", None, 60).unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), "", 5).unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), "", 5).unwrap();
+        db.add_app_usage(1000, "2026-09-01", "steam:570", "Dota 2", None, "", 60).unwrap();
         assert_eq!(db.get_app_usage_seconds(1000, "2026-10-20", "desktop:firefox").unwrap(), 10);
 
         let unsynced = db.get_unsynced_app_usage(None).unwrap();
@@ -931,7 +941,7 @@ mod tests {
         assert_eq!((ff.seconds, ff.icon.as_deref()), (10, Some("firefox")));
 
         // seconds added between reading and marking keep the row unsynced
-        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), "", 5).unwrap();
         db.mark_app_usage_synced(&ff).unwrap();
         assert_eq!(db.get_unsynced_app_usage(None).unwrap().iter().find(|r| r.app_id == "desktop:firefox").unwrap().seconds, 15);
         let ff = db.get_unsynced_app_usage(None).unwrap().into_iter().find(|r| r.app_id == "desktop:firefox").unwrap();
@@ -949,7 +959,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let db = Db { conn };
         db.migrate().unwrap();
-        db.add_app_usage(1000, "2026-10-20", "desktop:foot", "Foot", None, 5).unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:foot", "Foot", None, "", 5).unwrap();
         assert_eq!(db.get_app_usage_seconds(1000, "2026-10-20", "desktop:foot").unwrap(), 5);
     }
 

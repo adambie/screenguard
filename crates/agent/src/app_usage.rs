@@ -65,8 +65,8 @@ impl AppAccounting {
 #[derive(Debug, Default)]
 pub struct TickResult {
     pub add: Vec<(u32, AppId, u64)>,
-    /// (uid, app) → (display name, icon) in the user's profile language.
-    pub names: HashMap<(u32, AppId), (String, Option<String>)>,
+    /// (uid, app) → name, icon and categories, in the user's profile language.
+    pub names: HashMap<(u32, AppId), app_ident::Shown>,
 }
 
 /// Scanner + catalogue + identification + accounting.
@@ -209,6 +209,8 @@ mod tests {
         assert!(tracker.tick(t0, &users).add.is_empty());
         let r = tracker.tick(t0 + SCAN_INTERVAL, &users);
         assert_eq!(r.add, vec![(1000, AppId::parse("desktop:firefox").unwrap(), 5)]);
-        assert_eq!(r.names[&(1000, AppId::parse("desktop:firefox").unwrap())], ("Firefox".to_string(), Some("firefox".to_string())));
+        let shown = &r.names[&(1000, AppId::parse("desktop:firefox").unwrap())];
+        assert_eq!((shown.name.as_str(), shown.icon.as_deref()), ("Firefox", Some("firefox")));
+        assert_eq!(shown.categories, vec!["Network", "WebBrowser"]);
     }
 }

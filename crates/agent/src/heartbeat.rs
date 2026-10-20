@@ -249,8 +249,11 @@ impl HeartbeatLoop {
         let today = Local::now().date_naive().to_string();
         let db = self.db.lock().await;
         for (uid, app, secs) in &result.add {
-            let (name, icon) = result.names.get(&(*uid, app.clone())).cloned().unwrap_or_else(|| (app.name.clone(), None));
-            if let Err(e) = db.add_app_usage(*uid, &today, &app.to_string(), &name, icon.as_deref(), *secs) {
+            let shown = result.names.get(&(*uid, app.clone()));
+            let name = shown.map_or(app.name.as_str(), |s| s.name.as_str());
+            let icon = shown.and_then(|s| s.icon.as_deref());
+            let categories = shown.map(|s| s.categories.join(";")).unwrap_or_default();
+            if let Err(e) = db.add_app_usage(*uid, &today, &app.to_string(), name, icon, &categories, *secs) {
                 tracing::warn!("Storing app usage failed: {e}");
                 return;
             }
@@ -906,6 +909,7 @@ impl HeartbeatLoop {
                         app_id: r.app_id.clone(),
                         display_name: r.display_name.clone(),
                         icon: r.icon.clone(),
+                        categories: r.categories.split(';').filter(|c| !c.is_empty()).map(str::to_string).collect(),
                         seconds_total: r.seconds,
                     })
                 })
@@ -1135,8 +1139,8 @@ mod tests {
         };
         {
             let db = hb.db.lock().await;
-            db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
-            db.add_app_usage(1000, "2026-10-20", "steam:570", "Dota 2", None, 5).unwrap();
+            db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), "Network;WebBrowser", 5).unwrap();
+            db.add_app_usage(1000, "2026-10-20", "steam:570", "Dota 2", None, "Game", 5).unwrap();
         }
         hb.send_app_usage_sync(None).await.unwrap();
         assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 5), ("steam:570".into(), 5)]);
@@ -1146,7 +1150,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
 
         // only the app that grew, with its whole total (not a delta)
-        hb.db.lock().await.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+        hb.db.lock().await.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), "Network;WebBrowser", 5).unwrap();
         hb.send_app_usage_sync(None).await.unwrap();
         assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 10)]);
 
