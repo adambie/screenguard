@@ -104,9 +104,73 @@ impl fmt::Display for AppId {
     }
 }
 
+/// How a group rule matches an app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleKind {
+    /// Exact app id, e.g. `desktop:firefox`.
+    AppId,
+    /// App id prefix, e.g. `steam:` for every Steam game.
+    Prefix,
+    /// freedesktop category, e.g. `Game`, `WebBrowser` (case-sensitive, as in the spec).
+    Category,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct GroupRule {
+    pub kind: RuleKind,
+    pub value: String,
+    /// Takes matching apps *out* of the group (e.g. one browser from "Web browsers").
+    #[serde(default)]
+    pub exclude: bool,
+}
+
+impl GroupRule {
+    fn hits(&self, app_id: &str, categories: &[String]) -> bool {
+        match self.kind {
+            RuleKind::AppId => app_id == self.value,
+            RuleKind::Prefix => !self.value.is_empty() && app_id.starts_with(&self.value),
+            RuleKind::Category => categories.contains(&self.value),
+        }
+    }
+}
+
+/// An app is in a group if any include rule matches and no exclude rule does.
+/// Shared by server (reports) and agent (enforcement) so they always agree.
+pub fn group_matches(rules: &[GroupRule], app_id: &str, categories: &[String]) -> bool {
+    rules.iter().any(|r| !r.exclude && r.hits(app_id, categories))
+        && !rules.iter().any(|r| r.exclude && r.hits(app_id, categories))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rule(kind: RuleKind, value: &str, exclude: bool) -> GroupRule {
+        GroupRule { kind, value: value.into(), exclude }
+    }
+
+    #[test]
+    fn group_rules() {
+        let games = [rule(RuleKind::Category, "Game", false), rule(RuleKind::Prefix, "steam:", false), rule(RuleKind::Prefix, "minecraft:", false)];
+        let browsers = [rule(RuleKind::Category, "WebBrowser", false), rule(RuleKind::AppId, "desktop:org.kde.falkon", true)];
+        let cats = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(group_matches(&games, "desktop:supertux", &cats(&["Game", "ArcadeGame"])));
+        assert!(group_matches(&games, "steam:570", &[]));
+        assert!(group_matches(&games, "minecraft:java", &[]));
+        assert!(!group_matches(&games, "desktop:firefox", &cats(&["Network", "WebBrowser"])));
+        assert!(!group_matches(&games, "desktop:game-editor", &cats(&["game"]))); // case-sensitive
+        assert!(group_matches(&browsers, "desktop:firefox", &cats(&["Network", "WebBrowser"])));
+        assert!(!group_matches(&browsers, "desktop:org.kde.falkon", &cats(&["WebBrowser"]))); // excluded
+        assert!(!group_matches(&[], "desktop:firefox", &[]));
+        assert!(!group_matches(&[rule(RuleKind::Prefix, "", false)], "desktop:x", &[])); // empty prefix matches nothing
+        // only exclusions: nothing is in the group
+        assert!(!group_matches(&[rule(RuleKind::AppId, "desktop:x", true)], "desktop:y", &[]));
+        let json = serde_json::to_string(&browsers[1]).unwrap();
+        assert_eq!(json, r#"{"kind":"app_id","value":"desktop:org.kde.falkon","exclude":true}"#);
+        let back: GroupRule = serde_json::from_str(r#"{"kind":"category","value":"Game"}"#).unwrap();
+        assert!(!back.exclude);
+    }
 
     #[test]
     fn parses_each_kind() {

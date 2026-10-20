@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.1 `AppMatcher`, 2.2 migration v12 (groups,
+- **Next step:** Phase 2 — 2.2 migration v12 (groups,
   predefined Games/Web browsers), 2.3 groups API + "Apps" admin page. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
@@ -665,13 +665,16 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - Real machine: the test machine's agent and the local server were updated (the live
     DB migrated 10 → 11). Firefox → `GNOME;GTK;Network;WebBrowser`, a test entry with
     `Categories=Game;ArcadeGame;` → `Game;ArcadeGame`, end to end.
-- [ ] **2.1 Matching rules in `common`** — `AppMatcher` shared by server and agent
+- [x] **2.1 Matching rules in `common`** — `AppMatcher` shared by server and agent
   so they always agree. Rule kinds: `app_id` (exact), `app_id_prefix`
   (e.g. `steam:` = all Steam games), `category` (freedesktop category, e.g.
   `Game`, `WebBrowser`), and per-group **exclusions** (`app_id`) so a parent can
   take one app out of a category-based group. No regex rules (decided: keep it
   simple; revisit only if real use needs it).
   *Done when:* table-driven tests.
+  → `common::apps::{RuleKind, GroupRule, group_matches}`: any include rule and
+  no exclude rule; categories are case-sensitive; an empty prefix matches nothing.
+  Serialised as `{"kind":"app_id|prefix|category","value":…,"exclude":bool}`.
 - [ ] **2.2 Migration v12** (v11 = categories, 2.0) —
   `app_groups(id, name, builtin, created_at)`,
   `app_group_members(group_id FK, kind, value, exclude)`,
