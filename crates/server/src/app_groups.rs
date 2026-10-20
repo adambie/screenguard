@@ -42,6 +42,14 @@ impl Group {
     }
 }
 
+/// The one group of an app among `groups` (in display order), see `common::apps::assign_group`.
+pub fn group_of<'a>(groups: &'a [Group], app_id: &str, categories: &[String]) -> Option<&'a str> {
+    let rules: Vec<(String, Vec<GroupRule>)> = groups.iter().map(|g| (g.id.clone(), g.rules())).collect();
+    let refs: Vec<(&str, &[GroupRule])> = rules.iter().map(|(id, r)| (id.as_str(), r.as_slice())).collect();
+    let id = common::apps::assign_group(&refs, app_id, categories)?;
+    groups.iter().find(|g| g.id == id).map(|g| g.id.as_str())
+}
+
 fn kind_str(k: RuleKind) -> &'static str {
     match k {
         RuleKind::AppId => "app_id",
@@ -201,16 +209,37 @@ pub async fn set_membership(pool: &DbPool, group_id: &str, app_id: &str, categor
     if common::apps::AppId::parse(app_id).is_none() {
         bail!("invalid app id {app_id:?}");
     }
-    let Some(group) = get_group(pool, group_id).await? else {
+    let groups = list_groups(pool).await?;
+    let Some(group) = groups.iter().find(|g| g.id == group_id) else {
         return Ok(None);
     };
     // drop the explicit rule that says the opposite of what's wanted
     if let Some(r) = group.rules.iter().find(|r| r.rule.kind == RuleKind::AppId && r.rule.value == app_id && r.rule.exclude == member) {
         delete_rule(pool, group_id, &r.id).await?;
     }
-    let rules = get_group(pool, group_id).await?.map(|g| g.rules()).unwrap_or_default();
-    if common::apps::group_matches(&rules, app_id, categories) != member {
-        add_rule(pool, group_id, &GroupRule { kind: RuleKind::AppId, value: app_id.into(), exclude: !member }).await?;
+    if member {
+        // an app is in one group: moving it here takes it out of any group that names it
+        for other in groups.iter().filter(|g| g.id != group_id) {
+            for r in other.rules.iter().filter(|r| r.rule.kind == RuleKind::AppId && !r.rule.exclude && r.rule.value == app_id) {
+                delete_rule(pool, &other.id, &r.id).await?;
+            }
+        }
+    }
+    let groups = list_groups(pool).await?;
+    let in_this = group_of(&groups, app_id, categories) == Some(group_id);
+    if member && !in_this {
+        // an explicit entry wins over category matches in other groups
+        add_rule(pool, group_id, &GroupRule { kind: RuleKind::AppId, value: app_id.into(), exclude: false }).await?;
+        if group_of(&list_groups(pool).await?, app_id, categories) != Some(group_id) {
+            // still taken by an exclusion here — remove it
+            if let Some(g) = list_groups(pool).await?.into_iter().find(|g| g.id == group_id) {
+                for r in g.rules.iter().filter(|r| r.rule.exclude && r.rule.kind == RuleKind::AppId && r.rule.value == app_id) {
+                    delete_rule(pool, group_id, &r.id).await?;
+                }
+            }
+        }
+    } else if !member && in_this {
+        add_rule(pool, group_id, &GroupRule { kind: RuleKind::AppId, value: app_id.into(), exclude: true }).await?;
     }
     Ok(Some(()))
 }
@@ -435,6 +464,17 @@ mod tests {
         assert_eq!(r.len(), 1);
 
         assert!(set_membership(&pool, "nope", "desktop:firefox", &web, true).await.unwrap().is_none());
+
+        // one group per app: moving Firefox into "School" takes it out of "Web browsers"
+        let school = create_group(&pool, "School").await.unwrap();
+        set_membership(&pool, &school, "desktop:firefox", &web, true).await.unwrap().unwrap();
+        let groups = list_groups(&pool).await.unwrap();
+        assert_eq!(group_of(&groups, "desktop:firefox", &web), Some(school.as_str()));
+        // and back: explicit entry in School removed, the category puts it in Web browsers again
+        set_membership(&pool, &browsers.id, "desktop:firefox", &web, true).await.unwrap().unwrap();
+        let groups = list_groups(&pool).await.unwrap();
+        assert_eq!(group_of(&groups, "desktop:firefox", &web), Some(browsers.id.as_str()));
+        assert!(groups.iter().find(|g| g.id == school).unwrap().rules.is_empty());
         assert!(set_membership(&pool, &browsers.id, "bad id", &web, true).await.is_err());
     }
 }

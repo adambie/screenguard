@@ -105,10 +105,10 @@ pub fn targets(
         }
         let (Some(st), Some(gs)) = (status.get(&p.uid), groups.get(&p.uid)) else { continue };
         let cats = shown.map(|s| s.categories.as_slice()).unwrap_or(&[]);
-        // (b) in a limited group that has no time left
-        let hit = st.iter().filter(|s| s.exhausted()).find(|s| {
-            gs.iter().any(|g| g.id == s.group_id && common::apps::group_matches(&g.rules, &p.app_id.to_string(), cats))
-        });
+        // (b) its group (one per app) has a limit and no time left
+        let order: Vec<(&str, &[common::apps::GroupRule])> = gs.iter().map(|g| (g.id.as_str(), g.rules.as_slice())).collect();
+        let group = common::apps::assign_group(&order, &p.app_id.to_string(), cats);
+        let hit = st.iter().filter(|s| s.exhausted()).find(|s| Some(s.group_id.as_str()) == group);
         if let Some(s) = hit {
             out.push(Target {
                 pid: p.pid,

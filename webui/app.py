@@ -626,12 +626,18 @@ def apps():
     by_id = {g["id"]: g for g in groups}
     for g in groups:
         g["display_name"] = group_name(g)
-        g["includes"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", []) if not r.get("exclude")]
+        # automatic rules (category / prefix); explicit app entries show as members
+        g["auto"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", [])
+                     if not r.get("exclude") and r.get("kind") != "app_id"]
         g["excludes"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", []) if r.get("exclude")]
-        g["app_count"] = sum(1 for a in apps_list if g["id"] in a.get("groups", []))
+        g["members"] = [a for a in apps_list if g["id"] in a.get("groups", [])]
+        g["app_count"] = len(g["members"])
     for a in apps_list:
         a["group_objs"] = [by_id[i] for i in a.get("groups", []) if i in by_id]
         a["other_groups"] = [g for g in groups if g["id"] not in a.get("groups", [])]
+        # already in a group that holds only this app: nothing to separate
+        a["own_group"] = any(not g.get("builtin") and len([m for m in apps_list if g["id"] in m.get("groups", [])]) == 1
+                             for g in a["group_objs"])
         source = {"flatpak": "Flatpak", "snap": "Snap", "steam": "Steam", "wine": "Windows (Wine)"}.get(a["app_id"].split(":")[0])
         a["kind_label"] = source or next((c for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES), "")
     show = request.args.get("show", "all")
@@ -644,6 +650,22 @@ def apps():
 
 def _back():
     return redirect(request.form.get("next") or url_for("apps"))
+
+
+@app.route("/apps/limit-separately", methods=["POST"])
+@require_login
+def limit_app_separately():
+    """A group for just this app, so it can get its own daily time."""
+    app_id, name = request.form.get("app_id", ""), request.form.get("name", "")[:60] or "App"
+    r = api("POST", "/app-groups", json={"name": name})
+    if r and r.ok:
+        gid = r.json()["id"]
+        r = api("POST", f"/app-groups/{gid}/membership", json={"app_id": app_id, "member": True})
+    if r and r.ok:
+        flash(t("flash.group_for_app", name=name), "success")
+    else:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
 
 
 @app.route("/apps/groups/create", methods=["POST"])

@@ -132,9 +132,11 @@ pub async fn get_app_usage(
     let groups_out: Vec<serde_json::Value> = groups
         .iter()
         .map(|g| {
-            let rules = g.rules();
             let seconds: i64 = reported.get(&g.id).copied().unwrap_or_else(|| {
-                apps.iter().filter(|a| common::apps::group_matches(&rules, &a.app_id, &a.categories)).map(|a| a.seconds).sum()
+                apps.iter()
+                    .filter(|a| crate::app_groups::group_of(&groups, &a.app_id, &a.categories) == Some(g.id.as_str()))
+                    .map(|a| a.seconds)
+                    .sum()
             });
             let limit = (range == "day")
                 .then(|| limits.get(&g.id).and_then(|l| l.iter().find(|(d, _)| *d == dow)).map(|(_, m)| *m))

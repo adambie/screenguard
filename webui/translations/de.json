@@ -332,5 +332,12 @@
 
   "approval.will_allow": "Diese {n} bereits benutzten Apps bleiben erlaubt:",
   "approval.none_used": "Auf diesem Profil wurde noch keine App benutzt, also würde jede App geschlossen, bis du sie erlaubst. Lass das Kind den Computer zuerst eine Weile benutzen (mit aktuellem Agenten).",
-  "approval.confirm_empty": "Auf diesem Profil wurde noch keine App benutzt — jede App braucht dann deine Zustimmung. Trotzdem einschalten?"
+  "approval.confirm_empty": "Auf diesem Profil wurde noch keine App benutzt — jede App braucht dann deine Zustimmung. Trotzdem einschalten?",
+
+  "groups.auto": "Fügt automatisch hinzu: {rules}",
+  "groups.edit_rules": "Regeln bearbeiten",
+  "apps_admin.move_to": "In Gruppe verschieben",
+  "apps_admin.limit_separately": "Einzeln begrenzen",
+  "apps_admin.limit_separately_hint": "Eine eigene Gruppe für diese App, damit sie eine eigene Tageszeit bekommt",
+  "flash.group_for_app": "Gruppe „{name}“ für diese App erstellt — lege die tägliche Zeit im Profil eines Kindes unter App-Limits fest."
 }

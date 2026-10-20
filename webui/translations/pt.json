@@ -332,5 +332,12 @@
 
   "approval.will_allow": "Estas {n} apps já usadas continuam permitidas:",
   "approval.none_used": "Ainda não foi usada nenhuma app neste perfil, por isso ligar isto fecharia qualquer app até a permitir. Deixe primeiro a criança usar o computador durante algum tempo (com o agente atualizado).",
-  "approval.confirm_empty": "Ainda não foi usada nenhuma app neste perfil — todas vão precisar da sua aprovação. Ligar mesmo assim?"
+  "approval.confirm_empty": "Ainda não foi usada nenhuma app neste perfil — todas vão precisar da sua aprovação. Ligar mesmo assim?",
+
+  "groups.auto": "Também adiciona automaticamente: {rules}",
+  "groups.edit_rules": "Editar regras",
+  "apps_admin.move_to": "Mover para o grupo",
+  "apps_admin.limit_separately": "Limitar à parte",
+  "apps_admin.limit_separately_hint": "Um grupo só para esta app, com o seu próprio tempo diário",
+  "flash.group_for_app": "Grupo «{name}» criado para esta app — defina o tempo diário no perfil de uma criança, em Limites de apps."
 }

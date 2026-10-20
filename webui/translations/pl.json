@@ -332,5 +332,12 @@
 
   "approval.will_allow": "Te {n} używane już aplikacje pozostaną dozwolone:",
   "approval.none_used": "Na tym profilu nie użyto jeszcze żadnej aplikacji, więc po włączeniu każda aplikacja będzie zamykana, dopóki jej nie zatwierdzisz. Najpierw pozwól dziecku chwilę korzystać z komputera (z aktualnym agentem).",
-  "approval.confirm_empty": "Na tym profilu nie użyto jeszcze żadnej aplikacji — każda będzie wymagać Twojej zgody. Włączyć mimo to?"
+  "approval.confirm_empty": "Na tym profilu nie użyto jeszcze żadnej aplikacji — każda będzie wymagać Twojej zgody. Włączyć mimo to?",
+
+  "groups.auto": "Dodaje też automatycznie: {rules}",
+  "groups.edit_rules": "Edytuj reguły",
+  "apps_admin.move_to": "Przenieś do grupy",
+  "apps_admin.limit_separately": "Ogranicz osobno",
+  "apps_admin.limit_separately_hint": "Osobna grupa tylko dla tej aplikacji, z własnym dziennym czasem",
+  "flash.group_for_app": "Utworzono grupę „{name}” dla tej aplikacji — ustaw jej dzienny czas w profilu dziecka, w sekcji Limity aplikacji."
 }

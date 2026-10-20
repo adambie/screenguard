@@ -157,15 +157,16 @@ impl AppTracker {
         for user in users {
             let (Some(&s), Some(apps)) = (secs.get(&user.uid), running.get(&user.uid)) else { continue };
             result.add.extend(apps.iter().map(|a| (user.uid, a.clone(), s)));
-            for g in &user.groups {
-                let member_running = apps.iter().any(|a| {
-                    let cats = result.names.get(&(user.uid, a.clone())).map(|n| n.categories.as_slice()).unwrap_or(&[]);
-                    common::apps::group_matches(&g.rules, &a.to_string(), cats)
-                });
-                if member_running {
-                    result.add_groups.push((user.uid, g.id.clone(), s));
+            // each running app's one group gets the tick, once per group
+            let order: Vec<(&str, &[common::apps::GroupRule])> = user.groups.iter().map(|g| (g.id.as_str(), g.rules.as_slice())).collect();
+            let mut counted: BTreeSet<&str> = BTreeSet::new();
+            for a in apps {
+                let cats = result.names.get(&(user.uid, a.clone())).map(|n| n.categories.as_slice()).unwrap_or(&[]);
+                if let Some(g) = common::apps::assign_group(&order, &a.to_string(), cats) {
+                    counted.insert(g);
                 }
             }
+            result.add_groups.extend(counted.into_iter().map(|g| (user.uid, g.to_string(), s)));
         }
         result.running = running;
         result
@@ -282,7 +283,9 @@ mod tests {
         // a group counts the tick once, however many of its apps run
         let mut g = r.add_groups.clone();
         g.sort();
-        assert_eq!(g, vec![(1000, "all-desktop".to_string(), 5), (1000, "browsers".to_string(), 5)]);
+        // two browsers: "browsers" counts the tick once; each app is in one group
+        // only (the first matching), so the catch-all "all-desktop" gets nothing
+        assert_eq!(g, vec![(1000, "browsers".to_string(), 5)]);
         assert!(r.running[&1000].contains(&AppId::parse("desktop:firefox").unwrap()));
         let shown = &r.names[&(1000, AppId::parse("desktop:firefox").unwrap())];
         assert_eq!((shown.name.as_str(), shown.icon.as_deref()), ("Firefox", Some("firefox")));

@@ -141,6 +141,10 @@ pub async fn list(pool: &DbPool, profile_id: Uuid) -> Result<Vec<Approval>> {
 pub async fn pending_all(pool: &DbPool) -> Result<Vec<(Uuid, String, Approval)>> {
     let mut out = Vec::new();
     for p in crate::db::list_profiles(pool).await? {
+        // with the mode off nothing is blocked, so old requests mean nothing
+        if !mode(pool, p.id).await? {
+            continue;
+        }
         for a in list(pool, p.id).await?.into_iter().filter(|a| a.status == "pending") {
             out.push((p.id, p.display_name.clone(), a));
         }
@@ -183,6 +187,9 @@ mod tests {
         let l = list(&pool, profile).await.unwrap();
         assert_eq!((l[0].app_id.as_str(), l[0].status.as_str()), ("steam:1091500", "pending"));
         assert_eq!(pending_all(&pool).await.unwrap().len(), 1);
+        set_mode(&pool, profile, false).await.unwrap(); // mode off: not shown
+        assert!(pending_all(&pool).await.unwrap().is_empty());
+        set_mode(&pool, profile, true).await.unwrap();
 
         // deny, then change mind
         decide(&pool, profile, "steam:1091500", false).await.unwrap();

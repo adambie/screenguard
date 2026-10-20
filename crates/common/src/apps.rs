@@ -142,9 +142,45 @@ pub fn group_matches(rules: &[GroupRule], app_id: &str, categories: &[String]) -
         && !rules.iter().any(|r| r.exclude && r.hits(app_id, categories))
 }
 
+/// The one group an app belongs to. `groups` is in display order (predefined
+/// groups first, then by name). A group that names the app explicitly wins;
+/// otherwise the first group whose rules (category, prefix) match. Exclusions
+/// always apply. Shared by server and agent so reports and limits agree.
+pub fn assign_group<'a>(groups: &[(&'a str, &[GroupRule])], app_id: &str, categories: &[String]) -> Option<&'a str> {
+    let explicit = |rules: &[GroupRule]| {
+        rules.iter().any(|r| r.kind == RuleKind::AppId && !r.exclude && r.value == app_id)
+            && !rules.iter().any(|r| r.exclude && r.hits(app_id, categories))
+    };
+    groups
+        .iter()
+        .find(|(_, rules)| explicit(rules))
+        .or_else(|| groups.iter().find(|(_, rules)| group_matches(rules, app_id, categories)))
+        .map(|(id, _)| *id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_group_per_app() {
+        let games = vec![rule(RuleKind::Category, "Game", false), rule(RuleKind::Prefix, "steam:", false)];
+        let browsers = vec![rule(RuleKind::Category, "WebBrowser", false)];
+        let school = vec![rule(RuleKind::AppId, "desktop:firefox", false), rule(RuleKind::AppId, "steam:570", false)];
+        let groups = [("games", games.as_slice()), ("browsers", browsers.as_slice()), ("school", school.as_slice())];
+        let cats = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // explicit entry beats a category / prefix match in an earlier group
+        assert_eq!(assign_group(&groups, "desktop:firefox", &cats(&["WebBrowser"])), Some("school"));
+        assert_eq!(assign_group(&groups, "steam:570", &[]), Some("school"));
+        // matching both categories: the first group in order
+        assert_eq!(assign_group(&groups, "desktop:browser-game", &cats(&["Game", "WebBrowser"])), Some("games"));
+        assert_eq!(assign_group(&groups, "desktop:chromium", &cats(&["WebBrowser"])), Some("browsers"));
+        assert_eq!(assign_group(&groups, "desktop:foot", &[]), None);
+        // an exclusion in the explicit group falls back to category matching
+        let school_ex = vec![rule(RuleKind::AppId, "desktop:firefox", false), rule(RuleKind::AppId, "desktop:firefox", true)];
+        let groups = [("browsers", browsers.as_slice()), ("school", school_ex.as_slice())];
+        assert_eq!(assign_group(&groups, "desktop:firefox", &cats(&["WebBrowser"])), Some("browsers"));
+    }
 
     fn rule(kind: RuleKind, value: &str, exclude: bool) -> GroupRule {
         GroupRule { kind, value: value.into(), exclude }

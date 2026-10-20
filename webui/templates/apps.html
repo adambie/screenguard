@@ -17,41 +17,54 @@
         <span class="text-secondary small text-nowrap">{{ t('groups.app_count', n=g.app_count) }}</span>
       </div>
       <div class="card-body small">
-        {% if g.includes %}
-        <div class="mb-2">
-          <span class="text-secondary">{{ t('groups.includes') }}</span>
-          {% for r in g.includes %}
-          <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
-            <span class="sg-chip">{{ r.label }}
-              <button class="sg-chip-x"
-                      aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
+        {# the apps actually in this group (one group per app) #}
+        {% if g.members %}
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          {% for a in g.members %}
+          <form method="post" action="{{ url_for('app_group_membership') }}" class="d-inline">
+            <input type="hidden" name="group" value="{{ g.id }}">
+            <input type="hidden" name="app_id" value="{{ a.app_id }}">
+            <input type="hidden" name="member" value="0">
+            <span class="sg-chip">{{ a.name }}
+              <button class="sg-chip-x" aria-label="{{ t('apps_admin.remove_from', group=g.display_name) }}"
+                      title="{{ t('apps_admin.remove_from', group=g.display_name) }}">×</button></span>
           </form>
           {% endfor %}
         </div>
         {% else %}
         <div class="text-secondary mb-2">{{ t('groups.empty') }}</div>
         {% endif %}
-        {% if g.excludes %}
-        <div class="mb-2">
-          <span class="text-secondary">{{ t('groups.except') }}</span>
-          {% for r in g.excludes %}
+        {% if g.auto %}
+        <div class="text-secondary mb-1">{{ t('groups.auto', rules=(g.auto | map(attribute='label') | join(', '))) }}</div>
+        {% endif %}
+        <a class="small text-decoration-none" data-bs-toggle="collapse" href="#rules-{{ g.id }}">{{ t('groups.edit_rules') }} ›</a>
+        <div class="collapse mt-2" id="rules-{{ g.id }}">
+          {% for r in g.auto %}
           <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
-            <span class="sg-chip sg-chip-out">{{ r.label }}
-              <button class="sg-chip-x"
-                      aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
+            <span class="sg-chip">{{ r.label }}
+              <button class="sg-chip-x" aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
           </form>
           {% endfor %}
+          {% if g.excludes %}
+          <div class="mt-2">
+            <span class="text-secondary">{{ t('groups.except') }}</span>
+            {% for r in g.excludes %}
+            <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
+              <span class="sg-chip sg-chip-out">{{ r.label }}
+                <button class="sg-chip-x" aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
+            </form>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if categories %}
+          <form method="post" action="{{ url_for('add_app_group_rule', group_id=g.id) }}" class="d-flex gap-2 mt-2" style="max-width:320px">
+            <select name="category" class="form-select form-select-sm" aria-label="{{ t('groups.add_category') }}">
+              {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+            </select>
+            <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('groups.add_category') }}</button>
+          </form>
+          {% endif %}
         </div>
-        {% endif %}
-        {% if categories %}
-        <a class="small text-decoration-none" data-bs-toggle="collapse" href="#cat-{{ g.id }}">+ {{ t('groups.add_category') }}</a>
-        <form method="post" action="{{ url_for('add_app_group_rule', group_id=g.id) }}" class="collapse gap-2 mt-2" id="cat-{{ g.id }}" style="max-width:320px">
-          <select name="category" class="form-select form-select-sm" aria-label="{{ t('groups.add_category') }}">
-            {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-          </select>
-          <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('groups.add') }}</button>
-        </form>
-        {% endif %}
       </div>
       <div class="card-footer bg-transparent d-flex gap-2 flex-wrap">
         <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#rename-{{ g.id }}">{{ t('profile.btn_rename') }}</button>
@@ -121,10 +134,18 @@
           <input type="hidden" name="app_id" value="{{ a.app_id }}">
           <input type="hidden" name="member" value="1">
           <input type="hidden" name="next" value="{{ request.full_path }}">
-          <select name="group" class="form-select form-select-sm" style="width:auto" aria-label="{{ t('apps_admin.add_to') }}">
+          <select name="group" class="form-select form-select-sm" style="width:auto" aria-label="{{ t('apps_admin.move_to') if a.group_objs else t('apps_admin.add_to') }}">
             {% for g in a.other_groups %}<option value="{{ g.id }}">{{ g.display_name }}</option>{% endfor %}
           </select>
-          <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('apps_admin.add_to') }}</button>
+          <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('apps_admin.move_to') if a.group_objs else t('apps_admin.add_to') }}</button>
+        </form>
+        {% endif %}
+        {% if not a.own_group %}
+        <form method="post" action="{{ url_for('limit_app_separately') }}" class="d-inline">
+          <input type="hidden" name="app_id" value="{{ a.app_id }}">
+          <input type="hidden" name="name" value="{{ a.name }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <button class="btn btn-sm btn-link text-decoration-none text-nowrap px-1" title="{{ t('apps_admin.limit_separately_hint') }}">{{ t('apps_admin.limit_separately') }}</button>
         </form>
         {% endif %}
       </div>

@@ -332,5 +332,12 @@
 
   "approval.will_allow": "Estas {n} apps ya usadas seguirán permitidas:",
   "approval.none_used": "En este perfil aún no se ha usado ninguna app, así que al activarlo se cerraría cualquier app hasta que la permitas. Deja primero que el menor use el equipo un tiempo (con el agente actualizado).",
-  "approval.confirm_empty": "En este perfil aún no se ha usado ninguna app: todas necesitarán tu aprobación. ¿Activar de todos modos?"
+  "approval.confirm_empty": "En este perfil aún no se ha usado ninguna app: todas necesitarán tu aprobación. ¿Activar de todos modos?",
+
+  "groups.auto": "También añade automáticamente: {rules}",
+  "groups.edit_rules": "Editar reglas",
+  "apps_admin.move_to": "Mover al grupo",
+  "apps_admin.limit_separately": "Limitar por separado",
+  "apps_admin.limit_separately_hint": "Un grupo propio para esta app, con su propio tiempo diario",
+  "flash.group_for_app": "Grupo «{name}» creado para esta app: fija su tiempo diario en el perfil de un menor, en Límites de apps."
 }

@@ -332,5 +332,12 @@
 
   "approval.will_allow": "Ces {n} apps déjà utilisées resteront autorisées :",
   "approval.none_used": "Aucune app n'a encore été utilisée sur ce profil : activer ceci fermerait toute app jusqu'à ce que vous l'autorisiez. Laissez d'abord l'enfant utiliser l'ordinateur un moment (avec un agent à jour).",
-  "approval.confirm_empty": "Aucune app n'a encore été utilisée sur ce profil — chaque app nécessitera votre accord. Activer quand même ?"
+  "approval.confirm_empty": "Aucune app n'a encore été utilisée sur ce profil — chaque app nécessitera votre accord. Activer quand même ?",
+
+  "groups.auto": "Ajoute aussi automatiquement : {rules}",
+  "groups.edit_rules": "Modifier les règles",
+  "apps_admin.move_to": "Déplacer vers le groupe",
+  "apps_admin.limit_separately": "Limiter séparément",
+  "apps_admin.limit_separately_hint": "Un groupe rien que pour cette app, avec son propre temps quotidien",
+  "flash.group_for_app": "Groupe « {name} » créé pour cette app — réglez son temps quotidien dans le profil d'un enfant, sous Limites des apps."
 }

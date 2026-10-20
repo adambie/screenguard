@@ -352,5 +352,12 @@
 
   "approval.will_allow": "These {n} apps this child already used will stay allowed:",
   "approval.none_used": "No app has been used on this profile yet, so turning this on would close every app until you allow it. Let the child use the computer for a while first (with an up-to-date agent).",
-  "approval.confirm_empty": "No app has been used on this profile yet — every app will need your approval. Turn on anyway?"
+  "approval.confirm_empty": "No app has been used on this profile yet — every app will need your approval. Turn on anyway?",
+
+  "groups.auto": "Also adds automatically: {rules}",
+  "groups.edit_rules": "Edit rules",
+  "apps_admin.move_to": "Move to group",
+  "apps_admin.limit_separately": "Limit separately",
+  "apps_admin.limit_separately_hint": "Give this app its own group, so it can get its own daily time",
+  "flash.group_for_app": "Group \"{name}\" created for this app — set its daily time on a child's profile under App limits."
 }

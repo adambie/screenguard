@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use common::apps::{GroupRule, group_matches};
+use common::apps::GroupRule;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -33,12 +33,11 @@ fn bad(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Value>) {
 pub async fn list_apps(State(state): State<Arc<AppState>>) -> ApiResult {
     let apps = app_usage::catalog(&state.db).await.map_err(internal)?;
     let groups = app_groups::list_groups(&state.db).await.map_err(internal)?;
-    let rules: Vec<(String, Vec<GroupRule>)> = groups.iter().map(|g| (g.id.clone(), g.rules())).collect();
     let apps: Vec<serde_json::Value> = apps
         .into_iter()
         .map(|a| {
-            let in_groups: Vec<&String> =
-                rules.iter().filter(|(_, r)| group_matches(r, &a.app_id, &a.categories)).map(|(id, _)| id).collect();
+            // one group per app (explicit entry first, then category/prefix in order)
+            let in_groups: Vec<&str> = app_groups::group_of(&groups, &a.app_id, &a.categories).into_iter().collect();
             serde_json::json!({
                 "app_id": a.app_id, "name": a.name, "icon": a.icon, "categories": a.categories,
                 "last_seen": a.last_seen, "groups": in_groups,
