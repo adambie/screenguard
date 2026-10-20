@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.5 reports by group, then 2B (config delivery, group remaining) and 2C (enforcement). Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2B: 2.6 `UserConfig.app_groups`, 2.7 server-side group remaining, 2.8 agent cache/offline. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -725,7 +725,12 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     (shown in red). No JavaScript; all 6 languages.
   - Verified against the live server: a weekday/weekend/blocked pattern saved
     and read back; an invalid `25:00` was rejected with nothing changed.
-- [ ] **2.5 Reports by group** — the Phase 1 reports gain a "by group" view.
+- [x] **2.5 Reports by group** — the Phase 1 reports gain a "by group" view.
+  → `GET /profiles/{id}/app-usage` returns `groups: [{id, name, builtin, seconds,
+  limit_minutes}]` (an app in two groups counts in both; `limit_minutes` only
+  in the day view, for that weekday). The App usage page has a Groups card with
+  a bar per group: progress toward the limit when there is one, red when over.
+  Verified on the live server.
 
 ### 2B. Config delivery and remaining time
 

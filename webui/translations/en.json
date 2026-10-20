@@ -321,5 +321,7 @@
   "app_limits.no_groups": "No app groups yet.",
   "flash.app_limits_saved": "App limits saved.",
   "flash.app_limits_failed": "Couldn't save the app limits.",
-  "flash.app_limits_invalid": "Use h:mm (e.g. 1:30) or minutes, up to 24 hours."
+  "flash.app_limits_invalid": "Use h:mm (e.g. 1:30) or minutes, up to 24 hours.",
+
+  "apps.of_limit": "of {limit}"
 }

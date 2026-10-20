@@ -265,6 +265,16 @@ mod tests {
         let (_, total) = get("?range=total".into()).await;
         assert_eq!(total["total_seconds"], 7260);
 
+        // by group: Dota 2 (steam:) is in Games; with a Tuesday limit of 90 min
+        let games = crate::app_groups::list_groups(&state.db).await.unwrap()[0].id.clone();
+        crate::app_groups::replace_limits(&state.db, &profile.to_string(), &games, &[(1, 90)]).await.unwrap();
+        let (_, day) = get("?range=day&date=2026-10-20".into()).await; // a Tuesday
+        let g = day["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
+        assert_eq!((g["seconds"].as_i64(), g["limit_minutes"].as_i64()), (Some(3600), Some(90)));
+        let (_, week) = get("?range=week&date=2026-10-22".into()).await;
+        let g = week["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
+        assert_eq!((g["seconds"].as_i64(), g["limit_minutes"].is_null()), (Some(4200), true));
+
         let (s, _) = get("?range=year".into()).await;
         assert_eq!(s, StatusCode::BAD_REQUEST);
         let (s, _) = get("?date=20-10-2026".into()).await;

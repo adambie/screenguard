@@ -531,6 +531,15 @@ def profile_apps(profile_id):
     for a in apps:
         a["pct"] = max(int(a["seconds"] / top * 100), 1) if top else 0
 
+    groups = []
+    for g in data.get("groups", []):
+        if g["seconds"] <= 0 and g.get("limit_minutes") is None:
+            continue
+        limit_s = g["limit_minutes"] * 60 if g.get("limit_minutes") is not None else None
+        scale = max(limit_s or 0, top, g["seconds"], 1)
+        groups.append(dict(g, display_name=group_name(g), pct=int(g["seconds"] / scale * 100),
+                           over=limit_s is not None and g["seconds"] > limit_s))
+
     week = []
     if rng == "week":
         day_list = data.get("days", [])
@@ -553,6 +562,7 @@ def profile_apps(profile_id):
                            period_from=data.get("from"),
                            period_to=data.get("to"),
                            apps=apps,
+                           groups=groups,
                            total_seconds=data.get("total_seconds", 0),
                            week=week,
                            available=data.get("app_usage_available", True),

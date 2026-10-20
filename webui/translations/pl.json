@@ -301,5 +301,7 @@
   "app_limits.no_groups": "Brak grup aplikacji.",
   "flash.app_limits_saved": "Zapisano limity aplikacji.",
   "flash.app_limits_failed": "Nie udało się zapisać limitów aplikacji.",
-  "flash.app_limits_invalid": "Użyj g:mm (np. 1:30) lub minut, maksymalnie 24 godziny."
+  "flash.app_limits_invalid": "Użyj g:mm (np. 1:30) lub minut, maksymalnie 24 godziny.",
+
+  "apps.of_limit": "z {limit}"
 }

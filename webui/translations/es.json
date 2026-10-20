@@ -301,5 +301,7 @@
   "app_limits.no_groups": "Aún no hay grupos de apps.",
   "flash.app_limits_saved": "Límites de apps guardados.",
   "flash.app_limits_failed": "No se pudieron guardar los límites de apps.",
-  "flash.app_limits_invalid": "Usa h:mm (p. ej. 1:30) o minutos, hasta 24 horas."
+  "flash.app_limits_invalid": "Usa h:mm (p. ej. 1:30) o minutos, hasta 24 horas.",
+
+  "apps.of_limit": "de {limit}"
 }

@@ -79,6 +79,32 @@
 </div>
 {% endif %}
 
+<!-- ── groups ───────────────────────────────────────────────────────── -->
+{% if groups %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between">
+    <span>{{ t('groups.heading') }}</span>
+    <a href="{{ url_for('apps') }}" class="small text-decoration-none">{{ t('app_limits.manage_groups') }} ›</a>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for g in groups %}
+    <li class="list-group-item" style="padding:10px 16px">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="text-truncate">{{ g.display_name }}</span>
+        <span class="text-nowrap" style="font-variant-numeric:tabular-nums{% if g.over %};color:var(--er){% endif %}">
+          {{ g.seconds | fmt_secs }}{% if g.limit_minutes is not none %}
+          <span class="text-secondary">{% if g.limit_minutes == 0 %}· {{ t('profile.badge_blocked') }}{% else %}{{ t('apps.of_limit', limit=(g.limit_minutes | fmt_mins)) }}{% endif %}</span>{% endif %}
+        </span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:var(--bd);margin-top:6px;overflow:hidden">
+        <div style="height:100%;width:{{ g.pct }}%;background:{% if g.over %}var(--er){% else %}var(--ac){% endif %};border-radius:3px"></div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <!-- ── apps ─────────────────────────────────────────────────────────── -->
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between">

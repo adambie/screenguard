@@ -122,6 +122,27 @@ pub async fn get_app_usage(
     };
     let available = app_usage::profile_has_capability(&state.db, id).await.map_err(internal)?;
 
+    // per group: time of its apps in the period (an app in two groups counts in
+    // both); in the day view also that weekday's limit
+    let groups = crate::app_groups::list_groups(&state.db).await.map_err(internal)?;
+    let limits = crate::app_groups::limits(&state.db, &id.to_string()).await.map_err(internal)?;
+    let dow = date.weekday().num_days_from_monday() as u8;
+    let groups_out: Vec<serde_json::Value> = groups
+        .iter()
+        .map(|g| {
+            let rules = g.rules();
+            let seconds: i64 = apps
+                .iter()
+                .filter(|a| common::apps::group_matches(&rules, &a.app_id, &a.categories))
+                .map(|a| a.seconds)
+                .sum();
+            let limit = (range == "day")
+                .then(|| limits.get(&g.id).and_then(|l| l.iter().find(|(d, _)| *d == dow)).map(|(_, m)| *m))
+                .flatten();
+            serde_json::json!({ "id": g.id, "name": g.name, "builtin": g.builtin, "seconds": seconds, "limit_minutes": limit })
+        })
+        .collect();
+
     Ok(Json(serde_json::json!({
         "range": range,
         "from": from,
@@ -130,6 +151,7 @@ pub async fn get_app_usage(
         "total_seconds": total_seconds,
         "days": days,
         "app_usage_available": available,
+        "groups": groups_out,
     })))
 }
 
