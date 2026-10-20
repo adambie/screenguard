@@ -275,6 +275,15 @@ pub(crate) mod tests {
         assert_eq!(daily(&pool, profile, day("2026-10-19"), day("2026-10-25")).await.unwrap().len(), 3);
         db::update_agent_app_usage(&pool, a1, true).await.unwrap();
         assert!(profile_has_capability(&pool, profile).await.unwrap());
+
+        // app groups on Postgres (`exclude` column, seeding, rules)
+        let groups = crate::app_groups::list_groups(&pool).await.unwrap();
+        assert_eq!(groups.len(), 2);
+        let id = crate::app_groups::create_group(&pool, "School").await.unwrap();
+        let rule = common::apps::GroupRule { kind: common::apps::RuleKind::AppId, value: "desktop:firefox".into(), exclude: true };
+        crate::app_groups::add_rule(&pool, &groups[1].id, &rule).await.unwrap();
+        assert!(crate::app_groups::list_groups(&pool).await.unwrap()[1].rules.iter().any(|r| r.rule.exclude));
+        assert!(crate::app_groups::delete_group(&pool, &id).await.unwrap());
     }
 
     /// Two agents in one profile, one in another; returns (agent1, agent2, other, profile).

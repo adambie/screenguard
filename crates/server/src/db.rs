@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 11;
+const CURRENT_VERSION: i32 = 12;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
 
 /// Per-app usage tables (#27): created by `create_tables` on fresh installs and
 /// by migration v10 on upgrades.
-const APP_USAGE_DDL: [&str; 3] = [
+const APP_USAGE_DDL: [&str; 6] = [
     "CREATE TABLE IF NOT EXISTS app_catalog (
         app_id       TEXT NOT NULL PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -176,6 +176,28 @@ const APP_USAGE_DDL: [&str; 3] = [
         PRIMARY KEY (agent_user_id, date, app_id)
     )",
     "CREATE INDEX IF NOT EXISTS idx_app_usage_date ON app_usage(date)",
+    // app groups (v12): global groups with rules; limits per profile
+    "CREATE TABLE IF NOT EXISTS app_groups (
+        id         TEXT NOT NULL PRIMARY KEY,
+        name       TEXT NOT NULL,
+        builtin    TEXT,
+        created_at INTEGER NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS app_group_rules (
+        id       TEXT NOT NULL PRIMARY KEY,
+        group_id TEXT NOT NULL REFERENCES app_groups(id) ON DELETE CASCADE,
+        kind     TEXT NOT NULL CHECK (kind IN ('app_id','prefix','category')),
+        value    TEXT NOT NULL,
+        exclude  INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (group_id, kind, value, exclude)
+    )",
+    "CREATE TABLE IF NOT EXISTS app_group_limits (
+        profile_id      TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+        group_id        TEXT NOT NULL REFERENCES app_groups(id) ON DELETE CASCADE,
+        day_of_week     INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+        allowed_minutes INTEGER NOT NULL CHECK (allowed_minutes >= 0),
+        PRIMARY KEY (profile_id, group_id, day_of_week)
+    )",
 ];
 
 async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
@@ -193,6 +215,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
             if admin_count == 0 {
                 v = CURRENT_VERSION;
                 set_schema_version(pool, v).await?;
+                crate::app_groups::seed_builtin(pool).await?;
             }
         }
         if v < 1 { apply_v1(pool).await?; v = 1; set_schema_version(pool, v).await?; }
@@ -206,6 +229,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
         // so mark as current and skip the portable migrations below.
         v = CURRENT_VERSION;
         set_schema_version(pool, v).await?;
+        crate::app_groups::seed_builtin(pool).await?;
     } else if v < 6 {
         // Existing Postgres database: the SQLite-only migrations don't apply, but
         // the portable ones below must still run (bumping straight to
@@ -225,6 +249,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 9 { apply_v9(pool).await?; v = 9; set_schema_version(pool, v).await?; }
     if v < 10 { apply_v10(pool).await?; v = 10; set_schema_version(pool, v).await?; }
     if v < 11 { apply_v11(pool).await?; v = 11; set_schema_version(pool, v).await?; }
+    if v < 12 { apply_v12(pool).await?; v = 12; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -467,6 +492,17 @@ pub(crate) async fn apply_v11(pool: &DbPool) -> Result<()> {
             .await?;
     }
     tracing::info!("DB migration v11 applied (app categories)");
+    Ok(())
+}
+
+// Migration 12: app groups and per-profile group limits, plus the predefined
+// "Games" and "Web browsers" groups (tables come from `create_tables`).
+pub(crate) async fn apply_v12(pool: &DbPool) -> Result<()> {
+    for stmt in &APP_USAGE_DDL[3..] {
+        sqlx::query(stmt).execute(pool).await?;
+    }
+    crate::app_groups::seed_builtin(pool).await?;
+    tracing::info!("DB migration v12 applied (app groups)");
     Ok(())
 }
 
@@ -2365,9 +2401,12 @@ mod tests {
         for stmt in ["DROP TABLE app_usage", "DROP TABLE app_catalog", "ALTER TABLE agents DROP COLUMN app_usage_available"] {
             sqlx::query(stmt).execute(&pool).await.unwrap();
         }
+        sqlx::query("DELETE FROM app_groups").execute(&pool).await.unwrap();
         set_schema_version(&pool, 9).await.unwrap();
         run_migrations(&pool, true).await.unwrap();
         sqlx::query("SELECT categories FROM app_catalog").fetch_all(&pool).await.unwrap();
+        // v12 seeded the predefined groups on the upgraded database
+        assert_eq!(crate::app_groups::list_groups(&pool).await.unwrap().len(), 2);
 
         let a = get_agent_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!((a.status.as_str(), a.auth_token_hash.as_deref(), a.app_usage_available), ("paired", Some("h"), None));
@@ -2376,7 +2415,7 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 11);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 12);
     }
 
     #[tokio::test]

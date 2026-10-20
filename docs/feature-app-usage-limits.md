@@ -45,8 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.2 migration v12 (groups,
-  predefined Games/Web browsers), 2.3 groups API + "Apps" admin page. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.3 groups API + "Apps" admin page, then 2.4 limits. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -675,7 +674,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   → `common::apps::{RuleKind, GroupRule, group_matches}`: any include rule and
   no exclude rule; categories are case-sensitive; an empty prefix matches nothing.
   Serialised as `{"kind":"app_id|prefix|category","value":…,"exclude":bool}`.
-- [ ] **2.2 Migration v12** (v11 = categories, 2.0) —
+- [x] **2.2 Migration v12** (v11 = categories, 2.0) —
   `app_groups(id, name, builtin, created_at)`,
   `app_group_members(group_id FK, kind, value, exclude)`,
   `app_group_limits(profile_id FK, group_id FK, day_of_week, allowed_minutes)` (0 = blocked),
@@ -687,6 +686,15 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   New apps of those categories join automatically. Parents can rename them,
   add/exclude apps, or delete them; no limit is set by default (they only group
   the reports until a parent sets a limit).
+  → Done: the tables are in `APP_USAGE_DDL` (`app_groups(id, name, builtin, created_at)`,
+  `app_group_rules(id, group_id, kind, value, exclude)`, `app_group_limits`), and
+  `crates/server/src/app_groups.rs` has CRUD, rule validation and
+  `seed_builtin`.
+  - Seeding runs once (migration v12 or a fresh install), so a deleted predefined
+    group stays deleted.
+  - Adding the opposite rule (include ↔ exclude) for the same app replaces it.
+  - Tests: SQLite fresh install, v9 → v12 upgrade, custom groups/rules, and the
+    Postgres test extended (the `exclude` column works there).
 - [ ] **2.3 Groups API + "Apps" admin page** — one page listing every app seen
   on any computer (name, category, last seen, which groups it's in), with
   "add to group" / "remove"; a groups list (members, create/rename/delete);
