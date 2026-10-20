@@ -789,8 +789,14 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 2C. Enforcement
 
-- [ ] **2.9 Warnings** — notify at the profile's warning thresholds per group
+- [x] **2.9 Warnings** — notify at the profile's warning thresholds per group
   ("Games: 5 minutes left"), once per threshold per day; localized.
+  → `app_limits::due_warnings()`: only while an app of the group is in use
+  (counted this tick); only the tightest crossed threshold fires, so a late start
+  doesn't fire 15/5/1 at once; thresholds re-arm when the remaining time goes
+  back above them; none once exhausted. Sent from the app tick via the existing
+  desktop-notification path, title = group name, body localized in 6 languages;
+  the state clears at midnight. Real-machine check is done together with 2.10.
 - [ ] **2.10 Closing apps** — at 0: SIGTERM matched processes → grace (~10 s) →
   `cgroup.kill` on the app scope → fallback SIGKILL of the process tree.
   Strictly obey the safety rules in [Enforcement](#enforcement-agent-phase-2).

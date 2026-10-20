@@ -91,6 +91,8 @@ pub struct HeartbeatLoop {
     app_tracker: Option<AppTracker>,
     /// Remaining time per limited app group, per uid, as of the last app tick.
     group_status: HashMap<u32, Vec<crate::app_limits::GroupStatus>>,
+    /// App-group warning thresholds already shown today: uid → group → thresholds.
+    group_warned: HashMap<u32, HashMap<String, HashSet<u32>>>,
 }
 
 impl HeartbeatLoop {
@@ -128,6 +130,7 @@ impl HeartbeatLoop {
             cloud_account,
             app_tracker: (app_tracking && crate::app_scan::supported()).then(AppTracker::new),
             group_status: HashMap::new(),
+            group_warned: HashMap::new(),
         }
     }
 
@@ -191,6 +194,7 @@ impl HeartbeatLoop {
                         let _ = self.db.lock().await.prune_group_usage(&cutoff);
                         last_date = today;
                         self.notified_thresholds.clear();
+                        self.group_warned.clear();
                     }
 
                     let online = {
@@ -270,15 +274,20 @@ impl HeartbeatLoop {
             }
         }
         drop(db);
-        self.update_group_status(&users, &today).await;
+        let in_use: HashMap<u32, HashSet<String>> = result.add_groups.iter().fold(HashMap::new(), |mut m, (uid, g, _)| {
+            m.entry(*uid).or_default().insert(g.clone());
+            m
+        });
+        self.update_group_status(&users, &today, &in_use).await;
     }
 
     /// Recomputes remaining time per limited group from this machine's group
     /// time, the last known time on other computers and the cached limits.
-    async fn update_group_status(&mut self, users: &[TrackedUser], today: &str) {
+    async fn update_group_status(&mut self, users: &[TrackedUser], today: &str, in_use: &HashMap<u32, HashSet<String>>) {
         let weekday = Local::now().weekday().num_days_from_monday() as u8;
         let db = self.db.lock().await;
         let mut status = HashMap::new();
+        let no_groups = HashSet::new();
         for u in users {
             let local = db.get_group_usage(u.uid, today).unwrap_or_default();
             let elsewhere = db.get_group_elsewhere(u.uid, today).unwrap_or_default();
@@ -289,6 +298,18 @@ impl HeartbeatLoop {
                 if !was {
                     tracing::info!("uid={}: app group '{}' has no time left today", u.uid, g.name);
                 }
+            }
+            let thresholds = db.get_cached_enforcement(u.uid).map(|e| e.warning_thresholds).unwrap_or_default();
+            let warned = self.group_warned.entry(u.uid).or_default();
+            for (group_id, left) in crate::app_limits::due_warnings(&s, in_use.get(&u.uid).unwrap_or(&no_groups), &thresholds, warned) {
+                let Some(g) = s.iter().find(|g| g.group_id == group_id) else { continue };
+                tracing::info!("uid={}: app group '{}' — {left}m left", u.uid, g.name);
+                let (uid, title, body) = (u.uid, g.name.clone(), crate::i18n::notif_group_warning_body(&u.language, left));
+                tokio::spawn(async move {
+                    if let Err(e) = crate::dbus::send_desktop_notification(uid, &title, &body).await {
+                        tracing::warn!("Group warning notification failed for uid={uid}: {e}");
+                    }
+                });
             }
             status.insert(u.uid, s);
         }

@@ -147,3 +147,52 @@ pub fn group_name(builtin: Option<&str>, name: &str, lang: &str) -> String {
     };
     localized.to_string()
 }
+
+/// "Games: 5 minutes left today"
+pub fn notif_group_warning_body(lang: &str, remaining: i32) -> String {
+    let mins = plural_mins(lang, remaining);
+    match lang {
+        "es" => format!("Quedan {remaining} {mins} por hoy."),
+        "fr" => format!("Il reste {remaining} {mins} aujourd'hui."),
+        "de" => format!("Heute noch {remaining} {mins}."),
+        "pt" => format!("Restam {remaining} {mins} por hoje."),
+        "pl" => format!("Na dziś zostało {remaining} {mins}."),
+        _ => format!("{remaining} {mins} left today."),
+    }
+}
+
+/// Title for app-group notifications: "Games: time is up"
+pub fn notif_group_time_up_title(lang: &str, group: &str) -> String {
+    match lang {
+        "es" => format!("{group}: se acabó el tiempo"),
+        "fr" => format!("{group} : temps écoulé"),
+        "de" => format!("{group}: Zeit ist um"),
+        "pt" => format!("{group}: o tempo acabou"),
+        "pl" => format!("{group}: czas minął"),
+        _ => format!("{group}: time is up"),
+    }
+}
+
+/// "Dota 2 will close in 10 seconds."
+pub fn notif_app_closing_body(lang: &str, app: &str, secs: u64) -> String {
+    match lang {
+        "es" => format!("{app} se cerrará en {secs} segundos."),
+        "fr" => format!("{app} va se fermer dans {secs} secondes."),
+        "de" => format!("{app} wird in {secs} Sekunden geschlossen."),
+        "pt" => format!("{app} vai fechar dentro de {secs} segundos."),
+        "pl" => format!("{app} zostanie zamknięta za {secs} sekund."),
+        _ => format!("{app} will close in {secs} seconds."),
+    }
+}
+
+/// Title when a group is blocked for the day: "Games: not allowed today"
+pub fn notif_group_blocked_title(lang: &str, group: &str) -> String {
+    match lang {
+        "es" => format!("{group}: no permitido hoy"),
+        "fr" => format!("{group} : pas autorisé aujourd'hui"),
+        "de" => format!("{group}: heute nicht erlaubt"),
+        "pt" => format!("{group}: não permitido hoje"),
+        "pl" => format!("{group}: dziś niedozwolone"),
+        _ => format!("{group}: not allowed today"),
+    }
+}

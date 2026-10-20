@@ -56,6 +56,34 @@ pub fn group_status(
         .collect()
 }
 
+/// Warning thresholds to fire now, as (group id, minutes left). Only for groups
+/// in use right now (`in_use`), once per threshold per day (`notified` keeps
+/// what fired); a threshold re-arms when the remaining time goes back above it
+/// (extra time). Exhausted groups get no warning — they get closed instead.
+pub fn due_warnings(
+    status: &[GroupStatus],
+    in_use: &std::collections::HashSet<String>,
+    thresholds: &[u32],
+    notified: &mut HashMap<String, std::collections::HashSet<u32>>,
+) -> Vec<(String, i32)> {
+    let mut out = Vec::new();
+    for g in status {
+        let left = ((g.remaining_seconds.max(0) + 59) / 60) as i32;
+        let fired = notified.entry(g.group_id.clone()).or_default();
+        fired.retain(|&t| left <= t as i32);
+        if g.exhausted() || g.blocked() || !in_use.contains(&g.group_id) {
+            continue;
+        }
+        // only the tightest threshold crossed, so a late start doesn't fire 15, 5 and 1 at once
+        let crossed: Vec<u32> = thresholds.iter().copied().filter(|&t| left <= t as i32 && !fired.contains(&t)).collect();
+        if !crossed.is_empty() {
+            fired.extend(crossed);
+            out.push((g.group_id.clone(), left));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +129,28 @@ mod tests {
         let less: HashMap<String, i32> = [("games".to_string(), -120)].into();
         let s = group_status(&groups, 0, &HashMap::new(), &HashMap::new(), &less, "en");
         assert_eq!(s[0].remaining_seconds, 0);
+    }
+
+    #[test]
+    fn warnings_fire_once_per_threshold_while_in_use() {
+        let st = |secs: i64| vec![GroupStatus { group_id: "games".into(), name: "Games".into(), limit_minutes: 60, used_seconds: 0, remaining_seconds: secs }];
+        let in_use: std::collections::HashSet<String> = ["games".to_string()].into();
+        let idle = std::collections::HashSet::new();
+        let th = [15, 5, 1];
+        let mut n = HashMap::new();
+        assert!(due_warnings(&st(20 * 60), &in_use, &th, &mut n).is_empty());
+        assert_eq!(due_warnings(&st(14 * 60 + 1), &in_use, &th, &mut n), vec![("games".to_string(), 15)]);
+        assert!(due_warnings(&st(14 * 60), &in_use, &th, &mut n).is_empty()); // once
+        assert!(due_warnings(&st(4 * 60), &idle, &th, &mut n).is_empty()); // not in use: no warning
+        assert_eq!(due_warnings(&st(4 * 60), &in_use, &th, &mut n), vec![("games".to_string(), 4)]);
+        // a late start just below 1 min fires a single warning, not three
+        let mut fresh = HashMap::new();
+        assert_eq!(due_warnings(&st(50), &in_use, &th, &mut fresh), vec![("games".to_string(), 1)]);
+        assert!(due_warnings(&st(30), &in_use, &th, &mut fresh).is_empty());
+        // extra time re-arms the 5 min threshold
+        assert!(due_warnings(&st(20 * 60), &in_use, &th, &mut n).is_empty());
+        assert_eq!(due_warnings(&st(5 * 60), &in_use, &th, &mut n), vec![("games".to_string(), 5)]);
+        // exhausted: no warning
+        assert!(due_warnings(&st(0), &in_use, &th, &mut HashMap::new()).is_empty());
     }
 }
