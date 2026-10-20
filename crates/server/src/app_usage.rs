@@ -275,7 +275,7 @@ pub(crate) mod tests {
     pub(crate) async fn agent_with_user(pool: &DbPool, machine: &str, uid: u32) -> (Uuid, Uuid) {
         let agent = db::upsert_agent_pending(pool, machine, machine, "UTC", "").await.unwrap();
         db::accept_agent(pool, agent.id, "hash").await.unwrap();
-        let user = LocalUser { local_uid: uid, username: "kid".into(), display_name: "Kid".into() };
+        let user = LocalUser { local_uid: uid, username: "kid".into(), display_name: "Kid".into() , can_admin: None};
         db::upsert_agent_users(pool, agent.id, &[user]).await.unwrap();
         let au = db::get_agent_user(pool, agent.id, uid).await.unwrap().unwrap();
         (agent.id, au.id)

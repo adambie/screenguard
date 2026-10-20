@@ -36,6 +36,14 @@
   </div>
 </div>
 
+{% for u in agent_users if u.can_admin %}
+<div class="alert alert-warning small mt-3 mb-0">
+  <strong>{{ t('profile.admin_warning_title', account=u.local_username ~ '@' ~ u.agent_hostname) }}</strong>
+  {{ t('profile.admin_warning_body') }}
+  <code class="d-block mt-1">sudo gpasswd -d {{ u.local_username }} wheel; sudo gpasswd -d {{ u.local_username }} sudo</code>
+</div>
+{% endfor %}
+
 <div class="collapse mb-4 mt-3" id="renameForm">
   <form method="post" action="{{ url_for('rename_profile', profile_id=profile.id) }}"
         class="d-flex gap-2" style="max-width:380px">

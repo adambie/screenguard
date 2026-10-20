@@ -328,5 +328,8 @@
   "app_limits.today": "Extra time today:",
   "flash.app_extra_saved": "Extra time saved — the child is notified.",
 
-  "app_limits.needs_update": "These computers need an agent update before app limits apply there: {computers}"
+  "app_limits.needs_update": "These computers need an agent update before app limits apply there: {computers}",
+
+  "profile.admin_warning_title": "{account} can install software as administrator.",
+  "profile.admin_warning_body": "It is in an administrator group (wheel/sudo) or has its own sudo rule, so it can install apps without asking and bypass app limits. Run on that computer (and remove any personal rule in /etc/sudoers.d):"
 }

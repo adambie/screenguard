@@ -308,5 +308,8 @@
   "app_limits.today": "Temps en plus aujourd'hui :",
   "flash.app_extra_saved": "Temps supplémentaire enregistré — l'enfant est prévenu.",
 
-  "app_limits.needs_update": "Ces ordinateurs ont besoin d'une mise à jour de l'agent pour appliquer les limites des apps : {computers}"
+  "app_limits.needs_update": "Ces ordinateurs ont besoin d'une mise à jour de l'agent pour appliquer les limites des apps : {computers}",
+
+  "profile.admin_warning_title": "{account} peut installer des logiciels en administrateur.",
+  "profile.admin_warning_body": "Le compte est dans un groupe d'administrateurs (wheel/sudo) ou a sa propre règle sudo : il peut installer des apps sans demander et contourner les limites. À exécuter sur cet ordinateur (et supprimer toute règle personnelle dans /etc/sudoers.d) :"
 }

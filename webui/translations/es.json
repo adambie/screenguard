@@ -308,5 +308,8 @@
   "app_limits.today": "Tiempo extra hoy:",
   "flash.app_extra_saved": "Tiempo extra guardado: se avisa al menor.",
 
-  "app_limits.needs_update": "Estos equipos necesitan actualizar el agente para aplicar los límites de apps: {computers}"
+  "app_limits.needs_update": "Estos equipos necesitan actualizar el agente para aplicar los límites de apps: {computers}",
+
+  "profile.admin_warning_title": "{account} puede instalar software como administrador.",
+  "profile.admin_warning_body": "Está en un grupo de administradores (wheel/sudo) o tiene su propia regla sudo, así que puede instalar apps sin preguntar y saltarse los límites. Ejecuta en ese equipo (y quita cualquier regla propia en /etc/sudoers.d):"
 }

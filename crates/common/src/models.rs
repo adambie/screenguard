@@ -65,6 +65,10 @@ pub struct LocalUser {
     pub local_uid: u32,
     pub username: String,
     pub display_name: String,
+    /// Can become administrator (wheel/sudo/admin group or a sudoers rule) and so
+    /// install software system-wide. `None` from agents that don't check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_admin: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

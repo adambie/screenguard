@@ -308,5 +308,8 @@
   "app_limits.today": "Zusatzzeit heute:",
   "flash.app_extra_saved": "Zusatzzeit gespeichert — das Kind wird benachrichtigt.",
 
-  "app_limits.needs_update": "Diese Computer brauchen ein Agenten-Update, bevor dort App-Limits gelten: {computers}"
+  "app_limits.needs_update": "Diese Computer brauchen ein Agenten-Update, bevor dort App-Limits gelten: {computers}",
+
+  "profile.admin_warning_title": "{account} kann Software als Administrator installieren.",
+  "profile.admin_warning_body": "Das Konto ist in einer Administratorgruppe (wheel/sudo) oder hat eine eigene sudo-Regel und kann so ungefragt Apps installieren und App-Limits umgehen. Auf diesem Computer ausführen (und eigene Regeln in /etc/sudoers.d entfernen):"
 }

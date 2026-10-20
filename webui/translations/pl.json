@@ -308,5 +308,8 @@
   "app_limits.today": "Dodatkowy czas dziś:",
   "flash.app_extra_saved": "Zapisano dodatkowy czas — dziecko dostanie powiadomienie.",
 
-  "app_limits.needs_update": "Te komputery wymagają aktualizacji agenta, zanim zadziałają na nich limity aplikacji: {computers}"
+  "app_limits.needs_update": "Te komputery wymagają aktualizacji agenta, zanim zadziałają na nich limity aplikacji: {computers}",
+
+  "profile.admin_warning_title": "{account} może instalować oprogramowanie jako administrator.",
+  "profile.admin_warning_body": "Konto należy do grupy administratorów (wheel/sudo) lub ma własną regułę sudo, więc może instalować aplikacje bez pytania i omijać limity. Wykonaj na tym komputerze (i usuń ewentualną własną regułę w /etc/sudoers.d):"
 }

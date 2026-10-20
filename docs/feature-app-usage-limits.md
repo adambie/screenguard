@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2E new-app approval (2.18–2.22); 2.15 combined real-machine run and 2.17 docs/release at the end. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.19–2.22 approval mode, requests, approve/deny UI, offline; then 2.15 combined run and 2.17 docs/release. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -888,9 +888,16 @@ Like Google Family Link's install approval. What is and isn't possible on Linux:
 
 Design: approval at first launch, using the Phase 2 closing machinery.
 
-- [ ] **2.18 Admin-rights check** — agent reports whether each managed account is
+- [x] **2.18 Admin-rights check** — agent reports whether each managed account is
   in `wheel`/`sudo`/`admin` (or has a sudoers rule); the UI warns "this child can
   install software as administrator" with how to fix it.
+  → `LocalUser.can_admin: Option<bool>`. The agent checks `/etc/group` (member
+  or primary group of wheel/sudo/admin) and `/etc/sudoers` + `/etc/sudoers.d/*`
+  (own rule or `%group` rule; `Defaults`/`#include` ignored); a change resends
+  the user list. Server v15: `agent_users.can_admin` (added only if missing),
+  plus the 2E tables `profile_app_settings` and `app_approvals`. Profile page:
+  warning with the `gpasswd -d` fix, 6 languages.
+  - Real machine: `adam` (wheel + a sudoers rule) → admin, `adam1`/`adam2` → not.
 - [ ] **2.19 Approval mode per profile** — off (default) / "new apps need
   approval". Turning it on approves every app already seen for that child, so
   nothing existing breaks.

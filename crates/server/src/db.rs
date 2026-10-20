@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 14;
+const CURRENT_VERSION: i32 = 15;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -84,6 +84,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
                              CHECK (status IN ('unmanaged','managed','deleted')),
             first_seen_at    INTEGER NOT NULL,
             last_reported_at INTEGER NOT NULL,
+            can_admin        INTEGER,
             UNIQUE(agent_id, local_uid)
         )",
         "CREATE TABLE IF NOT EXISTS schedules (
@@ -159,7 +160,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
 
 /// Per-app usage tables (#27): created by `create_tables` on fresh installs and
 /// by migration v10 on upgrades.
-const APP_USAGE_DDL: [&str; 8] = [
+const APP_USAGE_DDL: [&str; 10] = [
     "CREATE TABLE IF NOT EXISTS app_catalog (
         app_id       TEXT NOT NULL PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -215,6 +216,19 @@ const APP_USAGE_DDL: [&str; 8] = [
         minutes     INTEGER NOT NULL,
         created_at  INTEGER NOT NULL
     )",
+    // new-app approval (v15): per-profile mode and each app's decision
+    "CREATE TABLE IF NOT EXISTS profile_app_settings (
+        profile_id    TEXT NOT NULL PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
+        approval_mode INTEGER NOT NULL DEFAULT 0
+    )",
+    "CREATE TABLE IF NOT EXISTS app_approvals (
+        profile_id   TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+        app_id       TEXT NOT NULL,
+        status       TEXT NOT NULL CHECK (status IN ('pending','approved','denied')),
+        requested_at INTEGER,
+        decided_at   INTEGER,
+        PRIMARY KEY (profile_id, app_id)
+    )",
 ];
 
 async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
@@ -269,6 +283,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 12 { apply_v12(pool).await?; v = 12; set_schema_version(pool, v).await?; }
     if v < 13 { apply_v13(pool).await?; v = 13; set_schema_version(pool, v).await?; }
     if v < 14 { apply_v14(pool).await?; v = 14; set_schema_version(pool, v).await?; }
+    if v < 15 { apply_v15(pool).await?; v = 15; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -539,6 +554,19 @@ pub(crate) async fn apply_v14(pool: &DbPool) -> Result<()> {
     Ok(())
 }
 
+// Migration 15: new-app approval, and whether a child account can become admin.
+pub(crate) async fn apply_v15(pool: &DbPool) -> Result<()> {
+    for stmt in &APP_USAGE_DDL[8..10] {
+        sqlx::query(stmt).execute(pool).await?;
+    }
+    // create_tables already has the column on databases that never had agent_users
+    if sqlx::query("SELECT can_admin FROM agent_users LIMIT 1").fetch_optional(pool).await.is_err() {
+        sqlx::query("ALTER TABLE agent_users ADD COLUMN can_admin INTEGER").execute(pool).await?;
+    }
+    tracing::info!("DB migration v15 applied (app approval, admin rights)");
+    Ok(())
+}
+
 // ── models ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -597,6 +625,8 @@ pub struct AgentUser {
     pub status: String,
     pub first_seen_at: i64,
     pub last_reported_at: i64,
+    /// Can become administrator on that computer; `None` = unknown (older agent).
+    pub can_admin: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1073,7 +1103,8 @@ pub async fn upsert_agent_users(
         if existing.is_some() {
             sqlx::query(
                 "UPDATE agent_users SET local_username=$1, display_name=$2, last_reported_at=$3,
-                 status=CASE WHEN status='deleted' THEN 'unmanaged' ELSE status END
+                 status=CASE WHEN status='deleted' THEN 'unmanaged' ELSE status END,
+                 can_admin=$6
                  WHERE agent_id=$4 AND local_uid=$5",
             )
             .bind(&u.username)
@@ -1081,13 +1112,14 @@ pub async fn upsert_agent_users(
             .bind(now)
             .bind(agent_id.to_string())
             .bind(u.local_uid as i64)
+            .bind(u.can_admin.map(|v| v as i32))
             .execute(pool)
             .await?;
         } else {
             sqlx::query(
                 "INSERT INTO agent_users
-                 (id,agent_id,local_uid,local_username,display_name,status,first_seen_at,last_reported_at)
-                 VALUES ($1,$2,$3,$4,$5,'unmanaged',$6,$6)",
+                 (id,agent_id,local_uid,local_username,display_name,status,first_seen_at,last_reported_at,can_admin)
+                 VALUES ($1,$2,$3,$4,$5,'unmanaged',$6,$6,$7)",
             )
             .bind(Uuid::new_v4().to_string())
             .bind(agent_id.to_string())
@@ -1095,6 +1127,7 @@ pub async fn upsert_agent_users(
             .bind(&u.username)
             .bind(&u.display_name)
             .bind(now)
+            .bind(u.can_admin.map(|v| v as i32))
             .execute(pool)
             .await?;
         }
@@ -1122,7 +1155,7 @@ pub async fn mark_agent_users_deleted(
 pub async fn list_agent_users(pool: &DbPool, agent_id: Uuid) -> Result<Vec<AgentUser>> {
     let rows = sqlx::query(
         "SELECT id,agent_id,profile_id,local_uid,local_username,display_name,status,
-                first_seen_at,last_reported_at
+                first_seen_at,last_reported_at,can_admin
          FROM agent_users WHERE agent_id=$1 AND status!='deleted' ORDER BY local_uid",
     )
     .bind(agent_id.to_string())
@@ -1134,7 +1167,7 @@ pub async fn list_agent_users(pool: &DbPool, agent_id: Uuid) -> Result<Vec<Agent
 pub async fn get_agent_user_by_id(pool: &DbPool, id: Uuid) -> Result<Option<AgentUser>> {
     let row = sqlx::query(
         "SELECT id,agent_id,profile_id,local_uid,local_username,display_name,status,
-                first_seen_at,last_reported_at
+                first_seen_at,last_reported_at,can_admin
          FROM agent_users WHERE id=$1",
     )
     .bind(id.to_string())
@@ -1150,7 +1183,7 @@ pub async fn get_agent_user(
 ) -> Result<Option<AgentUser>> {
     let row = sqlx::query(
         "SELECT id,agent_id,profile_id,local_uid,local_username,display_name,status,
-                first_seen_at,last_reported_at
+                first_seen_at,last_reported_at,can_admin
          FROM agent_users WHERE agent_id=$1 AND local_uid=$2",
     )
     .bind(agent_id.to_string())
@@ -1185,7 +1218,7 @@ pub async fn get_agent_users_for_profile(
 ) -> Result<Vec<AgentUser>> {
     let rows = sqlx::query(
         "SELECT id,agent_id,profile_id,local_uid,local_username,display_name,status,
-                first_seen_at,last_reported_at
+                first_seen_at,last_reported_at,can_admin
          FROM agent_users WHERE profile_id=$1 AND status='managed'",
     )
     .bind(profile_id.to_string())
@@ -1209,6 +1242,7 @@ fn row_to_agent_user(r: sqlx::any::AnyRow) -> AgentUser {
         status: r.get("status"),
         first_seen_at: r.get("first_seen_at"),
         last_reported_at: r.get("last_reported_at"),
+        can_admin: r.get::<Option<i32>, _>("can_admin").map(|v| v != 0),
     }
 }
 
@@ -2037,7 +2071,7 @@ mod tests {
             &[LocalUser {
                 local_uid: 1000,
                 username: "test".to_string(),
-                display_name: "Test User".to_string(),
+                display_name: "Test User".to_string(), can_admin: None
             }],
         )
         .await
@@ -2157,7 +2191,7 @@ mod tests {
             &[LocalUser {
                 local_uid: 1000,
                 username: "test".to_string(),
-                display_name: "Test User".to_string(),
+                display_name: "Test User".to_string(), can_admin: None
             }],
         )
         .await
@@ -2190,7 +2224,7 @@ mod tests {
             &[LocalUser {
                 local_uid: 1000,
                 username: "test".to_string(),
-                display_name: "Test User".to_string(),
+                display_name: "Test User".to_string(), can_admin: None
             }],
         )
         .await
@@ -2448,7 +2482,21 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 14);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 15);
+    }
+
+    #[tokio::test]
+    async fn migration_v15_adds_can_admin_and_stores_it() {
+        let pool = test_pool().await;
+        let agent = paired_agent(&pool, "h", true).await;
+        sqlx::query("ALTER TABLE agent_users DROP COLUMN can_admin").execute(&pool).await.unwrap();
+        set_schema_version(&pool, 14).await.unwrap();
+        run_migrations(&pool, true).await.unwrap();
+        let u = |admin| LocalUser { local_uid: 1001, username: "kid".into(), display_name: "Kid".into(), can_admin: admin };
+        upsert_agent_users(&pool, agent, &[u(Some(true))]).await.unwrap();
+        assert_eq!(get_agent_user(&pool, agent, 1001).await.unwrap().unwrap().can_admin, Some(true));
+        upsert_agent_users(&pool, agent, &[u(None)]).await.unwrap(); // older agent: unknown
+        assert_eq!(get_agent_user(&pool, agent, 1001).await.unwrap().unwrap().can_admin, None);
     }
 
     #[tokio::test]
