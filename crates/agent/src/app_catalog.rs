@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::app_scan::ProcInfo;
 
@@ -17,6 +18,8 @@ pub struct DesktopEntry {
     /// Desktop file id: path below `applications/` with `/` → `-`, no `.desktop`.
     pub id: String,
     pub name: String,
+    /// `Name[xx]=` / `Name[xx_YY]=` keyed by the locale in brackets.
+    pub localized_names: HashMap<String, String>,
     pub icon: Option<String>,
     pub visible: bool,
     /// Basenames of `Exec=` (first word after `env VAR=…`) and `TryExec=`.
@@ -25,6 +28,8 @@ pub struct DesktopEntry {
     pub plain: bool,
     /// `StartupWMClass`, lower-cased.
     pub wmclass: Option<String>,
+    /// Steam game shortcut: `Exec=steam steam://rungameid/<id>`.
+    pub steam_appid: Option<String>,
 }
 
 #[derive(Default)]
@@ -34,6 +39,7 @@ pub struct Catalog {
     by_bin: HashMap<String, Vec<String>>,
     by_wm: HashMap<String, Vec<String>>,
     by_short: HashMap<String, Vec<String>>,
+    by_steam: HashMap<String, String>,
     /// Lower-cased ids and `Exec` basenames of XDG autostart entries.
     autostart: HashSet<String>,
 }
@@ -107,12 +113,19 @@ impl Catalog {
             self.by_wm.entry(wm.clone()).or_default().push(id.clone());
         }
         self.by_short.entry(short(&id)).or_default().push(id.clone());
+        if let Some(appid) = &e.steam_appid {
+            self.by_steam.entry(appid.clone()).or_insert_with(|| id.clone());
+        }
         self.entries.insert(id, e);
     }
 
     /// Exact desktop id, then case-insensitive.
     pub fn get(&self, id: &str) -> Option<&DesktopEntry> {
         self.entries.get(id).or_else(|| self.entries.get(self.by_lower.get(&id.to_lowercase())?))
+    }
+
+    pub fn steam_shortcut(&self, appid: &str) -> Option<&DesktopEntry> {
+        self.entries.get(self.by_steam.get(appid)?)
     }
 
     pub fn is_autostart(&self, id_or_binary: &str) -> bool {
@@ -173,6 +186,94 @@ impl Catalog {
     }
 }
 
+impl DesktopEntry {
+    /// Name for a profile language like `pl` or `pt_BR`: exact match, then the
+    /// language part, then any `xx_YY` of that language, then `Name=`.
+    pub fn name_for(&self, lang: &str) -> &str {
+        let base = lang.split(['_', '-', '.', '@']).next().unwrap_or(lang);
+        self.localized_names
+            .get(lang)
+            .or_else(|| self.localized_names.get(base))
+            .or_else(|| {
+                let prefix = format!("{base}_");
+                let mut regional: Vec<_> = self.localized_names.iter().filter(|(k, _)| k.starts_with(&prefix)).collect();
+                regional.sort();
+                regional.first().map(|(_, v)| *v)
+            })
+            .unwrap_or(&self.name)
+    }
+}
+
+/// Catalogues per home directory, reloaded when an applications or autostart
+/// dir (or a subdir) changes mtime — package managers install by rename, which
+/// updates the dir. Checked at most every `CHECK_EVERY`.
+pub struct CatalogCache {
+    homes: HashMap<PathBuf, CachedCatalog>,
+}
+
+struct CachedCatalog {
+    catalog: Catalog,
+    signature: Vec<(PathBuf, Option<SystemTime>)>,
+    checked: Instant,
+}
+
+const CHECK_EVERY: Duration = Duration::from_secs(30);
+
+impl CatalogCache {
+    pub fn new() -> Self {
+        Self { homes: HashMap::new() }
+    }
+
+    pub fn get(&mut self, home: &Path) -> &Catalog {
+        let (apps, auto) = Catalog::dirs_for_home(home);
+        self.get_with_dirs(home, &apps, &auto)
+    }
+
+    fn get_with_dirs(&mut self, home: &Path, apps: &[PathBuf], auto: &[PathBuf]) -> &Catalog {
+        let stale = match self.homes.get(home) {
+            None => true,
+            Some(c) if c.checked.elapsed() < CHECK_EVERY => false,
+            Some(c) => signature(apps, auto) != c.signature,
+        };
+        if stale {
+            let signature = signature(apps, auto);
+            let catalog = Catalog::load(apps, auto);
+            self.homes.insert(home.to_path_buf(), CachedCatalog { catalog, signature, checked: Instant::now() });
+        }
+        let c = self.homes.get_mut(home).expect("inserted above");
+        if !stale && c.checked.elapsed() >= CHECK_EVERY {
+            c.checked = Instant::now();
+        }
+        &c.catalog
+    }
+}
+
+/// mtimes of the dirs and their subdirs (applications dirs nest, e.g. `wine/Programs`).
+fn signature(apps: &[PathBuf], auto: &[PathBuf]) -> Vec<(PathBuf, Option<SystemTime>)> {
+    fn add(dir: &Path, out: &mut Vec<(PathBuf, Option<SystemTime>)>, depth: usize) {
+        out.push((dir.to_path_buf(), fs::metadata(dir).and_then(|m| m.modified()).ok()));
+        if depth == 0 {
+            return;
+        }
+        if let Ok(rd) = fs::read_dir(dir) {
+            let mut subs: Vec<PathBuf> =
+                rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()).collect();
+            subs.sort();
+            for d in subs {
+                add(&d, out, depth - 1);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for d in apps {
+        add(d, &mut out, 4);
+    }
+    for d in auto {
+        add(d, &mut out, 0);
+    }
+    out
+}
+
 /// Last dotted component of a desktop id, lower-cased (`org.kde.dolphin` → `dolphin`).
 fn short(id: &str) -> String {
     id.rsplit('.').next().unwrap_or(id).to_lowercase()
@@ -218,6 +319,10 @@ fn parse_entry(text: &str, id: &str) -> Option<DesktopEntry> {
         return None;
     }
     let flag = |k: &str| kv.get(k).map(String::as_str) == Some("true");
+    let localized_names = kv
+        .iter()
+        .filter_map(|(k, v)| Some((k.strip_prefix("Name[")?.strip_suffix(']')?.to_string(), v.clone())))
+        .collect();
     let mut binaries = Vec::new();
     let mut plain = false;
     if let Some((bin, extra)) = kv.get("Exec").and_then(|e| exec_binary(e)) {
@@ -230,11 +335,16 @@ fn parse_entry(text: &str, id: &str) -> Option<DesktopEntry> {
     Some(DesktopEntry {
         id: id.to_string(),
         name: kv.get("Name").cloned().unwrap_or_else(|| id.to_string()),
+        localized_names,
         icon: kv.get("Icon").cloned().filter(|s| !s.is_empty()),
         visible: !flag("NoDisplay") && !flag("Hidden"),
         binaries,
         plain,
         wmclass: kv.get("StartupWMClass").map(|s| s.to_lowercase()),
+        steam_appid: kv.get("Exec").and_then(|e| {
+            let id: String = e.split("steam://rungameid/").nth(1)?.chars().take_while(char::is_ascii_digit).collect();
+            (!id.is_empty()).then_some(id)
+        }),
     })
 }
 
@@ -310,7 +420,7 @@ pub(crate) mod fixture {
         for (rel, body) in [
             ("org.gnome.Nautilus.desktop", "Name=Files\nExec=nautilus --new-window %U\nIcon=org.gnome.Nautilus\nDBusActivatable=true"),
             ("org.gnome.TextEditor.desktop", "Name=Text Editor\nExec=gnome-text-editor %U\nIcon=org.gnome.TextEditor"),
-            ("org.kde.dolphin.desktop", "Name=Dolphin\nExec=dolphin %u\nIcon=system-file-manager"),
+            ("org.kde.dolphin.desktop", "Name=Dolphin\nName[de]=Dolphin-Dateiverwaltung\nName[pt_BR]=Gerenciador Dolphin\nName[pt_PT]=Gestor Dolphin\nExec=dolphin %u\nIcon=system-file-manager"),
             ("org.kde.konsole.desktop", "Name=Konsole\nExec=konsole\nTryExec=konsole\nIcon=utilities-terminal\n\n[Desktop Action NewTab]\nExec=konsole --new-tab"),
             ("org.kde.kded6.desktop", "Name=KDED\nExec=kded6\nNoDisplay=true"),
             ("org.kde.plasmashell.desktop", "Name=Plasma\nExec=plasmashell\nNoDisplay=true"),
@@ -327,6 +437,8 @@ pub(crate) mod fixture {
             ("nextcloud.desktop", "Name=Nextcloud\nExec=nextcloud\nIcon=Nextcloud"),
             ("org.mozilla.firefox.desktop", "Name=Firefox (Flatpak)\nExec=/usr/bin/flatpak run --branch=stable --command=firefox org.mozilla.firefox @@u %u @@\nIcon=org.mozilla.firefox"),
             ("wine/Programs/Game Name.desktop", "Name=Game Name\nExec=env WINEPREFIX=\"/home/kid/.wine\" wine C:\\\\Games\\\\game.exe"),
+            ("Dota 2.desktop", "Name=Dota 2\nExec=steam steam://rungameid/570\nIcon=steam_icon_570\nTerminal=false"),
+            ("spotify_spotify.desktop", "Name=Spotify\nExec=env BAMF_DESKTOP_FILE_HINT=/var/lib/snapd/desktop/applications/spotify_spotify.desktop /snap/bin/spotify %U\nIcon=/snap/spotify/80/usr/share/spotify/icons/spotify-linux-128.png"),
             ("brave.desktop", "Name=Brave\nExec=brave\nIcon=brave\nHidden=true"),
         ] {
             write(apps, rel, body);
@@ -383,6 +495,38 @@ mod tests {
         assert_eq!(cat.by_unit_id("org.chromium.Chromium").map(|e| e.id.as_str()), None);
         assert!(cat.is_autostart("nextcloud"));
         assert!(!cat.is_autostart("disabled-app"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn localized_names() {
+        let d = tmp();
+        fixture::standard(&d.join("apps"), &d.join("autostart"));
+        let cat = Catalog::load(&[d.join("apps")], &[]);
+        let e = cat.get("org.kde.dolphin").unwrap();
+        assert_eq!(e.name_for("en"), "Dolphin");
+        assert_eq!(e.name_for("de"), "Dolphin-Dateiverwaltung");
+        assert_eq!(e.name_for("de_AT.UTF-8"), "Dolphin-Dateiverwaltung");
+        assert_eq!(e.name_for("pt_PT"), "Gestor Dolphin");
+        assert_eq!(e.name_for("pt"), "Gerenciador Dolphin"); // first regional variant
+        assert_eq!(e.name_for("pl"), "Dolphin");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn cache_reloads_when_a_dir_changes() {
+        let d = tmp();
+        let (apps, home) = (vec![d.join("apps")], d.join("home"));
+        fixture::write(&apps[0], "foot.desktop", "Name=Foot\nExec=foot");
+        let mut cache = CatalogCache::new();
+        assert!(cache.get_with_dirs(&home, &apps, &[]).get("kcalc").is_none());
+
+        fixture::write(&apps[0], "sub/kcalc.desktop", "Name=KCalc\nExec=kcalc");
+        // within CHECK_EVERY nothing is re-checked
+        assert!(cache.get_with_dirs(&home, &apps, &[]).get("sub-kcalc").is_none());
+        // once due, the changed signature triggers a reload
+        cache.homes.get_mut(&home).unwrap().checked -= CHECK_EVERY;
+        assert_eq!(cache.get_with_dirs(&home, &apps, &[]).get("sub-kcalc").unwrap().name, "KCalc");
         let _ = fs::remove_dir_all(&d);
     }
 

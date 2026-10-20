@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.6 (identification + `.desktop` catalogue)
-- **Next step:** 1.7 — localized `Name[xx]=`, catalogue caching with dir-mtime reload
+- **Last completed step:** 1.7 (localized names, catalogue cache, display names)
+- **Next step:** 1.8 — accounting loop (reuse `SessionUsageState`), wire scanner into the agent
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -419,11 +419,23 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - Fix found while porting: special-case rules are tried along the whole
     ancestor chain one rule at a time (Steam → Minecraft → Wine). Otherwise a
     Proton game's own `Game.exe` matched `wine:` before the `reaper` ancestor.
-- [ ] **1.7 `.desktop` lookup** — (unlocalized `Name=`/`Icon=` already parsed
-  by `app_catalog.rs` in 1.6) map desktop ids to `Name=` (+ localized
+- [x] **1.7 `.desktop` lookup** — map desktop ids to `Name=` (+ localized
   `Name[xx]=` if the profile language matches) and `Icon=` from
   `/usr/share/applications`, `~/.local/share/applications`, flatpak/snap export
-  dirs. Cache, reload when an applications dir's mtime changes, refresh on miss. *Done when:* tests with fixture `.desktop` files pass.
+  dirs. Cache, reload when an applications dir's mtime changes. *Done when:* tests with fixture `.desktop` files pass.
+  → `DesktopEntry::name_for(lang)` (`xx_YY` → `xx` → first `xx_*` → `Name=`);
+  `CatalogCache` per home: it reloads when an apps/autostart dir or a subdir changes
+  mtime, checked at most every 30 s. `app_ident::display(id, catalog, lang, home)`
+  covers the ids without their own entry:
+  - Steam: the game shortcut (`steam://rungameid/<id>`), else
+    `appmanifest_<id>.acf` in the default library, else "Steam game <id>";
+  - Snap: `<snap>_<app>.desktop`;
+  - Flatpak: its exported entry, else the id;
+  - Minecraft: "Minecraft";
+  - Wine: the `.exe` name.
+
+  Icons are theme names or paths, kept as given (the web UI shows a generic icon
+  when it can't render them).
 - [ ] **1.8 Accounting loop** — every scan tick, if the user's session counts
   (reuse `SessionUsageState` logic from `dbus.rs`), add the tick's seconds to each
   running `app_id` once. Handle clock jumps / suspend (cap a tick at 2× interval).
@@ -621,3 +633,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.3 done (`app_usage` capability when cgroup v2; real log check moved into 1.19). 1.4 done by code inspection: unknown types ignored since the first server | 1.5 process enumeration |
 | 2026-10-20 | 1.5 done: `app_scan::ProcScanner` with (pid, start, comm) cache + fake `/proc` fixture, 5 tests | 1.6 identification |
 | 2026-10-20 | 1.6 done: `app_catalog.rs` + `app_ident.rs`, 13 fixture tests; Steam-vs-Wine precedence fix; Prism/MultiMC markers (Q2 answered) | 1.7 localized names + catalogue reload |
+| 2026-10-20 | 1.7 done: `name_for(lang)`, `CatalogCache` (mtime signature, 30 s), `display()` for Steam/Snap/Flatpak/Minecraft/Wine | 1.8 accounting loop |

@@ -5,6 +5,8 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 use common::apps::{AppId, AppKind};
 
@@ -49,6 +51,44 @@ enum CgKind {
     Session,
     Background,
     Other,
+}
+
+/// Name and icon to report for an identified app, in the profile's language.
+pub fn display(id: &Identified, cat: &Catalog, lang: &str, home: &Path) -> (String, Option<String>) {
+    let entry = id.desktop_id.as_deref().and_then(|d| cat.get(d));
+    if let Some(e) = entry {
+        return (e.name_for(lang).to_string(), e.icon.clone());
+    }
+    let name = id.app_id.name.as_str();
+    let from = |e: &DesktopEntry| (e.name_for(lang).to_string(), e.icon.clone());
+    match id.app_id.kind {
+        AppKind::Steam => cat
+            .steam_shortcut(name)
+            .map(from)
+            .or_else(|| steam_manifest_name(home, name).map(|n| (n, None)))
+            .unwrap_or_else(|| (format!("Steam game {name}"), None)),
+        AppKind::Snap => cat
+            .get(&format!("{name}_{name}"))
+            .or_else(|| cat.by_name(name))
+            .map(from)
+            .unwrap_or_else(|| (name.to_string(), None)),
+        AppKind::Flatpak => cat.get(name).map(from).unwrap_or_else(|| (name.to_string(), None)),
+        AppKind::Minecraft => ("Minecraft".to_string(), Some("minecraft".to_string())),
+        AppKind::Wine => (name.strip_suffix(".exe").unwrap_or(name).to_string(), None),
+        AppKind::Desktop | AppKind::Exe => (name.to_string(), None),
+    }
+}
+
+/// `"name"` from `steamapps/appmanifest_<id>.acf` in Steam's default library.
+fn steam_manifest_name(home: &Path, appid: &str) -> Option<String> {
+    [".local/share/Steam", ".steam/steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam"]
+        .iter()
+        .find_map(|root| fs::read_to_string(home.join(root).join(format!("steamapps/appmanifest_{appid}.acf"))).ok())?
+        .lines()
+        .find_map(|l| {
+            let mut parts = l.split('"').filter(|s| !s.trim().is_empty());
+            (parts.next()? == "name").then(|| parts.next().map(str::to_string)).flatten()
+        })
 }
 
 /// cgroup path → (kind, unit). The unit is the first `.scope`/`.service` below the
@@ -365,6 +405,30 @@ mod tests {
     }
 
     #[test]
+    fn display_names() {
+        let w = World::new();
+        let home = w.fp.path().join("home");
+        fs::create_dir_all(home.join(".local/share/Steam/steamapps")).unwrap();
+        fs::write(home.join(".local/share/Steam/steamapps/appmanifest_1091500.acf"), "\"AppState\"\n{\n\t\"appid\"\t\t\"1091500\"\n\t\"name\"\t\t\"Cyberpunk 2077\"\n}\n").unwrap();
+        let apps = w.fp.path().join("share/applications");
+        fixture::standard(&apps, &w.fp.path().join("autostart"));
+        let cat = Catalog::load(&[apps], &[]);
+        let show = |app_id: &str, desktop_id: Option<&str>, lang: &str| {
+            let id = Identified { app_id: AppId::parse(app_id).unwrap(), launch: Launch::App, desktop_id: desktop_id.map(str::to_string) };
+            display(&id, &cat, lang, &home)
+        };
+        assert_eq!(show("desktop:org.kde.dolphin", Some("org.kde.dolphin"), "de"), ("Dolphin-Dateiverwaltung".into(), Some("system-file-manager".into())));
+        assert_eq!(show("steam:570", None, "en"), ("Dota 2".into(), Some("steam_icon_570".into())));
+        assert_eq!(show("steam:1091500", None, "en").0, "Cyberpunk 2077");
+        assert_eq!(show("steam:42", None, "en").0, "Steam game 42");
+        assert_eq!(show("snap:spotify", None, "en").0, "Spotify");
+        assert_eq!(show("flatpak:org.mozilla.firefox", Some("org.mozilla.firefox"), "en").0, "Firefox (Flatpak)");
+        assert_eq!(show("flatpak:com.example.Unknown", None, "en").0, "com.example.Unknown");
+        assert_eq!(show("minecraft:java", None, "en").0, "Minecraft");
+        assert_eq!(show("wine:game.exe", None, "en").0, "game");
+    }
+
+    #[test]
     fn unit_parsing() {
         assert_eq!(parse_unit("app-gnome-org.gnome.Nautilus-4242.scope"), Some((Some("gnome".into()), "org.gnome.Nautilus".into())));
         assert_eq!(parse_unit("app-org.kde.dolphin@c0a5622a.service"), Some((None, "org.kde.dolphin".into())));
@@ -588,8 +652,8 @@ mod real {
         let status = std::fs::read_to_string("/proc/self/status").unwrap();
         let uid: u32 = status.lines().find_map(|l| l.strip_prefix("Uid:")).unwrap().split_whitespace().next().unwrap().parse().unwrap();
         let home = std::env::var("HOME").unwrap();
-        let (apps, auto) = Catalog::dirs_for_home(std::path::Path::new(&home));
-        let cat = Catalog::load(&apps, &auto);
+        let mut cache = crate::app_catalog::CatalogCache::new();
+        let cat = cache.get(std::path::Path::new(&home));
         let procs = crate::app_scan::ProcScanner::new().scan(&HashSet::from([uid]));
         let mut summary: BTreeMap<(String, String), usize> = BTreeMap::new();
         for id in identify_all(&procs, &cat).values() {
