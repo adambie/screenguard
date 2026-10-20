@@ -248,5 +248,19 @@
   "flash.pairing_attempts_exhausted": "Muitos códigos incorretos — o agente exibirá um novo código de emparelhamento em breve.",
   "flash.agent_not_waiting": "Este agente não está aguardando aprovação no momento. Verifique se ele está em execução e digite o código exibido agora.",
   "flash.agent_accept_failed": "Falha ao aceitar o agente: {error}",
-  "agent.pairing_hint_old": "Agentes anteriores à 0.10.17:"
+  "agent.pairing_hint_old": "Agentes anteriores à 0.10.17:",
+
+  "profile.btn_app_usage": "Utilização de apps",
+  "apps.heading": "Utilização de apps",
+  "apps.range_day": "Dia",
+  "apps.range_week": "Semana",
+  "apps.range_total": "Total",
+  "apps.today": "Hoje",
+  "apps.previous": "Anterior",
+  "apps.next": "Seguinte",
+  "apps.card_apps": "Apps",
+  "apps.total": "Total: {time}",
+  "apps.empty": "Não há utilização de apps registada neste período.",
+  "apps.not_available": "Nenhum computador deste perfil comunica ainda a utilização de apps. Atualize o agente ScreenGuard nesses computadores para ver que apps são usadas.",
+  "apps.footnote": "O tempo conta enquanto uma app está aberta e a criança está ativa no computador; apps abertas ao mesmo tempo contam cada uma. Programas iniciados a partir de um terminal contam como o terminal."
 }

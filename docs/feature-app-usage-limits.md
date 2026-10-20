@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.16 (web UI page, English strings)
-- **Next step:** 1.17 — translate the `apps.*` + `profile.btn_app_usage` strings into de, es, fr, pt, pl
+- **Last completed step:** 1.17 (translations)
+- **Next step:** 1.18 (optional dashboard teaser) or skip to 1.19 — end-to-end on a real test machine (needs root there: maintainer installs the build)
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -557,8 +557,15 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - Checked locally (server + web UI on localhost with seeded data): totals
     match, and headless Chromium screenshots look right at desktop and phone
     widths.
-- [ ] **1.17 Translations** — all new strings in all 6 languages
+- [x] **1.17 Translations** — all new strings in all 6 languages
   (`en, de, es, fr, pt, pl`).
+  → The 13 new keys are added to every file without reformatting the
+  hand-formatted JSON. Wording follows each file's existing terms (pt is European
+  Portuguese). Rendered in pl/de/fr at phone width: the profile header now wraps
+  its buttons (three didn't fit).
+  - Found, not fixed (out of scope): the 17 older web-filter strings
+    (`agents.badge_web_filter`, `profile.card_blocked_sites`,
+    `flash.domain_*`, …) exist only in `en.json`.
 - [ ] **1.18 Dashboard teaser (optional)** — top 3 apps today per child.
 
 ### 1E. Verification and release
@@ -723,3 +730,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.12–1.14 done: v10 (`app_catalog`, `app_usage`, `agents.app_usage_available`), upgrade from 0.10.17 verified on SQLite + Postgres; `app_usage::ingest` with MAX upsert (tests on both DBs); capability stored and in agents API | 1.15 reports API |
 | 2026-10-20 | 1.15 done: `GET /profiles/{id}/app-usage` (day/week/total), tests on SQLite + Postgres | 1.16 web UI |
 | 2026-10-20 | 1.16 done: `/profiles/<id>/apps` page (day/week/total), links from the profile page, checked locally with screenshots | 1.17 translations |
+| 2026-10-20 | 1.17 done: de/es/fr/pt/pl, profile header wraps on phones; noted 17 untranslated web-filter keys (older gap) | 1.18 optional / 1.19 e2e |

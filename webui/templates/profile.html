@@ -4,7 +4,7 @@
 {% block content %}
 
 <!-- ── page header ──────────────────────────────────────────────────── -->
-<div class="d-flex align-items-start justify-content-between mb-1 gap-3">
+<div class="d-flex flex-wrap align-items-start justify-content-between mb-1 gap-3">
   <div>
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb mb-2">
@@ -25,7 +25,7 @@
       {% endfor %}
     </div>
   </div>
-  <div class="d-flex gap-2 flex-shrink-0 pt-1">
+  <div class="d-flex flex-wrap gap-2 pt-1">
     <a class="btn btn-outline-secondary" href="{{ url_for('profile_apps', profile_id=profile.id) }}">{{ t('profile.btn_app_usage') }}</a>
     <button class="btn btn-outline-secondary"
             data-bs-toggle="collapse" data-bs-target="#renameForm">{{ t('profile.btn_rename') }}</button>
