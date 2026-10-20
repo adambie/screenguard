@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.4 (old servers ignore unknown message types)
-- **Next step:** 1.5 — `app_scan.rs` process enumeration with a fake `/proc` fixture
+- **Last completed step:** 1.5 (`ProcScanner` process enumeration)
+- **Next step:** 1.6 — identification algorithm + fixture catalogue (port `identify()` from `docs/spikes/app-scan.py`)
 - **In progress / half-done:** —
 - **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
@@ -386,11 +386,20 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   arm that logs at debug and returns `Ok` since the first server commit
   (`204a3be`), and message-handling errors are only logged, never close the
   socket. No version gate needed.
-- [ ] **1.5 `app_scan.rs` — process enumeration**: iterate `/proc`, keep PIDs whose
+- [x] **1.5 `app_scan.rs` — process enumeration**: iterate `/proc`, keep PIDs whose
   real UID is a managed child, read cgroup path, ppid, `exe` basename, cmdline and
   the two `GIO_LAUNCHED_DESKTOP_FILE*` variables from `environ` (local only).
   Cache per `(pid, start time)`; only new processes get the full reads (0.6).
   *Done when:* unit tests run against a fake `/proc` tree fixture (tempdir).
+  → `ProcScanner::scan(uids)` → `ProcInfo`s. Notes:
+  - Real UID comes from `status`: non-dumpable processes (Electron) have
+    root-owned `/proc/<pid>` entries.
+  - The cache key also includes `comm`, so an `exec` (a wrapper script exec'ing
+    `electron`) is re-read.
+  - Other users' processes are cached without details, so their `status` isn't
+    re-read on every tick. A tick reads only `stat` per process.
+  - `fake_proc::FakeProc` (test-only, no new dependency) is reused by 1.6.
+  - The module has `allow(dead_code)` until 1.8 wires it in; remove it then.
 - [ ] **1.6 Identification** — implement the [Identification algorithm](#identification-algorithm)
   and the [app filter](#what-counts-as-an-app). Needs `environ` and the process
   tree (ppid) from 1.5. *Done when:* table-driven tests pass against a **fixture
@@ -599,3 +608,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.1 done: `common::apps::AppId` (parse/display/validate, 3 tests) | 1.2 wire types |
 | 2026-10-20 | 1.2 done: `AppUsageSync` / `AppUsageEntry` + round-trip test | 1.3 capability, 1.4 old-server check |
 | 2026-10-20 | 1.3 done (`app_usage` capability when cgroup v2; real log check moved into 1.19). 1.4 done by code inspection: unknown types ignored since the first server | 1.5 process enumeration |
+| 2026-10-20 | 1.5 done: `app_scan::ProcScanner` with (pid, start, comm) cache + fake `/proc` fixture, 5 tests | 1.6 identification |
