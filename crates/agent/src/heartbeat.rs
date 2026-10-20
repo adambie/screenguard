@@ -786,6 +786,9 @@ impl HeartbeatLoop {
                     if db.get_capability("web_filter").unwrap_or(None).unwrap_or(false) {
                         caps.push("web_filter".to_string());
                     }
+                    if crate::app_scan::supported() {
+                        caps.push("app_usage".to_string());
+                    }
                     caps
                 },
                 cloud_account: self.cloud_account.clone(),

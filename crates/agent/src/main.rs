@@ -1,3 +1,4 @@
+mod app_scan;
 mod config;
 mod db;
 mod dbus;

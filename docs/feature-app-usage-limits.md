@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.2 (wire types)
-- **Next step:** 1.3 — advertise the `app_usage` capability, then 1.4 (old servers vs unknown message types)
+- **Last completed step:** 1.4 (old servers ignore unknown message types)
+- **Next step:** 1.5 — `app_scan.rs` process enumeration with a fake `/proc` fixture
 - **In progress / half-done:** —
 - **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
@@ -374,11 +374,18 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 1B. Agent — scanner and accounting (`crates/agent`)
 
-- [ ] **1.3 Capability** — advertise `"app_usage"` in `agent_hello.capabilities`
-  (Linux with cgroup v2 present). *Done when:* server log shows it on connect.
-- [ ] **1.4 Check unknown-message handling on old servers** — confirm a 0.10.x
+- [x] **1.3 Capability** — advertise `"app_usage"` in `agent_hello.capabilities`
+  (Linux with cgroup v2 present: `app_scan::supported()` checks
+  `/sys/fs/cgroup/cgroup.controllers`). *Done when:* server log shows it on connect.
+  → Builds; the server already logs `capabilities=[…]` on connect. Seeing it in
+  a real log needs a root-installed agent, so that check is part of 1.19.
+- [x] **1.4 Check unknown-message handling on old servers** — confirm a 0.10.x
   server ignores an unknown WS message type without dropping the connection.
   Record result in decision log; if it drops, gate sending on server version.
+  → Tolerated by every server version: `handle_agent_message` has a catch-all
+  arm that logs at debug and returns `Ok` since the first server commit
+  (`204a3be`), and message-handling errors are only logged, never close the
+  socket. No version gate needed.
 - [ ] **1.5 `app_scan.rs` — process enumeration**: iterate `/proc`, keep PIDs whose
   real UID is a managed child, read cgroup path, ppid, `exe` basename, cmdline and
   the two `GIO_LAUNCHED_DESKTOP_FILE*` variables from `environ` (local only).
@@ -444,6 +451,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 - [ ] **1.19 End-to-end on a real test machine** — install the new agent,
   use apps for a while, compare reported minutes with a stopwatch (±1 tick).
+  Also confirm the server log shows `app_usage` in the agent's capabilities (1.3).
 - [ ] **1.20 Compatibility checks** — new server + old agent (no app data, no
   errors); old server + new agent (no disconnects, see 1.4); upgrade path keeps
   existing pairings and screen-time numbers identical.
@@ -547,7 +555,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | Q1 | Does Cinnamon (and XFCE) create per-app `app-*.scope` units? If not, how good is the exe-keyed fallback? | 2026-10-20: no evidence they do (upstream GLib doesn't create scopes; only Fedora/RHEL patch it). Design no longer depends on it: GIO env (Cinnamon/MATE) and process tree (XFCE etc.) cover them. |
 | Q2 | How do Steam games, Minecraft Java and Proton games appear (scope, exe, cmdline)? | 2026-10-20: Steam — `reaper SteamLaunch AppId=<n> -- …` ancestor (native + Proton). Minecraft — `java` with Minecraft main class/jar; launcher variants (official, Prism, MultiMC, Flatpak) still to confirm in tests. |
 | Q3 | Which scan interval keeps CPU ≤ 1 % on the slowest machine? | 2026-10-20: 5 s — ≤ 0.11 % of one core even with full reads; ~0.04 % with cached identities (see 0.6). |
-| Q4 | Does an old (0.10.x) server tolerate unknown WS message types? (step 1.4) | |
+| Q4 | Does an old (0.10.x) server tolerate unknown WS message types? (step 1.4) | 2026-10-20: yes — catch-all arm logs at debug since `204a3be`; handler errors never close the socket. |
 | Q5 | Should group limits be per profile only, or allow a global default per group? | |
 | Q6 | Count apps launched from a terminal as the terminal (inherited scope) or try to attribute to the child process's exe? | 2026-10-20: v1 counts them as the terminal (the launch root) — simple and consistent across desktops; revisit if needed. |
 
@@ -574,6 +582,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | GIO env is checked before the app unit, but only with a live `_PID` ancestor owned by the child | Nested GIO launches inherit the parent app's unit; a stale env must not misattribute |
 | 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
 | 2026-10-20 | Scan every 5 s, identities cached by `(pid, start time)`, `.desktop` catalogue reloaded on dir mtime change | Measured ≤ 0.11 % CPU full, ~0.04 % cached (0.6); start time guards against PID reuse |
+| 2026-10-20 | The agent sends `app_usage_sync` to any server, no version gate | Every server version ignores unknown message types (Q4); the payload is small and sent at most once a minute |
 | 2026-10-20 | `session.slice` isn't excluded, only `background.slice` and non-`app-` user services | uwsm compositor keybinding launches without `uwsm app` stay in the compositor's unit |
 
 ---
@@ -589,3 +598,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | Trimmed the Hyprland sample (privacy). 0.6 done: Rust benchmark on Hyprland laptop and the KDE VM, 5 s interval with cached identities. **Phase 0 complete** | Phase 1, step 1.1 |
 | 2026-10-20 | 1.1 done: `common::apps::AppId` (parse/display/validate, 3 tests) | 1.2 wire types |
 | 2026-10-20 | 1.2 done: `AppUsageSync` / `AppUsageEntry` + round-trip test | 1.3 capability, 1.4 old-server check |
+| 2026-10-20 | 1.3 done (`app_usage` capability when cgroup v2; real log check moved into 1.19). 1.4 done by code inspection: unknown types ignored since the first server | 1.5 process enumeration |
