@@ -43,10 +43,9 @@ progress — not chat history.
 
 > Update this block at the end of every session.
 
-- **Phase:** 0 — Detection research
-- **Last completed step:** 0.5 (algorithm implemented in `docs/spikes/app-scan.py`,
-  sanity-checked on Hyprland + KDE)
-- **Next step:** 0.6 — measure scan cost (`app-scan.py --time`) and pick the interval
+- **Phase:** 1 — Per-app usage reports (Phase 0 done)
+- **Last completed step:** 0.6 (scan cost measured, 5 s interval with cached identities)
+- **Next step:** 1.1 — `crates/common/src/apps.rs` app-id helpers
 - **In progress / half-done:** —
 - **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
@@ -200,14 +199,28 @@ combinations). Real machines are only used to sanity-check the result
   root for other users' `environ`/`exe`). *Done when:* on Hyprland and KDE every
   real app the user opened maps to the right `app_id` and no desktop component is
   listed as an app. → Passed 2026-10-20, see [Sanity check results](#sanity-check-results-05).
-- [ ] **0.6 Measure cost:** time one full scan (incl. `environ` reads) on the
+- [x] **0.6 Measure cost:** time one full scan (incl. `environ` reads) on the
   slowest available machine; pick the scan interval (target ≤ 1 % CPU; expected 5 s).
+  → 2026-10-20 with `docs/spikes/scanbench.rs` (the agent's `/proc` reads in Rust,
+  200 iterations, % of one core):
+
+  | Machine | Processes (all / child's) | Full scan | Cached tick | At 5 s (full / cached) |
+  |---|---|---|---|---|
+  | Ryzen 7 4800H, Hyprland, Chromium + Electron open | 464 / 101 | 5.6 ms | 2.0 ms | 0.11 % / 0.04 % |
+  | screenguardTest, QEMU VM with 1 vCPU, KDE | 153 / 48 | 1.2 ms | 0.4 ms | 0.02 % / 0.01 % |
+
+  Cost scales with the child's process count (~25–55 µs each), not the CPU; a
+  heavy session with 500 processes would still be ~0.5 % full / ~0.2 % cached.
+  **Decision: 5 s interval; cache identities by `(pid, start time)`** so a tick
+  only lists `/proc` and checks owner + start time, doing the full reads and
+  identification only for new processes. The `.desktop` catalogue is cached and
+  reloaded when an applications dir's mtime changes.
 
 **Exit criteria (Phase 0):**
 - [x] Identification rules defined independently of the desktop
 - [x] "Is it an app" filter defined without per-desktop lists
 - [x] Sanity check passed on available machines (0.5)
-- [ ] Scan interval decided (0.6)
+- [x] Scan interval decided (0.6)
 
 ### Signal matrix
 
@@ -364,6 +377,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 - [ ] **1.5 `app_scan.rs` — process enumeration**: iterate `/proc`, keep PIDs whose
   real UID is a managed child, read cgroup path, ppid, `exe` basename, cmdline and
   the two `GIO_LAUNCHED_DESKTOP_FILE*` variables from `environ` (local only).
+  Cache per `(pid, start time)`; only new processes get the full reads (0.6).
   *Done when:* unit tests run against a fake `/proc` tree fixture (tempdir).
 - [ ] **1.6 Identification** — implement the [Identification algorithm](#identification-algorithm)
   and the [app filter](#what-counts-as-an-app). Needs `environ` and the process
@@ -377,7 +391,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 - [ ] **1.7 `.desktop` lookup** — map desktop ids to `Name=` (+ localized
   `Name[xx]=` if the profile language matches) and `Icon=` from
   `/usr/share/applications`, `~/.local/share/applications`, flatpak/snap export
-  dirs. Cache, refresh on miss. *Done when:* tests with fixture `.desktop` files pass.
+  dirs. Cache, reload when an applications dir's mtime changes, refresh on miss. *Done when:* tests with fixture `.desktop` files pass.
 - [ ] **1.8 Accounting loop** — every scan tick, if the user's session counts
   (reuse `SessionUsageState` logic from `dbus.rs`), add the tick's seconds to each
   running `app_id` once. Handle clock jumps / suspend (cap a tick at 2× interval).
@@ -527,7 +541,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 |---|---|---|
 | Q1 | Does Cinnamon (and XFCE) create per-app `app-*.scope` units? If not, how good is the exe-keyed fallback? | 2026-10-20: no evidence they do (upstream GLib doesn't create scopes; only Fedora/RHEL patch it). Design no longer depends on it: GIO env (Cinnamon/MATE) and process tree (XFCE etc.) cover them. |
 | Q2 | How do Steam games, Minecraft Java and Proton games appear (scope, exe, cmdline)? | 2026-10-20: Steam — `reaper SteamLaunch AppId=<n> -- …` ancestor (native + Proton). Minecraft — `java` with Minecraft main class/jar; launcher variants (official, Prism, MultiMC, Flatpak) still to confirm in tests. |
-| Q3 | Which scan interval keeps CPU ≤ 1 % on the slowest machine? | |
+| Q3 | Which scan interval keeps CPU ≤ 1 % on the slowest machine? | 2026-10-20: 5 s — ≤ 0.11 % of one core even with full reads; ~0.04 % with cached identities (see 0.6). |
 | Q4 | Does an old (0.10.x) server tolerate unknown WS message types? (step 1.4) | |
 | Q5 | Should group limits be per profile only, or allow a global default per group? | |
 | Q6 | Count apps launched from a terminal as the terminal (inherited scope) or try to attribute to the child process's exe? | 2026-10-20: v1 counts them as the terminal (the launch root) — simple and consistent across desktops; revisit if needed. |
@@ -554,6 +568,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | Ignore the `org.chromium.Chromium` self-scope id; use the children's unit or the process tree | Chromium and every Electron app use this id (Bitwarden landed in it) |
 | 2026-10-20 | GIO env is checked before the app unit, but only with a live `_PID` ancestor owned by the child | Nested GIO launches inherit the parent app's unit; a stale env must not misattribute |
 | 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
+| 2026-10-20 | Scan every 5 s, identities cached by `(pid, start time)`, `.desktop` catalogue reloaded on dir mtime change | Measured ≤ 0.11 % CPU full, ~0.04 % cached (0.6); start time guards against PID reuse |
 | 2026-10-20 | `session.slice` isn't excluded, only `background.slice` and non-`app-` user services | uwsm compositor keybinding launches without `uwsm app` stay in the compositor's unit |
 
 ---
@@ -566,3 +581,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 0.1 done (scan script). Samples: Hyprland (maintainer's machine), KDE (screenguardTest, sparse). Findings logged in decision log | Richer KDE sample; GNOME + Cinnamon access |
 | 2026-10-20 | Switched Phase 0 from sampling desktops to research: signal matrix, desktop-independent algorithm and app filter written (0.2–0.4) | 0.5 sanity check on Hyprland + KDE |
 | 2026-10-20 | 0.5 done: full algorithm in `app-scan.py`; Hyprland + KDE (KIO and GIO launches) + simulated GIO/Steam/Minecraft/Wine all correct after 5 algorithm fixes (see Sanity check results) | 0.6 measure cost |
+| 2026-10-20 | Trimmed the Hyprland sample (privacy). 0.6 done: Rust benchmark on Hyprland laptop and the KDE VM, 5 s interval with cached identities. **Phase 0 complete** | Phase 1, step 1.1 |
