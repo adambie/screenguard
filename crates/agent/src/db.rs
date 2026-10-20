@@ -97,6 +97,8 @@ impl Db {
                 groups    TEXT NOT NULL
             )",
         );
+        // New-app approval lists (#27 2E), next to the cached groups.
+        let _ = self.conn.execute_batch("ALTER TABLE cached_app_groups ADD COLUMN approval TEXT");
         // App categories (#27 Phase 2) — on DBs created before the column existed.
         let _ = self.conn.execute_batch(
             "ALTER TABLE app_usage_log ADD COLUMN categories TEXT NOT NULL DEFAULT ''",
@@ -328,10 +330,10 @@ impl Db {
 // ── config_meta ───────────────────────────────────────────────────────────────
 
 /// Bump when the agent starts storing a new part of `UserConfig` (2 = app
-/// groups). Config stored in an older format is re-requested on the next hello —
+/// groups, 3 = new-app approval). Config stored in an older format is re-requested on the next hello —
 /// otherwise an upgraded agent keeps the old cached config, without the new
 /// parts, until some setting changes on the server.
-pub const CONFIG_FORMAT: i64 = 2;
+pub const CONFIG_FORMAT: i64 = 3;
 
 impl Db {
     /// The config version to report in `agent_hello`: 0 when the cached config
@@ -428,8 +430,12 @@ impl Db {
             )?;
 
             tx.execute(
-                "INSERT OR REPLACE INTO cached_app_groups (local_uid, groups) VALUES (?1, ?2)",
-                params![u.local_uid, serde_json::to_string(&u.app_groups)?],
+                "INSERT OR REPLACE INTO cached_app_groups (local_uid, groups, approval) VALUES (?1, ?2, ?3)",
+                params![
+                    u.local_uid,
+                    serde_json::to_string(&u.app_groups)?,
+                    u.app_approval.as_ref().map(serde_json::to_string).transpose()?,
+                ],
             )?;
 
             tx.execute(
@@ -455,6 +461,15 @@ impl Db {
             .query_row("SELECT groups FROM cached_app_groups WHERE local_uid = ?1", params![uid], |r| r.get(0))
             .optional()?;
         Ok(json.map(|j| serde_json::from_str(&j)).transpose()?.unwrap_or_default())
+    }
+
+    /// New-app approval lists of a managed user; `None` when the mode is off.
+    pub fn get_cached_app_approval(&self, uid: u32) -> Result<Option<common::models::AppApprovalConfig>> {
+        let json: Option<Option<String>> = self
+            .conn
+            .query_row("SELECT approval FROM cached_app_groups WHERE local_uid = ?1", params![uid], |r| r.get(0))
+            .optional()?;
+        Ok(json.flatten().map(|j| serde_json::from_str(&j)).transpose()?)
     }
 
     pub fn get_managed_uids(&self) -> Result<Vec<u32>> {
@@ -1015,6 +1030,7 @@ mod tests {
             language: "en".to_string(),
             blocked_domains: Vec::new(),
             app_groups: Vec::new(),
+            app_approval: None,
         }
     }
 
@@ -1152,6 +1168,11 @@ mod tests {
         let g = db.get_cached_app_groups(1000).unwrap();
         assert_eq!((g.len(), g[0].id.as_str(), g[0].daily_limits[0].allowed_minutes), (1, "g1", 60));
         assert!(db.get_cached_app_groups(1001).unwrap().is_empty());
+        assert!(db.get_cached_app_approval(1000).unwrap().is_none()); // mode off
+        let mut cfg = user_config(1000, false);
+        cfg.app_approval = Some(common::models::AppApprovalConfig { approved: vec!["desktop:firefox".into()], denied: vec![] });
+        db.apply_config_push(&[cfg]).unwrap();
+        assert_eq!(db.get_cached_app_approval(1000).unwrap().unwrap().approved, vec!["desktop:firefox"]);
         // a later push without the user drops its groups
         db.apply_config_push(&[]).unwrap();
         assert!(db.get_cached_app_groups(1000).unwrap().is_empty());

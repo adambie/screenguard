@@ -228,3 +228,63 @@ pub fn notif_group_extra_body(lang: &str, delta: i32) -> String {
         (_, false) => format!("{n} {mins} less today."),
     }
 }
+
+/// Title when an app needs a parent's approval: "Ask a parent"
+pub fn notif_app_needs_approval_title(lang: &str) -> &'static str {
+    match lang {
+        "es" => "Hace falta permiso",
+        "fr" => "Autorisation nécessaire",
+        "de" => "Erlaubnis nötig",
+        "pt" => "É preciso autorização",
+        "pl" => "Potrzebna zgoda",
+        _ => "Permission needed",
+    }
+}
+
+/// "Your parent was asked whether you may use Dota 2."
+pub fn notif_app_needs_approval_body(lang: &str, app: &str) -> String {
+    match lang {
+        "es" => format!("Se ha pedido a tus padres que permitan {app}."),
+        "fr" => format!("Une demande a été envoyée à tes parents pour {app}."),
+        "de" => format!("Deine Eltern wurden gefragt, ob du {app} benutzen darfst."),
+        "pt" => format!("Foi pedido aos teus pais que permitam {app}."),
+        "pl" => format!("Wysłano rodzicom prośbę o zgodę na {app}."),
+        _ => format!("Your parents were asked to allow {app}."),
+    }
+}
+
+/// Title when a parent said no / the app isn't allowed: "Not allowed"
+pub fn notif_app_denied_title(lang: &str) -> &'static str {
+    match lang {
+        "es" => "No permitido",
+        "fr" => "Non autorisé",
+        "de" => "Nicht erlaubt",
+        "pt" => "Não permitido",
+        "pl" => "Niedozwolone",
+        _ => "Not allowed",
+    }
+}
+
+/// "You may use Dota 2 now."
+pub fn notif_app_approved_body(lang: &str, app: &str) -> String {
+    match lang {
+        "es" => format!("Ya puedes usar {app}."),
+        "fr" => format!("Tu peux maintenant utiliser {app}."),
+        "de" => format!("Du darfst {app} jetzt benutzen."),
+        "pt" => format!("Já podes usar {app}."),
+        "pl" => format!("Możesz już używać {app}."),
+        _ => format!("You may use {app} now."),
+    }
+}
+
+/// Title when a parent allowed an app: "Allowed"
+pub fn notif_app_approved_title(lang: &str) -> &'static str {
+    match lang {
+        "es" => "Permitido",
+        "fr" => "Autorisé",
+        "de" => "Erlaubt",
+        "pt" => "Permitido",
+        "pl" => "Dozwolone",
+        _ => "Allowed",
+    }
+}

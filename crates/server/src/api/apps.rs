@@ -175,6 +175,59 @@ pub async fn add_group_adjustment(
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "message": "Adjustment added", "config_version": version }))))
 }
 
+/// `GET /profiles/{id}/app-approvals` — the mode and every request/decision.
+pub async fn get_approvals(State(state): State<Arc<AppState>>, Path(id): Path<uuid::Uuid>) -> ApiResult {
+    crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    let mode = crate::app_approvals::mode(&state.db, id).await.map_err(internal)?;
+    let apps = crate::app_approvals::list(&state.db, id).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "enabled": mode, "apps": apps })))
+}
+
+#[derive(Deserialize)]
+pub struct ModeBody {
+    pub enabled: bool,
+}
+
+/// `PUT /profiles/{id}/app-approvals/mode` — turning it on approves the apps already used.
+pub async fn set_approval_mode(State(state): State<Arc<AppState>>, Path(id): Path<uuid::Uuid>, Json(body): Json<ModeBody>) -> ApiResult {
+    crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    crate::app_approvals::set_mode(&state.db, id, body.enabled).await.map_err(internal)?;
+    let version = crate::api::profiles::bump_and_propagate(&state, id).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "enabled": body.enabled, "config_version": version })))
+}
+
+#[derive(Deserialize)]
+pub struct DecisionBody {
+    pub app_id: String,
+    pub approve: bool,
+    /// Optionally also put an approved app into a group.
+    pub group_id: Option<String>,
+}
+
+/// `POST /profiles/{id}/app-approvals/decision`
+pub async fn decide_approval(State(state): State<Arc<AppState>>, Path(id): Path<uuid::Uuid>, Json(body): Json<DecisionBody>) -> ApiResult {
+    crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    crate::app_approvals::decide(&state.db, id, &body.app_id, body.approve).await.map_err(bad)?;
+    if let (true, Some(g)) = (body.approve, body.group_id.as_deref().filter(|g| !g.is_empty())) {
+        let categories = app_usage::app_categories(&state.db, &body.app_id).await.map_err(internal)?;
+        app_groups::set_membership(&state.db, g, &body.app_id, &categories, true).await.map_err(bad)?.ok_or_else(not_found)?;
+        propagate_all(&state).await?;
+    } else {
+        crate::api::profiles::bump_and_propagate(&state, id).await.map_err(internal)?;
+    }
+    Ok(Json(serde_json::json!({ "message": "Decision saved" })))
+}
+
+/// `GET /app-requests` — pending requests of every profile (dashboard).
+pub async fn pending_requests(State(state): State<Arc<AppState>>) -> ApiResult {
+    let all = crate::app_approvals::pending_all(&state.db).await.map_err(internal)?;
+    let out: Vec<serde_json::Value> = all
+        .into_iter()
+        .map(|(pid, pname, a)| serde_json::json!({ "profile_id": pid, "profile_name": pname, "app_id": a.app_id, "name": a.name, "requested_at": a.requested_at }))
+        .collect();
+    Ok(Json(serde_json::json!({ "requests": out })))
+}
+
 #[derive(Deserialize)]
 pub struct MembershipBody {
     pub app_id: String,

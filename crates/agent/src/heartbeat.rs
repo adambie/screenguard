@@ -26,6 +26,8 @@ type SessionStates = HashMap<u32, HashMap<String, SessionUsageState>>;
 const APP_USAGE_KEEP_DAYS: i64 = 35;
 /// Send per-app totals every 12 scan ticks (60 s) while online.
 const APP_SYNC_EVERY_TICKS: u64 = 12;
+/// App requests kept for re-sending until a parent decides.
+const MAX_OUTSTANDING_REQUESTS: usize = 50;
 /// Entries per `app_usage_sync` message (a long offline period can pile up days).
 const APP_SYNC_CHUNK: usize = 500;
 
@@ -93,8 +95,16 @@ pub struct HeartbeatLoop {
     group_status: HashMap<u32, Vec<crate::app_limits::GroupStatus>>,
     /// App-group warning thresholds already shown today: uid → group → thresholds.
     group_warned: HashMap<u32, HashMap<String, HashSet<u32>>>,
-    /// Closes apps of groups that are out of time or blocked.
+    /// Closes apps of groups that are out of time or blocked, and unapproved apps.
     closer: crate::app_enforce::Closer,
+    /// Apps already requested from the parents on this connection.
+    requested: HashSet<(u32, String)>,
+    /// Requests without a parent's decision yet: re-sent on every reconnect (a
+    /// request can be lost with a dropped connection; the server ignores repeats)
+    /// until the decision arrives in a config push.
+    outstanding_requests: HashMap<(u32, String), common::messages::AppRequest>,
+    /// Last seen app names, for decision notifications.
+    app_names: HashMap<(u32, String), String>,
 }
 
 impl HeartbeatLoop {
@@ -134,6 +144,9 @@ impl HeartbeatLoop {
             group_status: HashMap::new(),
             group_warned: HashMap::new(),
             closer: crate::app_enforce::Closer::new(),
+            requested: HashSet::new(),
+            outstanding_requests: HashMap::new(),
+            app_names: HashMap::new(),
         }
     }
 
@@ -249,6 +262,7 @@ impl HeartbeatLoop {
                         language: db.get_cached_enforcement(uid).map(|e| e.language).unwrap_or_else(|_| "en".into()),
                         counting: uid_is_counting(session_states, uid),
                         groups: db.get_cached_app_groups(uid).unwrap_or_default(),
+                        approval: db.get_cached_app_approval(uid).unwrap_or_default(),
                     })
                 })
                 .collect()
@@ -262,27 +276,65 @@ impl HeartbeatLoop {
             m
         });
         self.update_group_status(&users, &today, &in_use).await;
+        for ((uid, app), shown) in &result.names {
+            self.app_names.insert((*uid, app.to_string()), shown.name.clone());
+        }
         // enforcement runs even when nothing was counted (screen locked, idle)
-        self.close_apps_over_limit(&users, &result);
+        self.close_apps_over_limit(&users, &result).await;
     }
 
     /// Closes apps whose group has no time left today (or is blocked).
-    fn close_apps_over_limit(&mut self, users: &[TrackedUser], result: &crate::app_usage::TickResult) {
+    async fn close_apps_over_limit(&mut self, users: &[TrackedUser], result: &crate::app_usage::TickResult) {
+        use crate::app_enforce::Reason;
         let managed: HashSet<u32> = users.iter().map(|u| u.uid).collect();
         let groups: HashMap<u32, Vec<common::models::AppGroupConfig>> = users.iter().map(|u| (u.uid, u.groups.clone())).collect();
-        let targets = crate::app_enforce::targets(&result.procs, &self.group_status, &groups, &result.names, &managed);
-        for t in &targets {
-            tracing::debug!("uid={}: closing '{}' (pid {}, group '{}')", t.uid, t.app_name, t.pid, t.group_name);
+        let approval: HashMap<u32, common::models::AppApprovalConfig> =
+            users.iter().filter_map(|u| Some((u.uid, u.approval.clone()?))).collect();
+        let targets = crate::app_enforce::targets(&result.procs, &self.group_status, &groups, &approval, &result.names, &managed);
+
+        // ask the parents, once per app per connection (the server ignores repeats);
+        // while offline, queue the request for the reconnect
+        let online = self.db.lock().await.get_agent_mode().ok() == Some(AgentMode::Online);
+        for t in targets.iter().filter(|t| t.reason == Reason::NeedsApproval) {
+            if !self.requested.insert((t.uid, t.key.clone())) {
+                continue;
+            }
+            let shown = result.names.get(&(t.uid, t.app_id.clone()));
+            let req = common::messages::AppRequest {
+                local_uid: t.uid,
+                app_id: t.key.clone(),
+                display_name: t.app_name.clone(),
+                icon: shown.and_then(|s| s.icon.clone()),
+                categories: shown.map(|s| s.categories.clone()).unwrap_or_default(),
+            };
+            if self.outstanding_requests.len() < MAX_OUTSTANDING_REQUESTS {
+                self.outstanding_requests.insert((t.uid, t.key.clone()), req.clone());
+            }
+            if online && let Err(e) = ws_client::send(&self.outbound_tx, common::messages::MSG_APP_REQUEST, &req).await {
+                tracing::warn!("Sending app request failed: {e}");
+                self.requested.remove(&(t.uid, t.key.clone()));
+            }
         }
+
         let notices = self.closer.enforce(Instant::now(), &targets, &crate::app_enforce::ProcSignals);
         for n in notices {
             let lang = users.iter().find(|u| u.uid == n.uid).map_or("en", |u| u.language.as_str());
-            let (title, body) = if n.blocked {
-                (crate::i18n::notif_group_blocked_title(lang, &n.group_name), crate::i18n::notif_app_closed_body(lang, &n.app_name))
-            } else if n.closes_in > 0 {
-                (crate::i18n::notif_group_time_up_title(lang, &n.group_name), crate::i18n::notif_app_closing_body(lang, &n.app_name, n.closes_in))
-            } else {
-                (crate::i18n::notif_group_time_up_title(lang, &n.group_name), crate::i18n::notif_app_closed_body(lang, &n.app_name))
+            let (title, body) = match n.reason {
+                Reason::NeedsApproval => (
+                    crate::i18n::notif_app_needs_approval_title(lang).to_string(),
+                    crate::i18n::notif_app_needs_approval_body(lang, &n.app_name),
+                ),
+                Reason::Denied => (crate::i18n::notif_app_denied_title(lang).to_string(), crate::i18n::notif_app_closed_body(lang, &n.app_name)),
+                Reason::Blocked => {
+                    (crate::i18n::notif_group_blocked_title(lang, &n.group_name), crate::i18n::notif_app_closed_body(lang, &n.app_name))
+                }
+                Reason::Limit if n.closes_in > 0 => (
+                    crate::i18n::notif_group_time_up_title(lang, &n.group_name),
+                    crate::i18n::notif_app_closing_body(lang, &n.app_name, n.closes_in),
+                ),
+                Reason::Limit => {
+                    (crate::i18n::notif_group_time_up_title(lang, &n.group_name), crate::i18n::notif_app_closed_body(lang, &n.app_name))
+                }
             };
             tracing::info!("uid={}: app limit — {title}: {body}", n.uid);
             let uid = n.uid;
@@ -353,10 +405,18 @@ impl HeartbeatLoop {
         self.group_status = status;
     }
 
-    async fn handle_connection_event(&self, event: ConnectionEvent) -> Result<()> {
+    async fn handle_connection_event(&mut self, event: ConnectionEvent) -> Result<()> {
         match event {
             ConnectionEvent::Connected => {
                 tracing::info!("Connection established — running reconnect sequence");
+                // requests sent while disconnected may be lost: ask again when the app runs
+                self.requested.clear();
+                for (key, req) in &self.outstanding_requests {
+                    self.requested.insert(key.clone());
+                    if let Err(e) = ws_client::send(&self.outbound_tx, common::messages::MSG_APP_REQUEST, req).await {
+                        tracing::warn!("Re-sending app request failed: {e}");
+                    }
+                }
                 {
                     let db = self.db.lock().await;
                     db.set_agent_mode(AgentMode::Online)?;
@@ -479,15 +539,63 @@ impl HeartbeatLoop {
                     }).collect()
                 };
 
-                let old_groups: HashMap<u32, Vec<common::models::AppGroupConfig>> = {
+                let (old_groups, old_approval): (
+                    HashMap<u32, Vec<common::models::AppGroupConfig>>,
+                    HashMap<u32, Option<common::models::AppApprovalConfig>>,
+                ) = {
                     let db = self.db.lock().await;
-                    push.users.iter().map(|u| (u.local_uid, db.get_cached_app_groups(u.local_uid).unwrap_or_default())).collect()
+                    (
+                        push.users.iter().map(|u| (u.local_uid, db.get_cached_app_groups(u.local_uid).unwrap_or_default())).collect(),
+                        push.users.iter().map(|u| (u.local_uid, db.get_cached_app_approval(u.local_uid).unwrap_or_default())).collect(),
+                    )
                 };
 
                 {
                     let db = self.db.lock().await;
                     db.apply_config_push(&push.users)?;
                     db.save_config_version(push.config_version)?;
+                }
+
+                // Decided requests are no longer outstanding.
+                for u in &push.users {
+                    if let Some(a) = &u.app_approval {
+                        self.outstanding_requests
+                            .retain(|(uid, app), _| *uid != u.local_uid || !(a.approved.contains(app) || a.denied.contains(app)));
+                    } else {
+                        self.outstanding_requests.retain(|(uid, _), _| *uid != u.local_uid); // mode turned off
+                    }
+                }
+
+                // Tell the child about a parent's decision on an app it asked for.
+                for u in &push.users {
+                    let (Some(old), Some(new)) = (old_approval.get(&u.local_uid).cloned().flatten(), u.app_approval.as_ref()) else {
+                        continue;
+                    };
+                    let lang = u.language.clone();
+                    let name = |app: &str| self.app_names.get(&(u.local_uid, app.to_string())).cloned().unwrap_or_else(|| app.split_once(':').map_or(app, |(_, n)| n).to_string());
+                    let decided: Vec<(String, bool)> = new
+                        .approved
+                        .iter()
+                        .filter(|a| !old.approved.contains(a))
+                        .map(|a| (a.clone(), true))
+                        .chain(new.denied.iter().filter(|a| !old.denied.contains(a)).map(|a| (a.clone(), false)))
+                        .collect();
+                    for (app, ok) in decided {
+                        // only apps the child asked for on this connection, not "allowed in advance"
+                        if !self.requested.remove(&(u.local_uid, app.clone())) {
+                            continue;
+                        }
+                        let (title, body) = if ok {
+                            (crate::i18n::notif_app_approved_title(&lang).to_string(), crate::i18n::notif_app_approved_body(&lang, &name(&app)))
+                        } else {
+                            (crate::i18n::notif_app_denied_title(&lang).to_string(), name(&app))
+                        };
+                        let uid = u.local_uid;
+                        tracing::info!("uid={uid}: parent decided on {app}: {}", if ok { "approved" } else { "denied" });
+                        tokio::spawn(async move {
+                            let _ = crate::dbus::send_desktop_notification(uid, &title, &body).await;
+                        });
+                    }
                 }
 
                 // Tell the child about extra (or less) time for an app group.
@@ -1245,6 +1353,7 @@ mod tests {
             language: "en".to_string(),
             blocked_domains: Vec::new(),
             app_groups: Vec::new(),
+            app_approval: None,
         }
     }
 

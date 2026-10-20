@@ -318,6 +318,7 @@ async fn send_config_push(
             language: "en".to_string(),
             blocked_domains: Vec::new(),
             app_groups: Vec::new(),
+            app_approval: None,
         })
         .collect();
 

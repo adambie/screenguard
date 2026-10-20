@@ -331,5 +331,22 @@
   "app_limits.needs_update": "These computers need an agent update before app limits apply there: {computers}",
 
   "profile.admin_warning_title": "{account} can install software as administrator.",
-  "profile.admin_warning_body": "It is in an administrator group (wheel/sudo) or has its own sudo rule, so it can install apps without asking and bypass app limits. Run on that computer (and remove any personal rule in /etc/sudoers.d):"
+  "profile.admin_warning_body": "It is in an administrator group (wheel/sudo) or has its own sudo rule, so it can install apps without asking and bypass app limits. Run on that computer (and remove any personal rule in /etc/sudoers.d):",
+
+  "approval.card": "New apps",
+  "approval.turn_on": "Ask before new apps",
+  "approval.turn_off": "Turn off",
+  "approval.hint_off": "When on, an app the child hasn't used before is closed on start and the child can ask you to allow it. Apps already used stay allowed.",
+  "approval.hint_on": "On: new apps need your approval. Programs started from a terminal count as the terminal.",
+  "approval.asks": "asks to use this app",
+  "approval.no_group": "no group",
+  "approval.approve": "Allow",
+  "approval.deny": "Deny",
+  "approval.decided": "Earlier decisions ({n})",
+  "approval.allowed": "allowed",
+  "approval.denied": "denied",
+  "approval.dashboard_title": "App requests waiting ({n})",
+  "flash.approval_on": "New apps now need approval. Apps already used stay allowed.",
+  "flash.approval_off": "New apps no longer need approval.",
+  "flash.approval_failed": "Couldn't save."
 }

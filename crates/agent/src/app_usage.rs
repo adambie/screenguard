@@ -105,6 +105,8 @@ pub struct TrackedUser {
     pub counting: bool,
     /// App groups from the profile's config.
     pub groups: Vec<common::models::AppGroupConfig>,
+    /// New-app approval lists; `None` when the mode is off.
+    pub approval: Option<common::models::AppApprovalConfig>,
 }
 
 impl AppTracker {
@@ -268,7 +270,7 @@ mod tests {
             group("games", RuleKind::Category, "Game"),
             group("all-desktop", RuleKind::Prefix, "desktop:"),
         ];
-        let users = [TrackedUser { uid: 1000, home, language: "en".into(), counting: true, groups }];
+        let users = [TrackedUser { uid: 1000, home, language: "en".into(), counting: true, groups, approval: None }];
         let t0 = Instant::now();
         assert!(tracker.tick(t0, &users).add.is_empty());
         let r = tracker.tick(t0 + SCAN_INTERVAL, &users);

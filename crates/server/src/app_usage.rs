@@ -126,6 +126,33 @@ pub async fn ingest(pool: &DbPool, agent_id: Uuid, sync: &AppUsageSync, today: N
     Ok(out)
 }
 
+/// A child asked to use an app (new-app approval): keep its name in the catalogue
+/// and record a pending request for the child's profile. Returns the profile if
+/// a new request was created (so the caller can notify parents).
+pub async fn app_request(pool: &DbPool, agent_id: Uuid, req: &common::messages::AppRequest) -> Result<Option<Uuid>> {
+    let Some(app) = AppId::parse(&req.app_id).filter(AppId::is_app) else {
+        return Ok(None);
+    };
+    let Some(profile) = db::get_agent_user(pool, agent_id, req.local_uid).await?.and_then(|u| u.profile_id) else {
+        return Ok(None);
+    };
+    let name = clean(&req.display_name, MAX_NAME_CHARS).unwrap_or_else(|| app.name.clone());
+    let icon = req.icon.as_deref().and_then(|i| clean(i, MAX_ICON_CHARS));
+    let now = Utc::now().timestamp();
+    sqlx::query(
+        "INSERT INTO app_catalog (app_id, display_name, icon, categories, first_seen, last_seen) VALUES ($1,$2,$3,$4,$5,$5)
+         ON CONFLICT(app_id) DO UPDATE SET display_name=EXCLUDED.display_name, icon=EXCLUDED.icon, last_seen=EXCLUDED.last_seen",
+    )
+    .bind(app.to_string())
+    .bind(name)
+    .bind(icon)
+    .bind(req.categories.iter().filter(|c| c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')).take(MAX_CATEGORIES).cloned().collect::<Vec<_>>().join(";"))
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(crate::app_approvals::request(pool, profile, &app.to_string()).await?.then_some(profile))
+}
+
 /// Today's group time on a profile's agents *other than* `agent_id`.
 pub async fn group_usage_elsewhere(pool: &DbPool, profile_id: Uuid, agent_id: Uuid, date: &str) -> Result<Vec<common::models::GroupUsage>> {
     let rows: Vec<(String, i64)> = sqlx::query_as(

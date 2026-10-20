@@ -68,6 +68,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/profiles/{id}/app-group-limits", get(apps::get_group_limits))
         .route("/profiles/{id}/app-group-limits/{group_id}", axum::routing::put(apps::put_group_limits))
         .route("/profiles/{id}/app-group-adjustments", post(apps::add_group_adjustment))
+        .route("/profiles/{id}/app-approvals", get(apps::get_approvals))
+        .route("/profiles/{id}/app-approvals/mode", axum::routing::put(apps::set_approval_mode))
+        .route("/profiles/{id}/app-approvals/decision", post(apps::decide_approval))
+        .route("/app-requests", get(apps::pending_requests))
         // Usage & dashboard
         .route("/profiles/{id}/usage", get(usage::get_usage))
         .route("/profiles/{id}/app-usage", get(usage::get_app_usage))
@@ -376,6 +380,23 @@ mod tests {
         let (_, l) = c(Method::GET, &format!("/profiles/{pid}/app-group-limits"), None).await;
         let g = l["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
         assert_eq!(g["adjustment_today"], 15);
+
+        // new-app approval: mode, a request (as the WS handler stores it), decision into a group
+        let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-approvals/mode"), Some(json!({"enabled": true}))).await;
+        assert_eq!(s, StatusCode::OK);
+        crate::app_approvals::request(&state.db, pid.parse().unwrap(), "steam:1091500").await.unwrap();
+        let (_, r) = c(Method::GET, "/app-requests", None).await;
+        assert_eq!((r["requests"][0]["app_id"].as_str(), r["requests"][0]["profile_name"].as_str()), (Some("steam:1091500"), Some("Kid")));
+        let (s, _) = c(Method::POST, &format!("/profiles/{pid}/app-approvals/decision"),
+            Some(json!({"app_id": "steam:1091500", "approve": true, "group_id": browsers}))).await;
+        assert_eq!(s, StatusCode::OK);
+        let (_, a) = c(Method::GET, &format!("/profiles/{pid}/app-approvals"), None).await;
+        assert_eq!((a["enabled"].as_bool(), a["apps"][0]["status"].as_str()), (Some(true), Some("approved")));
+        let (_, r) = c(Method::GET, "/app-requests", None).await;
+        assert!(r["requests"].as_array().unwrap().is_empty());
+        let (_, apps) = c(Method::GET, "/apps", None).await;
+        let groups_of = |id: &str| apps["groups"].as_array().unwrap().iter().find(|g| g["id"] == id).unwrap()["rules"].to_string();
+        assert!(groups_of(&browsers).contains("steam:1091500"));
     }
 
     async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {

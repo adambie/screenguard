@@ -277,7 +277,9 @@ def logout():
 def dashboard():
     r = api("GET", "/dashboard")
     data = r.json() if r and r.ok else {"profiles": [], "pending_agents": 0}
-    return render_template("dashboard.html", data=data)
+    rq = api("GET", "/app-requests")
+    app_requests = rq.json().get("requests", []) if rq and rq.ok else []
+    return render_template("dashboard.html", data=data, app_requests=app_requests)
 
 
 # ── agents ────────────────────────────────────────────────────────────────────
@@ -460,6 +462,9 @@ def profile_detail(profile_id):
         g["days"] = [fmt_hm(by_day.get(d)) for d in range(7)]
         g["has_limit"] = bool(by_day)
 
+    r_ap = api("GET", f"/profiles/{profile_id}/app-approvals")
+    approvals = r_ap.json() if r_ap and r_ap.ok else {"enabled": False, "apps": []}
+
     r4 = api("GET", f"/profiles/{profile_id}/blocked-domains")
     blocked_domains = r4.json().get("blocked_domains", []) if r4 and r4.ok else []
 
@@ -502,6 +507,7 @@ def profile_detail(profile_id):
                            blocked_domains=blocked_domains,
                            group_limits=group_limits,
                            no_app_limits=no_app_limits,
+                           approvals=approvals,
                            week_bars=week_bars,
                            week_max=chart_max,
                            week_offset=week_offset,
@@ -744,6 +750,29 @@ def app_limits_extra(profile_id, group_id):
     flash(t("flash.app_extra_saved") if (r and r.ok) else t("flash.app_limits_failed"),
           "success" if (r and r.ok) else "danger")
     return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
+
+
+@app.route("/profiles/<profile_id>/app-approval/mode", methods=["POST"])
+@require_login
+def app_approval_mode(profile_id):
+    enabled = request.form.get("enabled") == "1"
+    r = api("PUT", f"/profiles/{profile_id}/app-approvals/mode", json={"enabled": enabled})
+    if r and r.ok:
+        flash(t("flash.approval_on") if enabled else t("flash.approval_off"), "success")
+    else:
+        flash(t("flash.approval_failed"), "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id) + "#newApps")
+
+
+@app.route("/profiles/<profile_id>/app-approval/decide", methods=["POST"])
+@require_login
+def app_approval_decide(profile_id):
+    body = {"app_id": request.form.get("app_id", ""), "approve": request.form.get("approve") == "1",
+            "group_id": request.form.get("group_id") or None}
+    r = api("POST", f"/profiles/{profile_id}/app-approvals/decision", json=body)
+    if not r or not r.ok:
+        flash(t("flash.approval_failed"), "danger")
+    return redirect(request.form.get("next") or (url_for("profile_detail", profile_id=profile_id) + "#newApps"))
 
 
 @app.route("/profiles/<profile_id>/rename", methods=["POST"])

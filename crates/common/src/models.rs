@@ -35,6 +35,19 @@ pub struct UserConfig {
     /// App groups with this profile's limits (#27). Absent from older servers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub app_groups: Vec<AppGroupConfig>,
+    /// New-app approval (#27): present only when the mode is on for the profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_approval: Option<AppApprovalConfig>,
+}
+
+/// Apps a child may run while new-app approval is on; anything else is closed
+/// on start and requested from the parents (unless denied).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppApprovalConfig {
+    #[serde(default)]
+    pub approved: Vec<String>,
+    #[serde(default)]
+    pub denied: Vec<String>,
 }
 
 /// An app group as the agent needs it: who's in it and today's limits.

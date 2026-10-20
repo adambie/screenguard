@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use common::apps::AppId;
-use common::models::AppGroupConfig;
+use common::models::{AppApprovalConfig, AppGroupConfig};
 
 use crate::app_ident::Shown;
 use crate::app_limits::GroupStatus;
@@ -33,23 +33,45 @@ pub struct RunningProc {
     pub exe: Option<String>,
 }
 
+/// Why an app gets closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+    /// Its group used up today's time: warn, then close.
+    Limit,
+    /// Its group is blocked today (0 minutes): close at once.
+    Blocked,
+    /// New-app approval: not approved yet — close at once and ask the parents.
+    NeedsApproval,
+    /// New-app approval: a parent said no.
+    Denied,
+}
+
+impl Reason {
+    fn immediate(self) -> bool {
+        self != Reason::Limit
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub pid: u32,
     pub start_ticks: u64,
     pub uid: u32,
-    pub group_id: String,
+    pub app_id: AppId,
+    /// Group (limits) or the app id (approval) — notices are rate-limited per key.
+    pub key: String,
     pub group_name: String,
     pub app_name: String,
-    /// The group is blocked today (0 minutes): close without the warning delay.
-    pub blocked: bool,
+    pub reason: Reason,
 }
 
-/// Processes to close: apps in a group that is exhausted or blocked today.
+/// Processes to close: apps not approved (when new-app approval is on), and apps
+/// in a group that is exhausted or blocked today.
 pub fn targets(
     procs: &[RunningProc],
     status: &HashMap<u32, Vec<GroupStatus>>,
     groups: &HashMap<u32, Vec<AppGroupConfig>>,
+    approval: &HashMap<u32, AppApprovalConfig>,
     names: &HashMap<(u32, AppId), Shown>,
     managed: &HashSet<u32>,
 ) -> Vec<Target> {
@@ -64,8 +86,15 @@ pub fn targets(
         if own(&p.comm) || p.exe.as_deref().is_some_and(own) {
             continue;
         }
-        let (Some(st), Some(gs)) = (status.get(&p.uid), groups.get(&p.uid)) else { continue };
         let shown = names.get(&(p.uid, p.app_id.clone()));
+        let app_name = shown.map_or(p.app_id.name.clone(), |s| s.name.clone());
+        let id = p.app_id.to_string();
+        if let Some(a) = approval.get(&p.uid).filter(|a| !a.approved.contains(&id)) {
+            let reason = if a.denied.contains(&id) { Reason::Denied } else { Reason::NeedsApproval };
+            out.push(Target { pid: p.pid, start_ticks: p.start_ticks, uid: p.uid, app_id: p.app_id.clone(), key: id, group_name: String::new(), app_name, reason });
+            continue;
+        }
+        let (Some(st), Some(gs)) = (status.get(&p.uid), groups.get(&p.uid)) else { continue };
         let cats = shown.map(|s| s.categories.as_slice()).unwrap_or(&[]);
         // (b) in a limited group that has no time left
         let hit = st.iter().filter(|s| s.exhausted()).find(|s| {
@@ -76,10 +105,11 @@ pub fn targets(
                 pid: p.pid,
                 start_ticks: p.start_ticks,
                 uid: p.uid,
-                group_id: s.group_id.clone(),
+                app_id: p.app_id.clone(),
+                key: s.group_id.clone(),
                 group_name: s.name.clone(),
-                app_name: shown.map_or(p.app_id.name.clone(), |s| s.name.clone()),
-                blocked: s.blocked(),
+                app_name,
+                reason: if s.blocked() { Reason::Blocked } else { Reason::Limit },
             });
         }
     }
@@ -98,9 +128,10 @@ pub trait Signals {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
     pub uid: u32,
+    pub app_id: AppId,
     pub group_name: String,
     pub app_name: String,
-    pub blocked: bool,
+    pub reason: Reason,
     /// Seconds until the app closes (0 = closing now).
     pub closes_in: u64,
 }
@@ -138,23 +169,24 @@ impl Closer {
                 self.stage.remove(&key);
                 continue;
             }
-            let told_key = (t.uid, t.group_id.clone());
+            let told_key = (t.uid, t.key.clone());
             let recently_told = self.told.get(&told_key).is_some_and(|at| now.duration_since(*at) < RELAUNCH_WINDOW);
             match self.stage.get(&key).copied() {
                 None => {
-                    let immediate = t.blocked || recently_told;
+                    let immediate = t.reason.immediate() || recently_told;
                     if !recently_told {
                         self.told.insert(told_key, now);
                         notices.push(Notice {
                             uid: t.uid,
+                            app_id: t.app_id.clone(),
                             group_name: t.group_name.clone(),
                             app_name: t.app_name.clone(),
-                            blocked: t.blocked,
+                            reason: t.reason,
                             closes_in: if immediate { 0 } else { GRACE.as_secs() },
                         });
                     }
                     if immediate {
-                        tracing::info!("uid={}: closing '{}' (pid {}, group '{}')", t.uid, t.app_name, t.pid, t.group_name);
+                        tracing::info!("uid={}: closing '{}' (pid {}, {:?} {})", t.uid, t.app_name, t.pid, t.reason, t.group_name);
                         sig.term(t.pid, t.start_ticks);
                         self.stage.insert(key, Stage::Termed(now));
                     } else {
@@ -162,7 +194,7 @@ impl Closer {
                     }
                 }
                 Some(Stage::Warned(at)) if now.duration_since(at) >= GRACE => {
-                    tracing::info!("uid={}: closing '{}' (pid {}, group '{}')", t.uid, t.app_name, t.pid, t.group_name);
+                    tracing::info!("uid={}: closing '{}' (pid {}, {:?} {})", t.uid, t.app_name, t.pid, t.reason, t.group_name);
                     sig.term(t.pid, t.start_ticks);
                     self.stage.insert(key, Stage::Termed(now));
                 }
@@ -248,16 +280,25 @@ mod tests {
             proc_(14, 0, "desktop:supertux", "supertux2"),           // root
             proc_(15, 1001, "desktop:supertux", "screenguard-tray"), // never ourselves
         ];
+        let none = HashMap::new();
         let (st, gs, names) = setup(0, 60);
-        let t = targets(&procs, &st, &gs, &names, &managed);
+        let t = targets(&procs, &st, &gs, &none, &names, &managed);
         assert_eq!(t.iter().map(|t| t.pid).collect::<Vec<_>>(), vec![10, 11]);
-        assert_eq!((t[0].app_name.as_str(), t[0].group_name.as_str(), t[0].blocked), ("SuperTux", "Games", false));
+        assert_eq!((t[0].app_name.as_str(), t[0].group_name.as_str(), t[0].reason), ("SuperTux", "Games", Reason::Limit));
         // time left: nothing to close
         let (st, gs, names) = setup(300, 60);
-        assert!(targets(&procs, &st, &gs, &names, &managed).is_empty());
+        assert!(targets(&procs, &st, &gs, &none, &names, &managed).is_empty());
         // blocked day
         let (st, gs, names) = setup(0, 0);
-        assert!(targets(&procs, &st, &gs, &names, &managed)[0].blocked);
+        assert_eq!(targets(&procs, &st, &gs, &none, &names, &managed)[0].reason, Reason::Blocked);
+
+        // new-app approval: everything not approved, even with time left; denied is distinct
+        let (st, gs, names) = setup(300, 60);
+        let approval: HashMap<u32, AppApprovalConfig> =
+            [(1001, AppApprovalConfig { approved: vec!["desktop:firefox".into()], denied: vec!["steam:570".into()] })].into();
+        let t = targets(&procs, &st, &gs, &approval, &names, &managed);
+        let r: Vec<(u32, Reason)> = t.iter().map(|t| (t.pid, t.reason)).collect();
+        assert_eq!(r, vec![(10, Reason::NeedsApproval), (11, Reason::Denied)]); // firefox approved; others untouched
     }
 
     #[derive(Default)]
@@ -284,7 +325,16 @@ mod tests {
     }
 
     fn target(pid: u32, blocked: bool) -> Target {
-        Target { pid, start_ticks: 1, uid: 1001, group_id: "games".into(), group_name: "Games".into(), app_name: "SuperTux".into(), blocked }
+        Target {
+            pid,
+            start_ticks: 1,
+            uid: 1001,
+            app_id: AppId::parse("desktop:supertux").unwrap(),
+            key: "games".into(),
+            group_name: "Games".into(),
+            app_name: "SuperTux".into(),
+            reason: if blocked { Reason::Blocked } else { Reason::Limit },
+        }
     }
 
     #[test]
@@ -311,7 +361,7 @@ mod tests {
         let mut c = Closer::new();
         let t0 = Instant::now();
         let n = c.enforce(t0, &[target(20, true)], &sig);
-        assert_eq!((n.len(), n[0].blocked, n[0].closes_in), (1, true, 0));
+        assert_eq!((n.len(), n[0].reason, n[0].closes_in), (1, Reason::Blocked, 0));
         assert_eq!(*sig.log.borrow(), vec![("term", 20)]);
         // relaunched 5 s later as a new process: closed at once, no second notice
         let n = c.enforce(t0 + Duration::from_secs(5), &[target(21, false)], &sig);
@@ -344,7 +394,7 @@ mod tests {
         let start = |pid: u32| ProcSignals::start_ticks(pid).unwrap();
         let t = |child: &std::process::Child| {
             let pid = child.id();
-            Target { pid, start_ticks: start(pid), uid: 1001, group_id: "g".into(), group_name: "G".into(), app_name: "x".into(), blocked: true }
+            Target { pid, start_ticks: start(pid), uid: 1001, app_id: AppId::parse("desktop:x").unwrap(), key: "g".into(), group_name: "G".into(), app_name: "x".into(), reason: Reason::Blocked }
         };
         let targets = [t(&victim), t(&stubborn)];
         // a wrong start time (reused PID) is never signalled

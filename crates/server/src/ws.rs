@@ -1,8 +1,8 @@
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
 use common::messages::{
-    AgentHello, AppUsageSync, Heartbeat, LogResponse, PairingAccepted, PairingRequest,
-    RemainingUpdate, Unpair, UsageSync, UserListUpdate, MSG_AGENT_HELLO, MSG_APP_USAGE_SYNC,
+    AgentHello, AppRequest, AppUsageSync, Heartbeat, LogResponse, PairingAccepted, PairingRequest,
+    RemainingUpdate, Unpair, UsageSync, UserListUpdate, MSG_AGENT_HELLO, MSG_APP_REQUEST, MSG_APP_USAGE_SYNC,
     MSG_CONFIG_PUSH, MSG_HEARTBEAT,
     MSG_LOG_RESPONSE, MSG_PAIRING_ACCEPTED, MSG_PAIRING_REQUEST, MSG_REMAINING_UPDATE, MSG_UNPAIR,
     MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
@@ -339,6 +339,14 @@ async fn handle_agent_message(
                 tracing::warn!("Agent {agent_id}: app usage sync rejected {} of {} entries", r.rejected, sync.entries.len());
             } else {
                 tracing::debug!("Agent {agent_id}: app usage sync ({} entries)", r.stored);
+            }
+        }
+
+        MSG_APP_REQUEST => {
+            let req: AppRequest = envelope.parse_payload()?;
+            // shown to parents on the dashboard and the profile page
+            if crate::app_usage::app_request(&state.db, agent_id, &req).await?.is_some() {
+                tracing::info!("Agent {agent_id}: approval requested for '{}' ({})", req.display_name, req.app_id);
             }
         }
 

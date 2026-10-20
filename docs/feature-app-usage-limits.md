@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.19–2.22 approval mode, requests, approve/deny UI, offline; then 2.15 combined run and 2.17 docs/release. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** 2.15 combined real-machine run (+ GNOME/other desktops as available), then 2.17 docs (README) and release with the maintainer's go-ahead. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -898,18 +898,46 @@ Design: approval at first launch, using the Phase 2 closing machinery.
   plus the 2E tables `profile_app_settings` and `app_approvals`. Profile page:
   warning with the `gpasswd -d` fix, 6 languages.
   - Real machine: `adam` (wheel + a sudoers rule) → admin, `adam1`/`adam2` → not.
-- [ ] **2.19 Approval mode per profile** — off (default) / "new apps need
+- [x] **2.19 Approval mode per profile** — off (default) / "new apps need
   approval". Turning it on approves every app already seen for that child, so
   nothing existing breaks.
-- [ ] **2.20 Request flow** — an app not yet approved is closed on start (≤ 5 s,
+  → `crates/server/src/app_approvals.rs` (`profile_app_settings`,
+  `app_approvals`, v15); `UserConfig.app_approval: Option<{approved, denied}>`
+  (present only while on). The agent caches it (`CONFIG_FORMAT` 3). Real
+  machine: turning it on approved the 8 apps already used.
+- [x] **2.20 Request flow** — an app not yet approved is closed on start (≤ 5 s,
   same safety rules as 2.10) with a notification "Asked your parent for
   permission"; the agent sends `app_request { local_uid, app_id, name, icon }`
   (once per app until answered); the server stores pending requests.
-- [ ] **2.21 Approve / deny UI** — requests badge on the dashboard and profile;
+  → `app_enforce::Reason { Limit, Blocked, NeedsApproval, Denied }`; approval
+  targets are checked first, the same safety rules apply, and denied apps are
+  closed without a new request. `MSG_APP_REQUEST` stores the name in the
+  catalogue plus a pending row (repeats ignored). Real machine: a never-used
+  app was closed at the next tick with "Permission needed", the request was
+  pending on the server, and Firefox (approved) was untouched.
+- [x] **2.21 Approve / deny UI** — requests badge on the dashboard and profile;
   approve (optionally straight into a group) or deny; the decision goes down in
   the profile config, the child gets a notification.
-- [ ] **2.22 Offline behaviour** — while the server is unreachable, unapproved
+  → API: `GET /profiles/{id}/app-approvals`, `PUT …/mode`, `POST …/decision
+  {app_id, approve, group_id?}`, `GET /app-requests`.
+  - Dashboard banner with Allow/Deny per request.
+  - Profile "New apps" card: on/off, pending requests with a group picker, and
+    earlier decisions that can be changed. 6 languages.
+  - The agent notifies the child only for apps it asked for ("You may use X
+    now" / "Not allowed").
+  - Real machine: "Allow" from the dashboard → config push → "parent decided …
+    approved" → the app ran. Deny → the relaunch was closed as "Not allowed",
+    with no new request.
+- [x] **2.22 Offline behaviour** — while the server is unreachable, unapproved
   apps stay blocked; requests are queued and sent on reconnect.
+  → Blocking uses the cached lists, so it works offline. Requests stay
+  *outstanding* until a decision arrives in a config push, and are re-sent on
+  every reconnect (≤ 50; the server ignores repeats).
+  - Found on the real machine: the first reconnect after the server restart was
+    reset within milliseconds, and a request flushed into it was lost; hence
+    "re-send until decided" rather than "send once on reconnect".
+  - Real machine: server stopped → new app closed offline → server started →
+    the request arrived 24 s later without a relaunch.
 
 Limitation to state in the UI/README: only things the agent can identify as an
 app are covered (menu entries, Flatpak, Snap, Steam, Minecraft, Wine). A program

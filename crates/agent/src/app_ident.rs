@@ -693,7 +693,7 @@ mod real {
         use crate::app_usage::{AppTracker, TrackedUser};
         let status = std::fs::read_to_string("/proc/self/status").unwrap();
         let uid: u32 = status.lines().find_map(|l| l.strip_prefix("Uid:")).unwrap().split_whitespace().next().unwrap().parse().unwrap();
-        let users = [TrackedUser { uid, home: std::env::var("HOME").unwrap().into(), language: "en".into(), counting: true, groups: vec![] }];
+        let users = [TrackedUser { uid, home: std::env::var("HOME").unwrap().into(), language: "en".into(), counting: true, groups: vec![], approval: None }];
         let mut tracker = AppTracker::new();
         let t0 = std::time::Instant::now();
         tracker.tick(t0, &users); // first tick: full reads + catalogue load

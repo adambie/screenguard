@@ -11,6 +11,8 @@ pub const MSG_USAGE_SYNC: &str = "usage_sync";
 pub const MSG_PAIRING_REQUEST: &str = "pairing_request";
 /// Sent only to servers that understand it; see `AppUsageSync`.
 pub const MSG_APP_USAGE_SYNC: &str = "app_usage_sync";
+/// A child started an app that needs a parent's approval.
+pub const MSG_APP_REQUEST: &str = "app_request";
 
 pub const MSG_CONFIG_PUSH: &str = "config_push";
 pub const MSG_REMAINING_UPDATE: &str = "remaining_update";
@@ -76,6 +78,18 @@ pub struct AppUsageSync {
     /// agents before app groups.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<GroupUsageEntry>,
+}
+
+/// Request to allow an app (new-app approval). Sent once per app per connection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppRequest {
+    pub local_uid: u32,
+    pub app_id: String,
+    pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

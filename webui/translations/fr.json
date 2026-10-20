@@ -311,5 +311,22 @@
   "app_limits.needs_update": "Ces ordinateurs ont besoin d'une mise à jour de l'agent pour appliquer les limites des apps : {computers}",
 
   "profile.admin_warning_title": "{account} peut installer des logiciels en administrateur.",
-  "profile.admin_warning_body": "Le compte est dans un groupe d'administrateurs (wheel/sudo) ou a sa propre règle sudo : il peut installer des apps sans demander et contourner les limites. À exécuter sur cet ordinateur (et supprimer toute règle personnelle dans /etc/sudoers.d) :"
+  "profile.admin_warning_body": "Le compte est dans un groupe d'administrateurs (wheel/sudo) ou a sa propre règle sudo : il peut installer des apps sans demander et contourner les limites. À exécuter sur cet ordinateur (et supprimer toute règle personnelle dans /etc/sudoers.d) :",
+
+  "approval.card": "Nouvelles apps",
+  "approval.turn_on": "Demander avant les nouvelles apps",
+  "approval.turn_off": "Désactiver",
+  "approval.hint_off": "Si activé, une app que l'enfant n'a jamais utilisée est fermée au démarrage et il peut vous demander l'autorisation. Les apps déjà utilisées restent autorisées.",
+  "approval.hint_on": "Activé : les nouvelles apps nécessitent votre accord. Les programmes lancés depuis un terminal comptent comme le terminal.",
+  "approval.asks": "demande à utiliser cette app",
+  "approval.no_group": "aucun groupe",
+  "approval.approve": "Autoriser",
+  "approval.deny": "Refuser",
+  "approval.decided": "Décisions précédentes ({n})",
+  "approval.allowed": "autorisée",
+  "approval.denied": "refusée",
+  "approval.dashboard_title": "Demandes d'apps en attente ({n})",
+  "flash.approval_on": "Les nouvelles apps nécessitent maintenant un accord. Les apps déjà utilisées restent autorisées.",
+  "flash.approval_off": "Les nouvelles apps ne nécessitent plus d'accord.",
+  "flash.approval_failed": "Impossible d'enregistrer."
 }

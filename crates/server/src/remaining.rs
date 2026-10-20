@@ -222,6 +222,7 @@ pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i6
             language,
             blocked_domains,
             app_groups,
+            app_approval: crate::app_approvals::config(pool, profile_id).await?,
         });
     }
 
