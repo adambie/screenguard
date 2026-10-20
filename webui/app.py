@@ -448,6 +448,14 @@ def profile_detail(profile_id):
              params={"from": str(week_start), "to": str(week_end)})
     usage = r3.json().get("usage", []) if r3 and r3.ok else []
 
+    r_gl = api("GET", f"/profiles/{profile_id}/app-group-limits")
+    group_limits = r_gl.json().get("groups", []) if r_gl and r_gl.ok else []
+    for g in group_limits:
+        g["display_name"] = group_name(g)
+        by_day = {l["day_of_week"]: l["allowed_minutes"] for l in g.get("limits", [])}
+        g["days"] = [fmt_hm(by_day.get(d)) for d in range(7)]
+        g["has_limit"] = bool(by_day)
+
     r4 = api("GET", f"/profiles/{profile_id}/blocked-domains")
     blocked_domains = r4.json().get("blocked_domains", []) if r4 and r4.ok else []
 
@@ -488,6 +496,7 @@ def profile_detail(profile_id):
                            preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
                            lockout_grace_minutes=data.get("lockout_grace_minutes", 5),
                            blocked_domains=blocked_domains,
+                           group_limits=group_limits,
                            week_bars=week_bars,
                            week_max=chart_max,
                            week_offset=week_offset,
@@ -664,6 +673,49 @@ def delete_app_group_rule(group_id, rule_id):
     if not r or not r.ok:
         flash(t("flash.group_failed"), "danger")
     return _back()
+
+
+def fmt_hm(m):
+    """Minutes as 'h:mm' for the limit fields ('' = no limit)."""
+    if m is None:
+        return ""
+    return f"{m // 60}:{m % 60:02d}"
+
+
+def parse_hm(s):
+    """'1:30' / '90' / '' → minutes or None; raises ValueError."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    if ":" in s:
+        h, m = s.split(":", 1)
+        h, m = int(h), int(m)
+        if not 0 <= m < 60:
+            raise ValueError(s)
+        mins = h * 60 + m
+    else:
+        mins = int(s)
+    if not 0 <= mins <= 1440:
+        raise ValueError(s)
+    return mins
+
+
+@app.route("/profiles/<profile_id>/app-limits/<group_id>", methods=["POST"])
+@require_login
+def update_app_limits(profile_id, group_id):
+    limits = []
+    try:
+        for dow in range(7):
+            mins = parse_hm(request.form.get(f"d{dow}"))
+            if mins is not None:
+                limits.append({"day_of_week": dow, "allowed_minutes": mins})
+    except ValueError:
+        flash(t("flash.app_limits_invalid"), "danger")
+        return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
+    r = api("PUT", f"/profiles/{profile_id}/app-group-limits/{group_id}", json={"limits": limits})
+    flash(t("flash.app_limits_saved") if (r and r.ok) else t("flash.app_limits_failed"),
+          "success" if (r and r.ok) else "danger")
+    return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
 
 
 @app.route("/profiles/<profile_id>/rename", methods=["POST"])

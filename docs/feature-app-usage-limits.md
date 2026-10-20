@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.4 per-profile group limits (API + editor on the profile page). Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.5 reports by group, then 2B (config delivery, group remaining) and 2C (enforcement). Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -714,8 +714,17 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     catalogue: Firefox auto-in Web browsers, the test game auto-in Games; take
     out → "Except", add → entry, create group; screenshots at desktop and phone
     width and in Polish.
-- [ ] **2.4 Limits API + UI** — per profile: per group, per weekday minutes, same
+- [x] **2.4 Limits API + UI** — per profile: per group, per weekday minutes, same
   editor style as daily limits; "blocked" toggle = 0.
+  → `GET /profiles/{id}/app-group-limits` (every group with this profile's
+  limits) and `PUT /profiles/{id}/app-group-limits/{group}` (replace; empty = no
+  limit; validated 0–1440, weekday 0–6, no duplicates). Saving bumps the config
+  version, so agents get a `config_push`.
+  - Profile page: "App limits" card. Simpler than the daily-limits editor: per
+    group, seven fields that take `1:30` or `90`, empty = no limit, 0 = blocked
+    (shown in red). No JavaScript; all 6 languages.
+  - Verified against the live server: a weekday/weekend/blocked pattern saved
+    and read back; an invalid `25:00` was rejected with nothing changed.
 - [ ] **2.5 Reports by group** — the Phase 1 reports gain a "by group" view.
 
 ### 2B. Config delivery and remaining time

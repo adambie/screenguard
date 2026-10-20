@@ -218,6 +218,46 @@ pub async fn get_group(pool: &DbPool, id: &str) -> Result<Option<Group>> {
     Ok(list_groups(pool).await?.into_iter().find(|g| g.id == id))
 }
 
+/// A profile's limits per group: group id → (weekday 0=Mon, minutes), 0 = blocked.
+pub async fn limits(pool: &DbPool, profile_id: &str) -> Result<std::collections::HashMap<String, Vec<(u8, i32)>>> {
+    let rows: Vec<(String, i32, i32)> = sqlx::query_as(
+        "SELECT group_id, day_of_week, allowed_minutes FROM app_group_limits WHERE profile_id = $1 ORDER BY day_of_week",
+    )
+    .bind(profile_id)
+    .fetch_all(pool)
+    .await?;
+    let mut out: std::collections::HashMap<String, Vec<(u8, i32)>> = std::collections::HashMap::new();
+    for (g, dow, mins) in rows {
+        out.entry(g).or_default().push((dow as u8, mins));
+    }
+    Ok(out)
+}
+
+/// Replaces a profile's limits for one group; an empty list removes the limit.
+pub async fn replace_limits(pool: &DbPool, profile_id: &str, group_id: &str, entries: &[(u8, i32)]) -> Result<()> {
+    let mut seen = [false; 7];
+    for &(dow, mins) in entries {
+        if dow > 6 || !(0..=1440).contains(&mins) || std::mem::replace(&mut seen[dow as usize], true) {
+            bail!("invalid limit: day {dow}, {mins} minutes");
+        }
+    }
+    sqlx::query("DELETE FROM app_group_limits WHERE profile_id = $1 AND group_id = $2")
+        .bind(profile_id)
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    for &(dow, mins) in entries {
+        sqlx::query("INSERT INTO app_group_limits (profile_id, group_id, day_of_week, allowed_minutes) VALUES ($1,$2,$3,$4)")
+            .bind(profile_id)
+            .bind(group_id)
+            .bind(dow as i32)
+            .bind(mins)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
 pub async fn group_exists(pool: &DbPool, id: &str) -> Result<bool> {
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_groups WHERE id = $1").bind(id).fetch_one(pool).await?;
     Ok(n > 0)
@@ -274,6 +314,26 @@ mod tests {
         assert!(delete_rule(&pool, &id, &g.rules[0].id).await.unwrap());
         assert!(delete_group(&pool, &id).await.unwrap());
         assert!(!group_exists(&pool, &id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn per_profile_limits() {
+        let pool = db::open_in_memory().await;
+        let p = db::create_profile(&pool, "Kid").await.unwrap().id.to_string();
+        let games = list_groups(&pool).await.unwrap()[0].id.clone();
+        replace_limits(&pool, &p, &games, &[(0, 60), (5, 120), (6, 0)]).await.unwrap();
+        assert_eq!(limits(&pool, &p).await.unwrap()[&games], vec![(0, 60), (5, 120), (6, 0)]);
+        replace_limits(&pool, &p, &games, &[(0, 30)]).await.unwrap(); // replaces
+        assert_eq!(limits(&pool, &p).await.unwrap()[&games], vec![(0, 30)]);
+        for bad in [vec![(7, 10)], vec![(0, 1441)], vec![(0, -1)], vec![(1, 10), (1, 20)]] {
+            assert!(replace_limits(&pool, &p, &games, &bad).await.is_err(), "{bad:?}");
+        }
+        replace_limits(&pool, &p, &games, &[]).await.unwrap(); // removes
+        assert!(limits(&pool, &p).await.unwrap().is_empty());
+        // deleting the group deletes its limits
+        replace_limits(&pool, &p, &games, &[(2, 45)]).await.unwrap();
+        delete_group(&pool, &games).await.unwrap();
+        assert!(limits(&pool, &p).await.unwrap().is_empty());
     }
 
     #[tokio::test]

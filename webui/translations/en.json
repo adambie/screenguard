@@ -312,5 +312,14 @@
   "groups.new_hint": "Then add apps to it from the list below.",
   "flash.group_failed": "Couldn't update the group.",
 
-  "groups.add": "Add"
+  "groups.add": "Add",
+
+  "app_limits.card": "App limits",
+  "app_limits.manage_groups": "Manage groups",
+  "app_limits.hint": "Daily time per group of apps, e.g. 1:30 or 90 (minutes). Empty = no limit, 0 = blocked. App time also counts toward the daily screen time limit.",
+  "app_limits.save": "Save",
+  "app_limits.no_groups": "No app groups yet.",
+  "flash.app_limits_saved": "App limits saved.",
+  "flash.app_limits_failed": "Couldn't save the app limits.",
+  "flash.app_limits_invalid": "Use h:mm (e.g. 1:30) or minutes, up to 24 hours."
 }

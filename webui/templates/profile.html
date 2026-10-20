@@ -299,6 +299,40 @@
   </div>
 </div>
 
+<!-- ── app limits (per group) ───────────────────────────────────────── -->
+<div class="card mb-4" id="appLimits">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>{{ t('app_limits.card') }}</span>
+    <a href="{{ url_for('apps') }}" class="small text-decoration-none">{{ t('app_limits.manage_groups') }} ›</a>
+  </div>
+  <div class="card-body">
+    <p class="text-secondary small mb-3">{{ t('app_limits.hint') }}</p>
+    {% for g in group_limits %}
+    <form method="post" action="{{ url_for('update_app_limits', profile_id=profile.id, group_id=g.id) }}"
+          class="mb-3 pb-3{% if not loop.last %} border-bottom{% endif %}">
+      <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+        <span class="fw-semibold">{{ g.display_name }}
+          {% if not g.has_limit %}<span class="text-secondary small fw-normal ms-1">{{ t('profile.badge_no_limit') }}</span>{% endif %}</span>
+        <button class="btn btn-sm btn-primary">{{ t('app_limits.save') }}</button>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for d in days() %}
+        <label class="text-center" style="width:64px">
+          <span class="d-block mb-1" style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--bs-secondary-color)">{{ d }}</span>
+          <input name="d{{ loop.index0 }}" value="{{ g.days[loop.index0] }}" placeholder="—" inputmode="numeric"
+                 pattern="\d{1,2}(:[0-5]\d)?|\d{1,4}" class="form-control form-control-sm text-center px-1"
+                 {% if g.days[loop.index0] == '0:00' %}style="border-color:var(--er);color:var(--er)" title="{{ t('profile.badge_blocked') }}"{% endif %}
+                 aria-label="{{ g.display_name }} {{ d }}">
+        </label>
+        {% endfor %}
+      </div>
+    </form>
+    {% else %}
+    <p class="text-secondary small mb-0">{{ t('app_limits.no_groups') }}</p>
+    {% endfor %}
+  </div>
+</div>
+
 <!-- ── schedule ──────────────────────────────────────────────────────── -->
 <div class="card mb-4">
   <div class="card-header">{{ t('profile.card_windows') }}</div>

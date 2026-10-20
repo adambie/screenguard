@@ -65,6 +65,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/app-groups/{id}/rules", post(apps::add_rule))
         .route("/app-groups/{id}/rules/{rule_id}", delete(apps::delete_rule))
         .route("/app-groups/{id}/membership", post(apps::set_membership))
+        .route("/profiles/{id}/app-group-limits", get(apps::get_group_limits))
+        .route("/profiles/{id}/app-group-limits/{group_id}", axum::routing::put(apps::put_group_limits))
         // Usage & dashboard
         .route("/profiles/{id}/usage", get(usage::get_usage))
         .route("/profiles/{id}/app-usage", get(usage::get_app_usage))
@@ -329,6 +331,22 @@ mod tests {
         assert_eq!(s, StatusCode::BAD_REQUEST);
         let (s, _) = call(&app, Method::GET, "/apps", None, None).await;
         assert_eq!(s, StatusCode::UNAUTHORIZED);
+
+        // per-profile group limits
+        let (_, p) = c(Method::POST, "/profiles", Some(json!({"display_name": "Kid"}))).await;
+        let pid = p["id"].as_str().or(p["profile"]["id"].as_str()).unwrap().to_string();
+        let (s, body) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/{games}"),
+            Some(json!({"limits": [{"day_of_week": 0, "allowed_minutes": 60}, {"day_of_week": 6, "allowed_minutes": 0}]}))).await;
+        assert_eq!(s, StatusCode::OK);
+        assert!(body["config_version"].as_i64().is_some());
+        let (_, l) = c(Method::GET, &format!("/profiles/{pid}/app-group-limits"), None).await;
+        let g = l["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
+        assert_eq!(g["limits"], json!([{"day_of_week": 0, "allowed_minutes": 60}, {"day_of_week": 6, "allowed_minutes": 0}]));
+        let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/{games}"),
+            Some(json!({"limits": [{"day_of_week": 9, "allowed_minutes": 60}]}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/nope"), Some(json!({"limits": []}))).await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
     }
 
     async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {

@@ -292,5 +292,14 @@
   "groups.create": "Criar",
   "groups.new_hint": "Depois adicione apps a partir da lista abaixo.",
   "flash.group_failed": "Não foi possível atualizar o grupo.",
-  "groups.add": "Adicionar"
+  "groups.add": "Adicionar",
+
+  "app_limits.card": "Limites de apps",
+  "app_limits.manage_groups": "Gerir grupos",
+  "app_limits.hint": "Tempo diário por grupo de apps, p. ex. 1:30 ou 90 (minutos). Vazio = sem limite, 0 = bloqueado. O tempo das apps também conta para o limite diário de tempo de ecrã.",
+  "app_limits.save": "Guardar",
+  "app_limits.no_groups": "Ainda não há grupos de apps.",
+  "flash.app_limits_saved": "Limites de apps guardados.",
+  "flash.app_limits_failed": "Não foi possível guardar os limites de apps.",
+  "flash.app_limits_invalid": "Use h:mm (p. ex. 1:30) ou minutos, até 24 horas."
 }

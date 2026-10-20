@@ -85,6 +85,53 @@ pub async fn delete_rule(State(state): State<Arc<AppState>>, Path((id, rule_id))
     Ok(Json(serde_json::json!({ "message": "Rule deleted" })))
 }
 
+/// `GET /profiles/{id}/app-group-limits` — every group with this profile's limits.
+pub async fn get_group_limits(State(state): State<Arc<AppState>>, Path(id): Path<uuid::Uuid>) -> ApiResult {
+    crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    let groups = app_groups::list_groups(&state.db).await.map_err(internal)?;
+    let limits = app_groups::limits(&state.db, &id.to_string()).await.map_err(internal)?;
+    let out: Vec<serde_json::Value> = groups
+        .iter()
+        .map(|g| {
+            let l: Vec<serde_json::Value> = limits
+                .get(&g.id)
+                .into_iter()
+                .flatten()
+                .map(|(dow, mins)| serde_json::json!({ "day_of_week": dow, "allowed_minutes": mins }))
+                .collect();
+            serde_json::json!({ "id": g.id, "name": g.name, "builtin": g.builtin, "limits": l })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "groups": out })))
+}
+
+#[derive(Deserialize)]
+pub struct LimitEntry {
+    pub day_of_week: u8,
+    pub allowed_minutes: i32,
+}
+
+#[derive(Deserialize)]
+pub struct LimitsBody {
+    pub limits: Vec<LimitEntry>,
+}
+
+/// `PUT /profiles/{id}/app-group-limits/{group_id}` — replace (empty = no limit).
+pub async fn put_group_limits(
+    State(state): State<Arc<AppState>>,
+    Path((id, group_id)): Path<(uuid::Uuid, String)>,
+    Json(body): Json<LimitsBody>,
+) -> ApiResult {
+    crate::db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    if !app_groups::group_exists(&state.db, &group_id).await.map_err(internal)? {
+        return Err(not_found());
+    }
+    let entries: Vec<(u8, i32)> = body.limits.iter().map(|l| (l.day_of_week, l.allowed_minutes)).collect();
+    app_groups::replace_limits(&state.db, &id.to_string(), &group_id, &entries).await.map_err(bad)?;
+    let version = crate::api::profiles::bump_and_propagate(&state, id).await.map_err(internal)?;
+    Ok(Json(serde_json::json!({ "message": "Group limits updated", "config_version": version })))
+}
+
 #[derive(Deserialize)]
 pub struct MembershipBody {
     pub app_id: String,

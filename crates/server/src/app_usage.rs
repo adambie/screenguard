@@ -108,7 +108,9 @@ pub struct AppTotal {
 /// Per-app totals of a profile between two dates (inclusive), summed over all
 /// its agents; longest first. `None` dates mean unbounded.
 pub async fn totals(pool: &DbPool, profile_id: Uuid, from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<Vec<AppTotal>> {
-    let rows: Vec<(String, Option<String>, Option<String>, Option<String>, i64)> = sqlx::query_as(
+    // app_id, name, icon, categories, seconds
+    type Row = (String, Option<String>, Option<String>, Option<String>, i64);
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT u.app_id, c.display_name, c.icon, c.categories, SUM(u.seconds) AS total
          FROM app_usage u
          JOIN agent_users au ON au.id = u.agent_user_id
