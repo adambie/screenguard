@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.1 (`AppId` helpers)
-- **Next step:** 1.2 — wire types `MSG_APP_USAGE_SYNC` / `AppUsageSync` in `messages.rs`
+- **Last completed step:** 1.2 (wire types)
+- **Next step:** 1.3 — advertise the `app_usage` capability, then 1.4 (old servers vs unknown message types)
 - **In progress / half-done:** —
 - **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
@@ -365,9 +365,11 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   kinds per entry). `desktop:` names allow anything but control chars and `/`
   (Wine creates `wine-Programs-Game Name.desktop`).
   *Done when:* unit tests cover each prefix and reject malformed ids.
-- [ ] **1.2 Wire types** — in `messages.rs`: `MSG_APP_USAGE_SYNC`,
+- [x] **1.2 Wire types** — in `messages.rs`: `MSG_APP_USAGE_SYNC` (`"app_usage_sync"`),
   `AppUsageSync { entries: Vec<AppUsageEntry> }`,
   `AppUsageEntry { local_uid, date, app_id, display_name, icon: Option<String>, seconds_total }`.
+  `date` is `NaiveDate` like `UsageEntry`; `icon` is a theme icon name, omitted
+  when `None`; `seconds_total` is the day's running total, not a delta.
   *Done when:* serde round-trip test passes.
 
 ### 1B. Agent — scanner and accounting (`crates/agent`)
@@ -586,3 +588,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 0.5 done: full algorithm in `app-scan.py`; Hyprland + KDE (KIO and GIO launches) + simulated GIO/Steam/Minecraft/Wine all correct after 5 algorithm fixes (see Sanity check results) | 0.6 measure cost |
 | 2026-10-20 | Trimmed the Hyprland sample (privacy). 0.6 done: Rust benchmark on Hyprland laptop and the KDE VM, 5 s interval with cached identities. **Phase 0 complete** | Phase 1, step 1.1 |
 | 2026-10-20 | 1.1 done: `common::apps::AppId` (parse/display/validate, 3 tests) | 1.2 wire types |
+| 2026-10-20 | 1.2 done: `AppUsageSync` / `AppUsageEntry` + round-trip test | 1.3 capability, 1.4 old-server check |

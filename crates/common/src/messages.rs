@@ -1,4 +1,5 @@
 use crate::models::{LocalUser, RemainingEntry, UserConfig, UsageEntry};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 // ── message type constants ────────────────────────────────────────────────────
@@ -8,6 +9,8 @@ pub const MSG_USER_LIST_UPDATE: &str = "user_list_update";
 pub const MSG_HEARTBEAT: &str = "heartbeat";
 pub const MSG_USAGE_SYNC: &str = "usage_sync";
 pub const MSG_PAIRING_REQUEST: &str = "pairing_request";
+/// Sent only to servers that understand it; see `AppUsageSync`.
+pub const MSG_APP_USAGE_SYNC: &str = "app_usage_sync";
 
 pub const MSG_CONFIG_PUSH: &str = "config_push";
 pub const MSG_REMAINING_UPDATE: &str = "remaining_update";
@@ -61,6 +64,29 @@ pub struct Heartbeat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageSync {
     pub usage: Vec<UsageEntry>,
+}
+
+/// Per-app usage totals (docs/feature-app-usage-limits.md). Each entry carries the
+/// day's running total, not a delta, so the server can upsert with MAX and a
+/// resend after a reconnect never double-counts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppUsageSync {
+    pub entries: Vec<AppUsageEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppUsageEntry {
+    pub local_uid: u32,
+    /// Local date on the agent.
+    pub date: NaiveDate,
+    /// `common::apps::AppId` as a string; the server drops ids it can't parse.
+    pub app_id: String,
+    /// `Name=` from the `.desktop` file, or a fallback derived from the id.
+    pub display_name: String,
+    /// Icon theme name from `Icon=` (never image data).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    pub seconds_total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,4 +163,40 @@ pub enum ServerMessage {
     FetchLogs,
     UpdateAgent,
     Unknown(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::WssMessage;
+
+    #[test]
+    fn app_usage_sync_round_trip() {
+        let sync = AppUsageSync {
+            entries: vec![
+                AppUsageEntry {
+                    local_uid: 1001,
+                    date: NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+                    app_id: "desktop:org.kde.dolphin".into(),
+                    display_name: "Dolphin".into(),
+                    icon: Some("system-file-manager".into()),
+                    seconds_total: 3600,
+                },
+                AppUsageEntry {
+                    local_uid: 1001,
+                    date: NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+                    app_id: "steam:570".into(),
+                    display_name: "Steam game 570".into(),
+                    icon: None,
+                    seconds_total: 5,
+                },
+            ],
+        };
+        let msg = WssMessage::new(MSG_APP_USAGE_SYNC, &sync).unwrap();
+        let json = msg.to_json().unwrap();
+        assert!(json.contains(r#""date":"2026-10-20""#));
+        assert!(!json.contains(r#""icon":null"#));
+        let back: AppUsageSync = WssMessage::from_json(&json).unwrap().parse_payload().unwrap();
+        assert_eq!(back, sync);
+    }
 }
