@@ -1,6 +1,7 @@
 mod app_catalog;
 mod app_ident;
 mod app_scan;
+mod app_usage;
 mod config;
 mod db;
 mod dbus;

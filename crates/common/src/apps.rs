@@ -9,7 +9,7 @@ use std::fmt;
 /// Longest accepted app id, prefix included.
 pub const MAX_APP_ID_LEN: usize = 255;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AppKind {
     /// `.desktop` file id (without `.desktop`).
     Desktop,
@@ -67,7 +67,7 @@ impl AppKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AppId {
     pub kind: AppKind,
     pub name: String,

@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.7 (localized names, catalogue cache, display names)
-- **Next step:** 1.8 — accounting loop (reuse `SessionUsageState`), wire scanner into the agent
+- **Last completed step:** 1.8 (`AppAccounting` / `AppTracker`)
+- **Next step:** 1.9 — agent DB table `app_usage_log` + wire `AppTracker` into `HeartbeatLoop` (5 s ticker, counting = `uid_is_counting`, home from passwd, language from cached config)
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -436,10 +436,19 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
   Icons are theme names or paths, kept as given (the web UI shows a generic icon
   when it can't render them).
-- [ ] **1.8 Accounting loop** — every scan tick, if the user's session counts
+- [x] **1.8 Accounting loop** — every scan tick, if the user's session counts
   (reuse `SessionUsageState` logic from `dbus.rs`), add the tick's seconds to each
   running `app_id` once. Handle clock jumps / suspend (cap a tick at 2× interval).
   *Done when:* unit test with a fake clock + fake scan results gives exact totals.
+  → `app_usage.rs`:
+  - `AppAccounting::tick(now, counting_uids, running)` returns the whole seconds
+    per (uid, app). The first tick only starts the clock, gaps are capped at
+    2 × 5 s, and a per-uid ms carry means 5.01 s ticks add up exactly.
+  - `AppTracker::tick(now, users)` combines scanner, catalogue cache,
+    identification and accounting, and also returns name/icon per app.
+  - Only `Launch::App` is counted; autostart and "other" aren't reported in v1.
+  - 5 tests. Wiring into `HeartbeatLoop` happens in 1.9 together with storage
+    (nothing to persist without it); the `allow(dead_code)`s go then.
 - [ ] **1.9 Local storage** — agent DB table
   `app_usage_log(local_uid, date, app_id, display_name, icon, seconds, PRIMARY KEY(local_uid,date,app_id))`;
   midnight rollover like `usage_log`; prune > 35 days.
@@ -634,3 +643,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.5 done: `app_scan::ProcScanner` with (pid, start, comm) cache + fake `/proc` fixture, 5 tests | 1.6 identification |
 | 2026-10-20 | 1.6 done: `app_catalog.rs` + `app_ident.rs`, 13 fixture tests; Steam-vs-Wine precedence fix; Prism/MultiMC markers (Q2 answered) | 1.7 localized names + catalogue reload |
 | 2026-10-20 | 1.7 done: `name_for(lang)`, `CatalogCache` (mtime signature, 30 s), `display()` for Steam/Snap/Flatpak/Minecraft/Wine | 1.8 accounting loop |
+| 2026-10-20 | 1.8 done: `AppAccounting` (fake-clock tests: exact totals, carry, 2× cap) + `AppTracker`; `AppId` now `Ord` | 1.9 storage + wiring |
