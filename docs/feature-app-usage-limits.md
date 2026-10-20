@@ -857,6 +857,16 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 - [ ] **2.15 Real-machine tests** on every supported desktop: limit hit → warning
   → app closes → relaunch closed → other apps unaffected → overall limit still works.
+  → **KDE Plasma 6 (screenguardTest): passed 2026-10-20.** Individual steps
+  were verified in 2.8–2.14 and 2.19–2.22. Combined run (preserve tasks on):
+  - game running with Games time left → "Lock now" → session locked and
+    re-locked, the game *not* closed, group time frozen while locked (2.13 ✔);
+  - time restored → the agent unlocked itself → "Games — 1m left" warning →
+    "no time left" → notice → game closed 10 s later.
+
+  Still open: other desktops (GNOME, Cinnamon, XFCE, Hyprland) need a machine
+  with root for the agent. Detection is fixture-tested there, but enforcement
+  hasn't run on them yet.
 - [x] **2.16 Compatibility** — old agent ignores `app_groups` (serde default) and
   simply doesn't enforce; UI shows which agents can enforce (capability).
   → **Real 0.10.17 agent** (built from the tag) on the test machine against this
