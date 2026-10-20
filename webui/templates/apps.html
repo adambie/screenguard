@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}{{ t('apps_admin.heading') }} – ScreenGuard{% endblock %}
+
+
+{% block content %}
+<h1 class="h2 fw-bold mb-1">{{ t('apps_admin.heading') }}</h1>
+<p class="text-secondary mb-4">{{ t('apps_admin.subtitle') }}</p>
+
+<!-- ── groups ───────────────────────────────────────────────────────── -->
+<h2 class="h5 fw-semibold mb-3">{{ t('groups.heading') }}</h2>
+<div class="row row-cols-1 row-cols-md-2 g-3 mb-4">
+  {% for g in groups %}
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2">
+        <span class="text-truncate">{{ g.display_name }}</span>
+        <span class="text-secondary small text-nowrap">{{ t('groups.app_count', n=g.app_count) }}</span>
+      </div>
+      <div class="card-body small">
+        {% if g.includes %}
+        <div class="mb-2">
+          <span class="text-secondary">{{ t('groups.includes') }}</span>
+          {% for r in g.includes %}
+          <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
+            <span class="sg-chip">{{ r.label }}
+              <button class="sg-chip-x"
+                      aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
+          </form>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-secondary mb-2">{{ t('groups.empty') }}</div>
+        {% endif %}
+        {% if g.excludes %}
+        <div class="mb-2">
+          <span class="text-secondary">{{ t('groups.except') }}</span>
+          {% for r in g.excludes %}
+          <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
+            <span class="sg-chip sg-chip-out">{{ r.label }}
+              <button class="sg-chip-x"
+                      aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
+          </form>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if categories %}
+        <a class="small text-decoration-none" data-bs-toggle="collapse" href="#cat-{{ g.id }}">+ {{ t('groups.add_category') }}</a>
+        <form method="post" action="{{ url_for('add_app_group_rule', group_id=g.id) }}" class="collapse gap-2 mt-2" id="cat-{{ g.id }}" style="max-width:320px">
+          <select name="category" class="form-select form-select-sm" aria-label="{{ t('groups.add_category') }}">
+            {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('groups.add') }}</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-transparent d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#rename-{{ g.id }}">{{ t('profile.btn_rename') }}</button>
+        <form method="post" action="{{ url_for('delete_app_group', group_id=g.id) }}"
+              onsubmit='return confirm({{ t("groups.confirm_delete", name=g.display_name) | tojson }})'>
+          <button class="btn btn-sm btn-outline-danger">{{ t('profile.btn_delete') }}</button>
+        </form>
+        <div class="collapse w-100" id="rename-{{ g.id }}">
+          <form method="post" action="{{ url_for('rename_app_group', group_id=g.id) }}" class="d-flex gap-2 mt-1" style="max-width:320px">
+            <input name="name" class="form-control form-control-sm" value="{{ g.display_name }}" maxlength="60" required>
+            <button class="btn btn-sm btn-primary text-nowrap">{{ t('profile.btn_save_name') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-header">{{ t('groups.new') }}</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('create_app_group') }}" class="d-flex gap-2">
+          <input name="name" class="form-control form-control-sm" placeholder="{{ t('groups.new_placeholder') }}" maxlength="60" required>
+          <button class="btn btn-sm btn-primary text-nowrap">{{ t('groups.create') }}</button>
+        </form>
+        <p class="text-secondary small mt-2 mb-0">{{ t('groups.new_hint') }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── apps ─────────────────────────────────────────────────────────── -->
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="h5 fw-semibold mb-0">{{ t('apps_admin.all_apps', n=total) }}</h2>
+  <div class="btn-group" role="group">
+    <a href="{{ url_for('apps') }}" class="btn btn-sm {% if show != 'ungrouped' %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ t('apps_admin.show_all') }}</a>
+    <a href="{{ url_for('apps', show='ungrouped') }}" class="btn btn-sm {% if show == 'ungrouped' %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ t('apps_admin.show_ungrouped') }}</a>
+  </div>
+</div>
+
+<div class="card mb-4">
+  {% if apps %}
+  <ul class="list-group list-group-flush">
+    {% for a in apps %}
+    <li class="list-group-item d-flex flex-wrap align-items-center gap-3" style="padding:10px 16px">
+      <div aria-hidden="true"
+           style="width:32px;height:32px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+                  background:var(--bd);color:var(--t1);font-weight:600;font-size:14px">{{ a.name[:1] | upper }}</div>
+      <div style="flex:1;min-width:160px">
+        <div class="text-truncate" title="{{ a.app_id }}">{{ a.name }}</div>
+        <div class="text-secondary small">{% if a.kind_label %}{{ a.kind_label }} · {% endif %}{{ t('apps_admin.last_seen', when=(a.last_seen | ts_date)) }}</div>
+      </div>
+      <div class="d-flex flex-wrap gap-1 align-items-center">
+        {% for g in a.group_objs %}
+        <form method="post" action="{{ url_for('app_group_membership') }}" class="d-inline">
+          <input type="hidden" name="group" value="{{ g.id }}">
+          <input type="hidden" name="app_id" value="{{ a.app_id }}">
+          <input type="hidden" name="member" value="0">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <span class="sg-chip sg-chip-on">{{ g.display_name }}
+            <button class="sg-chip-x"
+                    aria-label="{{ t('apps_admin.remove_from', group=g.display_name) }}" title="{{ t('apps_admin.remove_from', group=g.display_name) }}">×</button></span>
+        </form>
+        {% endfor %}
+        {% if a.other_groups %}
+        <form method="post" action="{{ url_for('app_group_membership') }}" class="d-flex gap-1">
+          <input type="hidden" name="app_id" value="{{ a.app_id }}">
+          <input type="hidden" name="member" value="1">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <select name="group" class="form-select form-select-sm" style="width:auto" aria-label="{{ t('apps_admin.add_to') }}">
+            {% for g in a.other_groups %}<option value="{{ g.id }}">{{ g.display_name }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('apps_admin.add_to') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="card-body text-secondary small">{{ t('apps_admin.empty') }}</div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+.sg-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 10px; border-radius:999px;
+           font-size:12px; line-height:18px; background:var(--bd); color:var(--t1); white-space:nowrap; }
+.sg-chip-on { background:var(--ac); color:#fff; }
+.sg-chip-out { background:transparent; border:1px solid var(--bd); color:var(--t2); }
+.sg-chip-x { border:0; background:none; padding:0 0 0 2px; color:inherit; opacity:.7; font-size:14px; line-height:1; cursor:pointer; }
+.sg-chip-x:hover, .sg-chip-x:focus-visible { opacity:1; }
+form.collapse.show { display:flex; }
+</style>
+{% endblock %}

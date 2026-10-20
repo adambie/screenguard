@@ -13,6 +13,7 @@ use crate::state::AppState;
 
 pub mod auth;
 pub mod agents;
+pub mod apps;
 pub mod profiles;
 pub mod usage;
 pub mod users;
@@ -57,6 +58,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Blocked domains
         .route("/profiles/{id}/blocked-domains", get(profiles::get_blocked_domains).put(profiles::set_blocked_domains).post(profiles::add_blocked_domain))
         .route("/profiles/{id}/blocked-domains/{domain_id}", patch(profiles::patch_blocked_domain).delete(profiles::delete_blocked_domain))
+        // Apps and app groups
+        .route("/apps", get(apps::list_apps))
+        .route("/app-groups", get(apps::list_groups).post(apps::create_group))
+        .route("/app-groups/{id}", patch(apps::rename_group).delete(apps::delete_group))
+        .route("/app-groups/{id}/rules", post(apps::add_rule))
+        .route("/app-groups/{id}/rules/{rule_id}", delete(apps::delete_rule))
+        .route("/app-groups/{id}/membership", post(apps::set_membership))
         // Usage & dashboard
         .route("/profiles/{id}/usage", get(usage::get_usage))
         .route("/profiles/{id}/app-usage", get(usage::get_app_usage))
@@ -262,6 +270,64 @@ mod tests {
         let (s, _) = call(&app, Method::GET, &format!("/profiles/{}/app-usage", uuid::Uuid::new_v4()), Some(&tok), None).await;
         assert_eq!(s, StatusCode::NOT_FOUND);
         let (s, _) = call(&app, Method::GET, &format!("/profiles/{profile}/app-usage"), None, None).await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn apps_and_groups_api() {
+        let (app, state) = app_with_state().await;
+        let tok = admin_token(&app).await;
+        crate::app_usage::tests::seeded(&state.db).await; // firefox, steam:570 (Game), foot
+        let c = |m: Method, p: &str, b: Option<Value>| {
+            let (app, tok, p) = (app.clone(), tok.clone(), p.to_string());
+            async move { call(&app, m, &p, Some(&tok), b).await }
+        };
+
+        let (s, body) = c(Method::GET, "/apps", None).await;
+        assert_eq!(s, StatusCode::OK);
+        let groups = body["groups"].as_array().unwrap();
+        let (games, browsers) = (groups[0]["id"].as_str().unwrap().to_string(), groups[1]["id"].as_str().unwrap().to_string());
+        assert_eq!(groups[0]["builtin"], "games");
+        let dota = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "steam:570").unwrap();
+        assert_eq!(dota["groups"], json!([games]));
+        let ff = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "desktop:firefox").unwrap();
+        assert_eq!(ff["groups"], json!([]));
+
+        // put Firefox into "Web browsers" (no category in this seed → explicit entry)
+        let (s, _) = c(Method::POST, &format!("/app-groups/{browsers}/membership"), Some(json!({"app_id": "desktop:firefox", "member": true}))).await;
+        assert_eq!(s, StatusCode::OK);
+        let (_, body) = c(Method::GET, "/apps", None).await;
+        let ff = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "desktop:firefox").unwrap();
+        assert_eq!(ff["groups"], json!([browsers]));
+        // take Dota out of Games (it's in via the steam: prefix → exclusion)
+        c(Method::POST, &format!("/app-groups/{games}/membership"), Some(json!({"app_id": "steam:570", "member": false}))).await;
+        let (_, body) = c(Method::GET, "/apps", None).await;
+        let dota = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "steam:570").unwrap();
+        assert_eq!(dota["groups"], json!([]));
+
+        // custom group with a category rule, rename, delete
+        let (s, created) = c(Method::POST, "/app-groups", Some(json!({"name": "Education"}))).await;
+        assert_eq!(s, StatusCode::CREATED);
+        let id = created["id"].as_str().unwrap().to_string();
+        let (s, _) = c(Method::POST, &format!("/app-groups/{id}/rules"), Some(json!({"kind": "category", "value": "Education"}))).await;
+        assert_eq!(s, StatusCode::CREATED);
+        let (s, _) = c(Method::POST, &format!("/app-groups/{id}/rules"), Some(json!({"kind": "category", "value": "Bad;"}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = c(Method::PATCH, &format!("/app-groups/{id}"), Some(json!({"name": "School"}))).await;
+        assert_eq!(s, StatusCode::OK);
+        let (_, g) = c(Method::GET, "/app-groups", None).await;
+        let school = g["groups"].as_array().unwrap().iter().find(|g| g["id"] == id.as_str()).unwrap();
+        assert_eq!((school["name"].as_str(), school["rules"][0]["kind"].as_str()), (Some("School"), Some("category")));
+        let rule_id = school["rules"][0]["id"].as_str().unwrap();
+        let (s, _) = c(Method::DELETE, &format!("/app-groups/{id}/rules/{rule_id}"), None).await;
+        assert_eq!(s, StatusCode::OK);
+        let (s, _) = c(Method::DELETE, &format!("/app-groups/{id}"), None).await;
+        assert_eq!(s, StatusCode::OK);
+        let (s, _) = c(Method::DELETE, &format!("/app-groups/{id}"), None).await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let (s, _) = c(Method::POST, "/app-groups", Some(json!({"name": " "}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = call(&app, Method::GET, "/apps", None, None).await;
         assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 

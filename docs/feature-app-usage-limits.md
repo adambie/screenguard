@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.3 groups API + "Apps" admin page, then 2.4 limits. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.4 per-profile group limits (API + editor on the profile page). Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -695,10 +695,25 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - Adding the opposite rule (include ↔ exclude) for the same app replaces it.
   - Tests: SQLite fresh install, v9 → v12 upgrade, custom groups/rules, and the
     Postgres test extended (the `exclude` column works there).
-- [ ] **2.3 Groups API + "Apps" admin page** — one page listing every app seen
+- [x] **2.3 Groups API + "Apps" admin page** — one page listing every app seen
   on any computer (name, category, last seen, which groups it's in), with
   "add to group" / "remove"; a groups list (members, create/rename/delete);
   "ungrouped apps" filter to make grouping easy.
+  → API (`api/apps.rs`): `GET /apps` (catalogue + groups each app is in,
+  computed with `group_matches`), `GET/POST /app-groups`,
+  `PATCH/DELETE /app-groups/{id}`, `POST /app-groups/{id}/rules`,
+  `DELETE /app-groups/{id}/rules/{rule}`, `POST /app-groups/{id}/membership`.
+  - Membership is "put in / take out" whatever the rules: it removes the opposite
+    explicit rule, then adds an entry or an exclusion if still needed.
+  - Web UI `/apps` (new nav item "Apps"): group cards (includes/except chips
+    with ×, "+ Add category" from categories seen, rename, delete) and an app
+    list (source/category, last seen, group chips with × to take out, "Add to
+    group"). No JavaScript needed. Predefined group names are translated unless
+    renamed. All 6 languages.
+  - Verified against the live local server with the test machine's real
+    catalogue: Firefox auto-in Web browsers, the test game auto-in Games; take
+    out → "Except", add → entry, create group; screenshots at desktop and phone
+    width and in Polish.
 - [ ] **2.4 Limits API + UI** — per profile: per group, per weekday minutes, same
   editor style as daily limits; "blocked" toggle = 0.
 - [ ] **2.5 Reports by group** — the Phase 1 reports gain a "by group" view.

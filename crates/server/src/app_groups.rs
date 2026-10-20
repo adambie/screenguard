@@ -12,7 +12,8 @@ use crate::db::DbPool;
 /// Predefined groups: (builtin key, name, rules). Most parents don't know which
 /// games or browsers exist, so these are built from freedesktop categories and
 /// pick up new apps by themselves.
-const BUILTIN: &[(&str, &str, &[(RuleKind, &str)])] = &[
+type Builtin = (&'static str, &'static str, &'static [(RuleKind, &'static str)]);
+const BUILTIN: &[Builtin] = &[
     ("games", "Games", &[(RuleKind::Category, "Game"), (RuleKind::Prefix, "steam:"), (RuleKind::Prefix, "minecraft:")]),
     ("browsers", "Web browsers", &[(RuleKind::Category, "WebBrowser")]),
 ];
@@ -192,6 +193,31 @@ pub async fn list_groups(pool: &DbPool) -> Result<Vec<Group>> {
     Ok(out)
 }
 
+/// Puts an app into a group (`member`) or takes it out, whatever the rules that
+/// currently decide it: removes/adds an explicit entry, or an exclusion when the
+/// app is in the group through a category or prefix. `None` if no such group.
+pub async fn set_membership(pool: &DbPool, group_id: &str, app_id: &str, categories: &[String], member: bool) -> Result<Option<()>> {
+    if common::apps::AppId::parse(app_id).is_none() {
+        bail!("invalid app id {app_id:?}");
+    }
+    let Some(group) = get_group(pool, group_id).await? else {
+        return Ok(None);
+    };
+    // drop the explicit rule that says the opposite of what's wanted
+    if let Some(r) = group.rules.iter().find(|r| r.rule.kind == RuleKind::AppId && r.rule.value == app_id && r.rule.exclude == member) {
+        delete_rule(pool, group_id, &r.id).await?;
+    }
+    let rules = get_group(pool, group_id).await?.map(|g| g.rules()).unwrap_or_default();
+    if common::apps::group_matches(&rules, app_id, categories) != member {
+        add_rule(pool, group_id, &GroupRule { kind: RuleKind::AppId, value: app_id.into(), exclude: !member }).await?;
+    }
+    Ok(Some(()))
+}
+
+pub async fn get_group(pool: &DbPool, id: &str) -> Result<Option<Group>> {
+    Ok(list_groups(pool).await?.into_iter().find(|g| g.id == id))
+}
+
 pub async fn group_exists(pool: &DbPool, id: &str) -> Result<bool> {
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_groups WHERE id = $1").bind(id).fetch_one(pool).await?;
     Ok(n > 0)
@@ -248,5 +274,38 @@ mod tests {
         assert!(delete_rule(&pool, &id, &g.rules[0].id).await.unwrap());
         assert!(delete_group(&pool, &id).await.unwrap());
         assert!(!group_exists(&pool, &id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn membership_toggles_through_entries_and_exclusions() {
+        let pool = db::open_in_memory().await;
+        let browsers = list_groups(&pool).await.unwrap()[1].clone();
+        let web = vec!["WebBrowser".to_string()];
+        let rules = |pool: DbPool, id: String| async move {
+            list_groups(&pool).await.unwrap().into_iter().find(|g| g.id == id).unwrap().rules()
+        };
+        let is_in = |rules: &[GroupRule], app: &str, cats: &[String]| common::apps::group_matches(rules, app, cats);
+
+        // Firefox is in via its category: taking it out adds an exclusion
+        set_membership(&pool, &browsers.id, "desktop:firefox", &web, false).await.unwrap().unwrap();
+        let r = rules(pool.clone(), browsers.id.clone()).await;
+        assert!(!is_in(&r, "desktop:firefox", &web));
+        assert_eq!(r.len(), 2);
+        // putting it back removes the exclusion (no extra entry needed)
+        set_membership(&pool, &browsers.id, "desktop:firefox", &web, true).await.unwrap().unwrap();
+        let r = rules(pool.clone(), browsers.id.clone()).await;
+        assert!(is_in(&r, "desktop:firefox", &web));
+        assert_eq!(r.len(), 1);
+
+        // an app without the category gets an explicit entry, removing deletes it
+        set_membership(&pool, &browsers.id, "flatpak:io.github.tor", &[], true).await.unwrap().unwrap();
+        assert!(is_in(&rules(pool.clone(), browsers.id.clone()).await, "flatpak:io.github.tor", &[]));
+        set_membership(&pool, &browsers.id, "flatpak:io.github.tor", &[], false).await.unwrap().unwrap();
+        let r = rules(pool.clone(), browsers.id.clone()).await;
+        assert!(!is_in(&r, "flatpak:io.github.tor", &[]));
+        assert_eq!(r.len(), 1);
+
+        assert!(set_membership(&pool, "nope", "desktop:firefox", &web, true).await.unwrap().is_none());
+        assert!(set_membership(&pool, &browsers.id, "bad id", &web, true).await.is_err());
     }
 }

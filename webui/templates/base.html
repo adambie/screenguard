@@ -329,6 +329,7 @@
       <ul class="navbar-nav me-auto">
         <li class="nav-item"><a class="nav-link{% if request.endpoint == 'dashboard' %} active{% endif %}" href="{{ url_for('dashboard') }}">{{ t('nav.dashboard') }}</a></li>
         <li class="nav-item"><a class="nav-link{% if request.endpoint == 'agents' or request.endpoint == 'agent_detail' %} active{% endif %}" href="{{ url_for('agents') }}">{{ t('nav.agents') }}</a></li>
+        <li class="nav-item"><a class="nav-link{% if request.endpoint == 'apps' %} active{% endif %}" href="{{ url_for('apps') }}">{{ t('nav.apps') }}</a></li>
         <li class="nav-item"><a class="nav-link{% if request.endpoint == 'settings' %} active{% endif %}" href="{{ url_for('settings') }}">{{ t('nav.settings') }}</a></li>
       </ul>
       <div class="d-flex align-items-center gap-2">

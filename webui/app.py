@@ -552,6 +552,120 @@ def profile_apps(profile_id):
                            today=str(today_date))
 
 
+# ── apps & app groups ─────────────────────────────────────────────────────────
+
+# Toolkit/desktop categories that say nothing about what an app is for.
+_GENERIC_CATEGORIES = {"GTK", "GNOME", "Qt", "KDE", "XFCE", "X-GNOME-Utilities", "X-XFCE",
+                       "Application", "Utility", "System", "Settings"}
+
+
+def group_name(g):
+    """Translated name for a predefined group the parent hasn't renamed."""
+    defaults = {"games": "Games", "browsers": "Web browsers"}
+    if g.get("builtin") in defaults and g.get("name") == defaults[g["builtin"]]:
+        return t(f"groups.builtin_{g['builtin']}")
+    return g.get("name", "")
+
+
+def rule_label(rule, names):
+    kind, value = rule.get("kind"), rule.get("value", "")
+    if kind == "prefix":
+        return {"steam:": t("groups.rule_steam"), "minecraft:": t("groups.rule_minecraft")}.get(value, value)
+    if kind == "category":
+        return t("groups.rule_category", category=value)
+    return names.get(value, value)
+
+
+app.jinja_env.globals['group_name'] = group_name
+
+
+@app.route("/apps")
+@require_login
+def apps():
+    r = api("GET", "/apps")
+    data = r.json() if r and r.ok else {"apps": [], "groups": []}
+    apps_list, groups = data.get("apps", []), data.get("groups", [])
+    names = {a["app_id"]: a["name"] for a in apps_list}
+    by_id = {g["id"]: g for g in groups}
+    for g in groups:
+        g["display_name"] = group_name(g)
+        g["includes"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", []) if not r.get("exclude")]
+        g["excludes"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", []) if r.get("exclude")]
+        g["app_count"] = sum(1 for a in apps_list if g["id"] in a.get("groups", []))
+    for a in apps_list:
+        a["group_objs"] = [by_id[i] for i in a.get("groups", []) if i in by_id]
+        a["other_groups"] = [g for g in groups if g["id"] not in a.get("groups", [])]
+        source = {"flatpak": "Flatpak", "snap": "Snap", "steam": "Steam", "wine": "Windows (Wine)"}.get(a["app_id"].split(":")[0])
+        a["kind_label"] = source or next((c for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES), "")
+    show = request.args.get("show", "all")
+    if show == "ungrouped":
+        apps_list = [a for a in apps_list if not a.get("groups")]
+    categories = sorted({c for a in data.get("apps", []) for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES})
+    return render_template("apps.html", apps=apps_list, groups=groups, show=show, categories=categories,
+                           total=len(data.get("apps", [])))
+
+
+def _back():
+    return redirect(request.form.get("next") or url_for("apps"))
+
+
+@app.route("/apps/groups/create", methods=["POST"])
+@require_login
+def create_app_group():
+    r = api("POST", "/app-groups", json={"name": request.form.get("name", "")})
+    if not r or not r.ok:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
+
+
+@app.route("/apps/groups/<group_id>/rename", methods=["POST"])
+@require_login
+def rename_app_group(group_id):
+    r = api("PATCH", f"/app-groups/{group_id}", json={"name": request.form.get("name", "")})
+    if not r or not r.ok:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
+
+
+@app.route("/apps/groups/<group_id>/delete", methods=["POST"])
+@require_login
+def delete_app_group(group_id):
+    r = api("DELETE", f"/app-groups/{group_id}")
+    if not r or not r.ok:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
+
+
+@app.route("/apps/membership", methods=["POST"])
+@require_login
+def app_group_membership():
+    group_id = request.form.get("group", "")
+    r = api("POST", f"/app-groups/{group_id}/membership",
+            json={"app_id": request.form.get("app_id", ""), "member": request.form.get("member") == "1"})
+    if not r or not r.ok:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
+
+
+@app.route("/apps/groups/<group_id>/rules/add", methods=["POST"])
+@require_login
+def add_app_group_rule(group_id):
+    r = api("POST", f"/app-groups/{group_id}/rules",
+            json={"kind": "category", "value": request.form.get("category", "")})
+    if not r or not r.ok:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
+
+
+@app.route("/apps/groups/<group_id>/rules/<rule_id>/delete", methods=["POST"])
+@require_login
+def delete_app_group_rule(group_id, rule_id):
+    r = api("DELETE", f"/app-groups/{group_id}/rules/{rule_id}")
+    if not r or not r.ok:
+        flash(t("flash.group_failed"), "danger")
+    return _back()
+
+
 @app.route("/profiles/<profile_id>/rename", methods=["POST"])
 @require_login
 def rename_profile(profile_id):

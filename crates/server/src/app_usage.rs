@@ -164,6 +164,33 @@ pub async fn profile_has_capability(pool: &DbPool, profile_id: Uuid) -> Result<b
     Ok(n > 0)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CatalogApp {
+    pub app_id: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub categories: Vec<String>,
+    pub last_seen: i64,
+}
+
+/// Every app seen on any computer, by name.
+pub async fn catalog(pool: &DbPool) -> Result<Vec<CatalogApp>> {
+    let rows: Vec<(String, String, Option<String>, String, i64)> =
+        sqlx::query_as("SELECT app_id, display_name, icon, categories, last_seen FROM app_catalog").fetch_all(pool).await?;
+    let mut out: Vec<CatalogApp> = rows
+        .into_iter()
+        .map(|(app_id, name, icon, categories, last_seen)| CatalogApp { app_id, name, icon, categories: split_categories(&categories), last_seen })
+        .collect();
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.app_id.cmp(&b.app_id)));
+    Ok(out)
+}
+
+/// Categories of one catalogue app (empty if unknown).
+pub async fn app_categories(pool: &DbPool, app_id: &str) -> Result<Vec<String>> {
+    let c: Option<String> = sqlx::query_scalar("SELECT categories FROM app_catalog WHERE app_id = $1").bind(app_id).fetch_optional(pool).await?;
+    Ok(split_categories(c.as_deref().unwrap_or("")))
+}
+
 pub fn split_categories(s: &str) -> Vec<String> {
     s.split(';').filter(|c| !c.is_empty()).map(str::to_string).collect()
 }
