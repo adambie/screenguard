@@ -44,8 +44,10 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.17 (translations)
-- **Next step:** 1.21 — README docs; then 1.19 + rest of 1.20 on a real test machine (needs the maintainer: root install of the new agent + a new server)
+- **Last completed step:** 1.21 (README); 1.18 skipped, 1.20 mostly done
+- **Next step:** 1.19 + rest of 1.20 on a real test machine — needs the
+  maintainer (root install of the new agent, and a server running this build),
+  then 1.22 release
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -590,8 +592,14 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     agent, i.e. no app data and no errors. By code, the old agent never sends the
     message, and its hello sets `app_usage_available = false`, so the UI shows
     the "update the agent" notice.
-- [ ] **1.21 Docs** — README section "App usage reports" + privacy note
+- [x] **1.21 Docs** — README section "App usage reports" + privacy note
   (cmdlines never leave the machine); update this file.
+  → Added a features bullet, a new "App usage reports" section (how it works,
+  what counts, retention, the off switch) and `app_tracking` in the agent config
+  example. In "What the agent does on your machine", added `app_usage_sync` to the
+  uplink list and reworded the privacy paragraph: it used to say "no process or
+  application names"; it now says exactly which app identifiers are sent, and
+  that command lines, window titles, file names and URLs never are.
 - [ ] **1.22 Release** — version bump commit, tag only with maintainer go-ahead.
 
 **Exit criteria (Phase 1):**
@@ -746,3 +754,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.16 done: `/profiles/<id>/apps` page (day/week/total), links from the profile page, checked locally with screenshots | 1.17 translations |
 | 2026-10-20 | 1.17 done: de/es/fr/pt/pl, profile header wraps on phones; noted 17 untranslated web-filter keys (older gap) | 1.18 optional / 1.19 e2e |
 | 2026-10-20 | 1.18 skipped (optional). 1.20 mostly done via `sim-agent.py` (old server ignores the message, new server ingests); real old agent pending | 1.21 docs, then 1.19 with maintainer |
+| 2026-10-20 | 1.21 done: README section + corrected privacy statement | 1.19 real-machine e2e (maintainer), 1.22 release |

@@ -10,6 +10,7 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 - Desktop notifications: warns at 15 / 10 / 5 / 1 minute before lockout
 - Admin can send arbitrary text messages to any managed user's desktop
 - Time adjustments (add or remove minutes) with optional reason shown to the user
+- App usage reports — which apps each child used and for how long (day / week / total)
 - mDNS auto-discovery — agents find the server on the local network without manual configuration
 - Hosted cloud accounts — manage your machines without running a server yourself
 - Web UI for administration
@@ -62,8 +63,9 @@ The agent behaves identically whether it reports to a server on your own LAN or 
 - `user_list_update` — UID, username and display name of each local account above `min_uid`
 - `heartbeat` — per UID: seconds of active time since the last beat, an idle flag, the number of open sessions
 - `usage_sync` — per UID and date: total seconds used
+- `app_usage_sync` — per UID, date and app: the app's identifier, its menu name and icon name, and total seconds (see [App usage reports](#app-usage-reports); off with `app_tracking = false`)
 
-That is all of it. No window titles, no process or application names, no keystrokes, no screenshots, no file contents. Optional domain blocking runs entirely on the machine: a local DNS proxy answers blocked lookups with NXDOMAIN. The blocklist is pushed down from the server; the queries the proxy sees are never reported back up.
+That is all of it. App usage only names apps the child could start from the desktop menu (by their `.desktop` entry, Flatpak/Snap ID or Steam game ID) — never command lines, window titles, file names or URLs, which stay on the machine. No keystrokes, no screenshots, no file contents. Optional domain blocking runs entirely on the machine: a local DNS proxy answers blocked lookups with NXDOMAIN. The blocklist is pushed down from the server; the queries the proxy sees are never reported back up.
 
 **What a server can ask the agent to do** — the complete set (`ServerMessage`, same file):
 
@@ -234,6 +236,22 @@ Each profile has two locking modes. The setting defaults to **off**, preserving 
 
 In both modes, **Lock now** zeroes the user's remaining allowance. The preserve-tasks setting changes only what happens to the graphical session while access remains blocked.
 
+## App usage reports
+
+Each profile has an **App usage** page (button on the profile page) showing which apps were used and for how long — per day, per week (Monday–Sunday) or in total, summed over all the child's computers.
+
+How it works: every 5 seconds the agent looks at the child's running processes and works out which app each belongs to — from the systemd unit the desktop starts apps in, the launch information GTK/GNOME-style desktops leave behind, or the process tree — and matches it to the app's menu entry. It works on any desktop (GNOME, KDE, Cinnamon, XFCE, Hyprland/Sway, …) with cgroup v2 (every current distribution).
+
+What counts:
+
+- Time counts while an app is open **and** the child is active at the computer (session unlocked, not idle) — the same rule as screen time. Two apps open at the same time each count; there is no foreground-window tracking.
+- Only things with a visible menu entry are apps. Desktop components (panels, portals, background services) never show up.
+- Apps started automatically at login (tray apps, sync clients) are not counted.
+- Programs started from a terminal count as the terminal.
+- Steam games show by name (from Steam's own files), Minecraft Java as "Minecraft" (also via Prism Launcher / MultiMC), Windows programs under Wine by their `.exe` name.
+
+The agent keeps 35 days of app usage locally and sends day totals to the server once a minute. Turn it off per machine with `app_tracking = false` in `agent.toml`. Agents older than this feature simply don't report app usage; the page tells you to update them.
+
 ## Configuration
 
 ### Server — `/etc/screenguard/server.toml`
@@ -257,6 +275,7 @@ heartbeat_interval  = 10    # seconds
 user_scan_interval  = 300   # seconds
 cache_ttl_hours     = 48
 min_uid             = 1000  # ignore system accounts below this UID
+app_tracking        = true  # per-app usage reports; false = don't scan, store or send them
 ```
 
 ### Cloud mode
