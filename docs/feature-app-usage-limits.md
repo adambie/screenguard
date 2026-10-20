@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 0.6 (scan cost measured, 5 s interval with cached identities)
-- **Next step:** 1.1 — `crates/common/src/apps.rs` app-id helpers
+- **Last completed step:** 1.1 (`AppId` helpers)
+- **Next step:** 1.2 — wire types `MSG_APP_USAGE_SYNC` / `AppUsageSync` in `messages.rs`
 - **In progress / half-done:** —
 - **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
@@ -358,9 +358,12 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 1A. Shared types (`crates/common`)
 
-- [ ] **1.1 `AppId` helpers** — `crates/common/src/apps.rs`: the `app_id` string
-  format (`desktop:` / `flatpak:` / `snap:` / `steam:` / `minecraft:` / `exe:`),
-  parse/validate, max length.
+- [x] **1.1 `AppId` helpers** — `crates/common/src/apps.rs`: the `app_id` string
+  format (`desktop:` / `flatpak:` / `snap:` / `steam:` / `minecraft:` / `wine:` / `exe:`),
+  parse/validate, max length (255). `AppId::is_app()` is false for `exe:` (the
+  "other" bucket). Wire format stays a plain string (an old server drops unknown
+  kinds per entry). `desktop:` names allow anything but control chars and `/`
+  (Wine creates `wine-Programs-Game Name.desktop`).
   *Done when:* unit tests cover each prefix and reject malformed ids.
 - [ ] **1.2 Wire types** — in `messages.rs`: `MSG_APP_USAGE_SYNC`,
   `AppUsageSync { entries: Vec<AppUsageEntry> }`,
@@ -582,3 +585,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | Switched Phase 0 from sampling desktops to research: signal matrix, desktop-independent algorithm and app filter written (0.2–0.4) | 0.5 sanity check on Hyprland + KDE |
 | 2026-10-20 | 0.5 done: full algorithm in `app-scan.py`; Hyprland + KDE (KIO and GIO launches) + simulated GIO/Steam/Minecraft/Wine all correct after 5 algorithm fixes (see Sanity check results) | 0.6 measure cost |
 | 2026-10-20 | Trimmed the Hyprland sample (privacy). 0.6 done: Rust benchmark on Hyprland laptop and the KDE VM, 5 s interval with cached identities. **Phase 0 complete** | Phase 1, step 1.1 |
+| 2026-10-20 | 1.1 done: `common::apps::AppId` (parse/display/validate, 3 tests) | 1.2 wire types |
