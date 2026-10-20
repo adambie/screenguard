@@ -122,3 +122,28 @@ fn plural_mins(lang: &str, n: i32) -> &'static str {
         _ => if n == 1 { "minute" } else { "minutes" },
     }
 }
+
+/// Name of an app group: predefined groups in the child's language unless the
+/// parent renamed them.
+pub fn group_name(builtin: Option<&str>, name: &str, lang: &str) -> String {
+    let localized = match (builtin, name) {
+        (Some("games"), "Games") => match lang {
+            "es" => "Juegos",
+            "fr" => "Jeux",
+            "de" => "Spiele",
+            "pt" => "Jogos",
+            "pl" => "Gry",
+            _ => "Games",
+        },
+        (Some("browsers"), "Web browsers") => match lang {
+            "es" => "Navegadores web",
+            "fr" => "Navigateurs web",
+            "de" => "Webbrowser",
+            "pt" => "Navegadores web",
+            "pl" => "Przeglądarki",
+            _ => "Web browsers",
+        },
+        _ => return name.to_string(),
+    };
+    localized.to_string()
+}

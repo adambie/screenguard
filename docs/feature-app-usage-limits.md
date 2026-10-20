@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.8 agent-side group remaining (online + offline), then 2C enforcement. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2C enforcement: 2.9 warnings, 2.10 closing apps (safety rules!), 2.11 relaunch, 2.12 blocked groups. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -773,10 +773,19 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     `CONFIG_FORMAT` whenever the agent starts storing a new part of `UserConfig`.
   - Real machine: two `Game` apps open for 60 s → each app +60 s, the Games
     group +60 s (not 120); it reached the server and the report.
-- [ ] **2.8 Agent computes group remaining** — `limit_today + adjustments −
+- [x] **2.8 Agent computes group remaining** — `limit_today + adjustments −
   (elsewhere + local today)` per group; the last `elsewhere` and the config are
   cached in the agent DB, so the same code runs offline.
   *Done when:* unit tests for online, offline and the day boundary.
+  → `app_limits::group_status()`: a pure function (blocked days stay blocked even
+  with extra time; negative adjustments floor at 0); `cached_group_elsewhere`
+  (dated: a new day starts at 0) is filled from each `remaining_update`. The
+  heartbeat loop recomputes `group_status` every app tick and logs when a group
+  runs out; predefined group names are localized for the child
+  (`i18n::group_name`).
+  - Real machine: Games limited to 3 min today with 60 s already used, then
+    the test game ran → "app group 'Games' has no time left today" logged at
+    exactly 180 s.
 
 ### 2C. Enforcement
 

@@ -1,5 +1,6 @@
 mod app_catalog;
 mod app_ident;
+mod app_limits;
 mod app_scan;
 mod app_usage;
 mod config;

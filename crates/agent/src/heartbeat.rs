@@ -89,6 +89,8 @@ pub struct HeartbeatLoop {
     cloud_account: Option<String>,
     /// Per-app usage (#27); `None` without cgroup v2.
     app_tracker: Option<AppTracker>,
+    /// Remaining time per limited app group, per uid, as of the last app tick.
+    group_status: HashMap<u32, Vec<crate::app_limits::GroupStatus>>,
 }
 
 impl HeartbeatLoop {
@@ -125,6 +127,7 @@ impl HeartbeatLoop {
             web_filter: WebFilter::new(web_filter_available),
             cloud_account,
             app_tracker: (app_tracking && crate::app_scan::supported()).then(AppTracker::new),
+            group_status: HashMap::new(),
         }
     }
 
@@ -266,6 +269,30 @@ impl HeartbeatLoop {
                 return;
             }
         }
+        drop(db);
+        self.update_group_status(&users, &today).await;
+    }
+
+    /// Recomputes remaining time per limited group from this machine's group
+    /// time, the last known time on other computers and the cached limits.
+    async fn update_group_status(&mut self, users: &[TrackedUser], today: &str) {
+        let weekday = Local::now().weekday().num_days_from_monday() as u8;
+        let db = self.db.lock().await;
+        let mut status = HashMap::new();
+        for u in users {
+            let local = db.get_group_usage(u.uid, today).unwrap_or_default();
+            let elsewhere = db.get_group_elsewhere(u.uid, today).unwrap_or_default();
+            let s = crate::app_limits::group_status(&u.groups, weekday, &local, &elsewhere, &HashMap::new(), &u.language);
+            let before = self.group_status.get(&u.uid);
+            for g in s.iter().filter(|g| g.exhausted()) {
+                let was = before.and_then(|b| b.iter().find(|o| o.group_id == g.group_id)).is_some_and(|o| o.exhausted());
+                if !was {
+                    tracing::info!("uid={}: app group '{}' has no time left today", u.uid, g.name);
+                }
+            }
+            status.insert(u.uid, s);
+        }
+        self.group_status = status;
     }
 
     async fn handle_connection_event(&self, event: ConnectionEvent) -> Result<()> {
@@ -506,12 +533,17 @@ impl HeartbeatLoop {
             ServerMessage::RemainingUpdate(update) => {
                 {
                     let db = self.db.lock().await;
+                    let today = Local::now().date_naive().to_string();
                     for entry in &update.users {
                         db.upsert_server_remaining(
                             entry.local_uid,
                             entry.remaining_minutes,
                             enforce_str(entry.enforce.clone()),
                         )?;
+                        // group time on the child's other computers (app limits)
+                        if let Err(e) = db.save_group_elsewhere(entry.local_uid, &today, &entry.group_usage_elsewhere) {
+                            tracing::warn!("Caching group usage failed: {e}");
+                        }
                     }
                 }
                 if let Some(ref handle) = self.status_handle {

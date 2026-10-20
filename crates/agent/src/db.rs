@@ -80,6 +80,16 @@ impl Db {
                 PRIMARY KEY (local_uid, date, group_id)
             )",
         );
+        // Group time on the child's other computers, last reported by the server.
+        let _ = self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS cached_group_elsewhere (
+                local_uid INTEGER NOT NULL,
+                date      TEXT NOT NULL,
+                group_id  TEXT NOT NULL,
+                seconds   INTEGER NOT NULL,
+                PRIMARY KEY (local_uid, group_id)
+            )",
+        );
         // App groups from the server's config (#27 Phase 2), as JSON per user.
         let _ = self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS cached_app_groups (
@@ -249,6 +259,7 @@ impl Db {
             "app_usage_log",
             "group_usage_log",
             "cached_app_groups",
+            "cached_group_elsewhere",
             "server_remaining",
             "active_sessions",
             "config_meta",
@@ -587,6 +598,29 @@ impl Db {
     /// This machine's time per group for a user on a date.
     pub fn get_group_usage(&self, uid: u32, date: &str) -> Result<std::collections::HashMap<String, u64>> {
         let mut stmt = self.conn.prepare("SELECT group_id, seconds FROM group_usage_log WHERE local_uid = ?1 AND date = ?2")?;
+        let rows = stmt
+            .query_map(params![uid, date], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<std::collections::HashMap<String, u64>>>()?;
+        Ok(rows)
+    }
+
+    /// Replaces a user's "time on other computers" with the server's latest numbers.
+    pub fn save_group_elsewhere(&self, uid: u32, date: &str, usage: &[common::models::GroupUsage]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM cached_group_elsewhere WHERE local_uid = ?1", params![uid])?;
+        for u in usage {
+            tx.execute(
+                "INSERT INTO cached_group_elsewhere (local_uid, date, group_id, seconds) VALUES (?1, ?2, ?3, ?4)",
+                params![uid, date, u.group_id, u.used_seconds],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Last known time per group on other computers, for `date` only (a new day starts at 0).
+    pub fn get_group_elsewhere(&self, uid: u32, date: &str) -> Result<std::collections::HashMap<String, u64>> {
+        let mut stmt = self.conn.prepare("SELECT group_id, seconds FROM cached_group_elsewhere WHERE local_uid = ?1 AND date = ?2")?;
         let rows = stmt
             .query_map(params![uid, date], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<std::collections::HashMap<String, u64>>>()?;
@@ -1058,6 +1092,17 @@ mod tests {
         assert_eq!(db.get_unsynced_app_usage(Some("2026-10-19")).unwrap().len(), 2);
         assert_eq!(db.prune_app_usage("2026-09-15").unwrap(), 1);
         assert_eq!(db.get_app_usage_seconds(1000, "2026-09-01", "steam:570").unwrap(), 0);
+    }
+
+    #[test]
+    fn group_time_elsewhere_is_cached_per_day() {
+        use common::models::GroupUsage;
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.save_group_elsewhere(1000, "2026-10-20", &[GroupUsage { group_id: "g".into(), used_seconds: 600 }]).unwrap();
+        assert_eq!(db.get_group_elsewhere(1000, "2026-10-20").unwrap()["g"], 600);
+        assert!(db.get_group_elsewhere(1000, "2026-10-21").unwrap().is_empty()); // a new day
+        db.save_group_elsewhere(1000, "2026-10-20", &[]).unwrap(); // replaced
+        assert!(db.get_group_elsewhere(1000, "2026-10-20").unwrap().is_empty());
     }
 
     #[test]
