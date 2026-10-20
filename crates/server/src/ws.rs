@@ -332,7 +332,8 @@ async fn handle_agent_message(
 
         MSG_APP_USAGE_SYNC => {
             let sync: AppUsageSync = envelope.parse_payload()?;
-            let today = chrono::Utc::now().date_naive();
+            // the server's local date, like the screen-time usage API
+            let today = chrono::Local::now().date_naive();
             let r = crate::app_usage::ingest(&state.db, agent_id, &sync, today).await?;
             if r.rejected > 0 {
                 tracing::warn!("Agent {agent_id}: app usage sync rejected {} of {} entries", r.rejected, sync.entries.len());

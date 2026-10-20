@@ -84,6 +84,72 @@ pub async fn ingest(pool: &DbPool, agent_id: Uuid, sync: &AppUsageSync, today: N
     Ok(out)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AppTotal {
+    pub app_id: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub seconds: i64,
+}
+
+/// Per-app totals of a profile between two dates (inclusive), summed over all
+/// its agents; longest first. `None` dates mean unbounded.
+pub async fn totals(pool: &DbPool, profile_id: Uuid, from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<Vec<AppTotal>> {
+    let rows: Vec<(String, Option<String>, Option<String>, i64)> = sqlx::query_as(
+        "SELECT u.app_id, c.display_name, c.icon, SUM(u.seconds) AS total
+         FROM app_usage u
+         JOIN agent_users au ON au.id = u.agent_user_id
+         LEFT JOIN app_catalog c ON c.app_id = u.app_id
+         WHERE au.profile_id = $1 AND u.date >= $2 AND u.date <= $3
+         GROUP BY u.app_id, c.display_name, c.icon",
+    )
+    .bind(profile_id.to_string())
+    .bind(from.map_or("0000-00-00".to_string(), |d| d.to_string()))
+    .bind(to.map_or("9999-99-99".to_string(), |d| d.to_string()))
+    .fetch_all(pool)
+    .await?;
+    let mut out: Vec<AppTotal> = rows
+        .into_iter()
+        .map(|(app_id, name, icon, seconds)| AppTotal {
+            name: name.unwrap_or_else(|| app_id.split_once(':').map_or(app_id.clone(), |(_, n)| n.to_string())),
+            app_id,
+            icon,
+            seconds,
+        })
+        .collect();
+    out.sort_by(|a, b| b.seconds.cmp(&a.seconds).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(out)
+}
+
+/// (date, app_id, seconds) per day between two dates, for the week view.
+pub async fn daily(pool: &DbPool, profile_id: Uuid, from: NaiveDate, to: NaiveDate) -> Result<Vec<(String, String, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT u.date, u.app_id, SUM(u.seconds) AS total
+         FROM app_usage u
+         JOIN agent_users au ON au.id = u.agent_user_id
+         WHERE au.profile_id = $1 AND u.date >= $2 AND u.date <= $3
+         GROUP BY u.date, u.app_id
+         ORDER BY u.date, u.app_id",
+    )
+    .bind(profile_id.to_string())
+    .bind(from.to_string())
+    .bind(to.to_string())
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Does any agent of the profile report per-app usage?
+pub async fn profile_has_capability(pool: &DbPool, profile_id: Uuid) -> Result<bool> {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agents a JOIN agent_users au ON au.agent_id = a.id
+         WHERE au.profile_id = $1 AND a.app_usage_available = 1",
+    )
+    .bind(profile_id.to_string())
+    .fetch_one(pool)
+    .await?;
+    Ok(n > 0)
+}
+
 /// Trimmed, without control characters, at most `max` chars; `None` if empty.
 fn clean(s: &str, max: usize) -> Option<String> {
     let s: String = s.chars().filter(|c| !c.is_control()).take(max).collect();
@@ -92,7 +158,7 @@ fn clean(s: &str, max: usize) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use common::messages::AppUsageEntry;
     use common::models::LocalUser;
@@ -182,6 +248,75 @@ mod tests {
         assert_eq!(seconds(&pool, au, "2026-10-20", "desktop:firefox").await, Some(60));
         ingest(&pool, agent, &send(90), day("2026-10-20")).await.unwrap();
         assert_eq!(seconds(&pool, au, "2026-10-20", "desktop:firefox").await, Some(90));
+
+        let (a1, _, _, profile) = seeded(&pool).await;
+        let t = totals(&pool, profile, Some(day("2026-10-19")), Some(day("2026-10-25"))).await.unwrap();
+        assert_eq!(t.iter().map(|a| (a.app_id.as_str(), a.seconds)).collect::<Vec<_>>(), vec![("steam:570", 4200), ("desktop:firefox", 3000)]);
+        assert_eq!(t[0].name, "Dota 2");
+        assert_eq!(daily(&pool, profile, day("2026-10-19"), day("2026-10-25")).await.unwrap().len(), 3);
+        db::update_agent_app_usage(&pool, a1, true).await.unwrap();
+        assert!(profile_has_capability(&pool, profile).await.unwrap());
+    }
+
+    /// Two agents in one profile, one in another; returns (agent1, agent2, other, profile).
+    pub(crate) async fn seeded(pool: &DbPool) -> (Uuid, Uuid, Uuid, Uuid) {
+        let profile = db::create_profile(pool, "Kid").await.unwrap().id;
+        let other_profile = db::create_profile(pool, "Other").await.unwrap().id;
+        let (a1, au1) = agent_with_user(pool, "laptop", 1001).await;
+        let (a2, au2) = agent_with_user(pool, "desktop", 1000).await;
+        let (a3, au3) = agent_with_user(pool, "other", 1000).await;
+        for (au, p) in [(au1, profile), (au2, profile), (au3, other_profile)] {
+            db::update_agent_user(pool, au, Some(p), Some("managed")).await.unwrap();
+        }
+        let d = day("2026-10-20");
+        let put = |agent, entries: Vec<AppUsageEntry>| async move {
+            ingest(pool, agent, &AppUsageSync { entries }, d).await.unwrap();
+        };
+        put(a1, vec![
+            entry(1001, "2026-10-20", "desktop:firefox", "Firefox", 1800),
+            entry(1001, "2026-10-20", "steam:570", "Dota 2", 3600),
+            entry(1001, "2026-10-19", "steam:570", "Dota 2", 600), // Monday of that week
+            entry(1001, "2026-10-12", "desktop:foot", "Foot", 60),  // previous week
+        ]).await;
+        put(a2, vec![entry(1000, "2026-10-20", "desktop:firefox", "Firefox", 1200)]).await;
+        put(a3, vec![entry(1000, "2026-10-20", "desktop:firefox", "Firefox", 9999)]).await;
+        (a1, a2, a3, profile)
+    }
+
+    #[tokio::test]
+    async fn totals_sum_agents_of_the_profile_only() {
+        let pool = db::open_in_memory().await;
+        let (_, _, _, profile) = seeded(&pool).await;
+        let t = |from, to| {
+            let pool = pool.clone();
+            async move {
+                totals(&pool, profile, from, to).await.unwrap().into_iter().map(|a| (a.app_id, a.seconds)).collect::<Vec<_>>()
+            }
+        };
+        let d = |s| Some(day(s));
+        assert_eq!(t(d("2026-10-20"), d("2026-10-20")).await, vec![("steam:570".into(), 3600), ("desktop:firefox".into(), 3000)]);
+        assert_eq!(t(d("2026-10-19"), d("2026-10-25")).await, vec![("steam:570".into(), 4200), ("desktop:firefox".into(), 3000)]);
+        assert_eq!(t(None, None).await, vec![("steam:570".into(), 4200), ("desktop:firefox".into(), 3000), ("desktop:foot".into(), 60)]);
+        let first = &totals(&pool, profile, None, None).await.unwrap()[0];
+        assert_eq!((first.name.as_str(), first.icon.as_deref()), ("Dota 2", Some("icon")));
+
+        let days = daily(&pool, profile, day("2026-10-19"), day("2026-10-25")).await.unwrap();
+        assert_eq!(days, vec![
+            ("2026-10-19".into(), "steam:570".into(), 600),
+            ("2026-10-20".into(), "desktop:firefox".into(), 3000),
+            ("2026-10-20".into(), "steam:570".into(), 3600),
+        ]);
+    }
+
+    #[tokio::test]
+    async fn capability_follows_the_profiles_agents() {
+        let pool = db::open_in_memory().await;
+        let (a1, _, a3, profile) = seeded(&pool).await;
+        assert!(!profile_has_capability(&pool, profile).await.unwrap());
+        db::update_agent_app_usage(&pool, a3, true).await.unwrap(); // other profile's agent
+        assert!(!profile_has_capability(&pool, profile).await.unwrap());
+        db::update_agent_app_usage(&pool, a1, true).await.unwrap();
+        assert!(profile_has_capability(&pool, profile).await.unwrap());
     }
 
     #[tokio::test]

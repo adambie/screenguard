@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.14 (server migration v10, ingestion, capability)
-- **Next step:** 1.15 — reports API `GET /api/v1/profiles/{id}/app-usage`
+- **Last completed step:** 1.15 (reports API) — **server side of Phase 1 done**
+- **Next step:** 1.16 — web UI "App usage" page
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -523,10 +523,21 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   → `agents.app_usage_available` (v10), set on every hello
   (`update_agent_app_usage`), `app_usage_available` in `GET /agents` and
   `GET /agents/{id}` (`null` until the agent connects with a new version).
-- [ ] **1.15 Reports API** — `GET /api/v1/profiles/{id}/app-usage?range=day|week|total&date=YYYY-MM-DD`
+- [x] **1.15 Reports API** — `GET /api/v1/profiles/{id}/app-usage?range=day|week|total&date=YYYY-MM-DD`
   → per app: display name, icon, seconds; summed across all agents of the profile
   (profile-level, like screen time). Also per-day series for the week view.
   *Done when:* API tests with seeded data return correct sums and ordering.
+  → `api::usage::get_app_usage` + `app_usage::{totals, daily, profile_has_capability}`.
+  - `week` is the Monday–Sunday week containing `date`; `total` is all
+    history; `date` defaults to the server's local date (like `/usage`).
+  - Response: `{ range, from, to, apps: [{app_id, name, icon, seconds}],
+    total_seconds, days: [{date, seconds, apps:[{app_id, seconds}]}] (week only),
+    app_usage_available }`. Apps are sorted by time, then name, and summed over
+    the profile's agents.
+  - Tests: query tests (other profiles excluded, week bounds, catalogue name),
+    an HTTP test (day/week/total, 400 on a bad range or date, 404, 401), and the
+    Postgres test extended to the report queries (passed). Ingestion now also
+    uses the server's local date.
 
 ### 1D. Web UI (`webui/`)
 
@@ -697,3 +708,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.10 done: `send_app_usage_sync` (60 s + on connect with 2-day resend), test | 1.11 config switch |
 | 2026-10-20 | 1.11 done: `app_tracking` config (default on), capability follows it. Agent side (1A–1B) complete | 1.12 server migration |
 | 2026-10-20 | 1.12–1.14 done: v10 (`app_catalog`, `app_usage`, `agents.app_usage_available`), upgrade from 0.10.17 verified on SQLite + Postgres; `app_usage::ingest` with MAX upsert (tests on both DBs); capability stored and in agents API | 1.15 reports API |
+| 2026-10-20 | 1.15 done: `GET /profiles/{id}/app-usage` (day/week/total), tests on SQLite + Postgres | 1.16 web UI |

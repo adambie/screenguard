@@ -9,6 +9,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::api::auth::{internal, not_found};
+use crate::app_usage;
 use crate::db;
 use crate::remaining;
 use crate::state::AppState;
@@ -64,6 +65,72 @@ pub async fn get_usage(
     }).collect();
 
     Ok(Json(serde_json::json!({ "usage": usage, "by_agent": by_agent_out })))
+}
+
+#[derive(Deserialize)]
+pub struct AppUsageQuery {
+    /// `day` (default), `week` (Monday–Sunday containing `date`) or `total`.
+    pub range: Option<String>,
+    /// YYYY-MM-DD, default today (server's local date).
+    pub date: Option<String>,
+}
+
+/// Per-app usage of a profile (#27), summed over all its agents.
+pub async fn get_app_usage(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<AppUsageQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    db::get_profile(&state.db, id).await.map_err(internal)?.ok_or_else(not_found)?;
+    let bad = |msg: &str| (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg })));
+
+    let date = match q.date.as_deref() {
+        Some(d) => d.parse::<chrono::NaiveDate>().map_err(|_| bad("date must be YYYY-MM-DD"))?,
+        None => Local::now().date_naive(),
+    };
+    let range = q.range.as_deref().unwrap_or("day");
+    let (from, to) = match range {
+        "day" => (Some(date), Some(date)),
+        "week" => {
+            let monday = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+            (Some(monday), Some(monday + chrono::Duration::days(6)))
+        }
+        "total" => (None, None),
+        _ => return Err(bad("range must be day, week or total")),
+    };
+
+    let apps = app_usage::totals(&state.db, id, from, to).await.map_err(internal)?;
+    let total_seconds: i64 = apps.iter().map(|a| a.seconds).sum();
+    let days = match (range, from, to) {
+        ("week", Some(f), Some(t)) => {
+            let rows = app_usage::daily(&state.db, id, f, t).await.map_err(internal)?;
+            f.iter_days()
+                .take_while(|d| *d <= t)
+                .map(|d| {
+                    let ds = d.to_string();
+                    let apps: Vec<_> = rows
+                        .iter()
+                        .filter(|(rd, _, _)| *rd == ds)
+                        .map(|(_, app, s)| serde_json::json!({ "app_id": app, "seconds": s }))
+                        .collect();
+                    let seconds: i64 = rows.iter().filter(|(rd, _, _)| *rd == ds).map(|(_, _, s)| s).sum();
+                    serde_json::json!({ "date": ds, "seconds": seconds, "apps": apps })
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+    let available = app_usage::profile_has_capability(&state.db, id).await.map_err(internal)?;
+
+    Ok(Json(serde_json::json!({
+        "range": range,
+        "from": from,
+        "to": to,
+        "apps": apps,
+        "total_seconds": total_seconds,
+        "days": days,
+        "app_usage_available": available,
+    })))
 }
 
 pub async fn get_status(

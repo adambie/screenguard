@@ -59,6 +59,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/profiles/{id}/blocked-domains/{domain_id}", patch(profiles::patch_blocked_domain).delete(profiles::delete_blocked_domain))
         // Usage & dashboard
         .route("/profiles/{id}/usage", get(usage::get_usage))
+        .route("/profiles/{id}/app-usage", get(usage::get_app_usage))
         .route("/profiles/{id}/status", get(usage::get_status))
         .route("/dashboard", get(usage::dashboard))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
@@ -221,6 +222,47 @@ mod tests {
         let agent = crate::db::get_agent_by_id(&state.db, id).await.unwrap().unwrap();
         assert_eq!(agent.status, "paired");
         assert_eq!(agent.auth_token_hash, token_hash);
+    }
+
+    #[tokio::test]
+    async fn app_usage_report() {
+        let (app, state) = app_with_state().await;
+        let tok = admin_token(&app).await;
+        let (a1, _, _, profile) = crate::app_usage::tests::seeded(&state.db).await;
+        crate::db::update_agent_app_usage(&state.db, a1, true).await.unwrap();
+        let get = |q: String| {
+            let (app, tok) = (app.clone(), tok.clone());
+            async move { call(&app, Method::GET, &format!("/profiles/{profile}/app-usage{q}"), Some(&tok), None).await }
+        };
+
+        let (s, day) = get("?range=day&date=2026-10-20".into()).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(day["total_seconds"], 6600);
+        assert_eq!(day["apps"][0]["app_id"], "steam:570");
+        assert_eq!(day["apps"][0]["name"], "Dota 2");
+        assert_eq!(day["apps"][1]["seconds"], 3000);
+        assert_eq!(day["app_usage_available"], true);
+        assert_eq!(day["days"].as_array().unwrap().len(), 0);
+
+        // 2026-10-22 is a Thursday: the week is Mon 19 – Sun 25
+        let (_, week) = get("?range=week&date=2026-10-22".into()).await;
+        assert_eq!((week["from"].as_str(), week["to"].as_str()), (Some("2026-10-19"), Some("2026-10-25")));
+        assert_eq!(week["total_seconds"], 7200);
+        let days = week["days"].as_array().unwrap();
+        assert_eq!(days.len(), 7);
+        assert_eq!((days[0]["seconds"].as_i64(), days[1]["seconds"].as_i64(), days[2]["seconds"].as_i64()), (Some(600), Some(6600), Some(0)));
+
+        let (_, total) = get("?range=total".into()).await;
+        assert_eq!(total["total_seconds"], 7260);
+
+        let (s, _) = get("?range=year".into()).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = get("?date=20-10-2026".into()).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = call(&app, Method::GET, &format!("/profiles/{}/app-usage", uuid::Uuid::new_v4()), Some(&tok), None).await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let (s, _) = call(&app, Method::GET, &format!("/profiles/{profile}/app-usage"), None, None).await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 
     async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
