@@ -1,0 +1,34 @@
+# Arch Linux, Hyprland via uwsm (Wayland), uid 1000, run unprivileged, 2026-10-20.
+# Trimmed excerpt: one example per cgroup/unit pattern; personal apps and scripts
+# removed. Format: PID COMM | cgroup unit (as seen in /proc/<pid>/cgroup).
+
+# compositor and its keybinding launches without `uwsm app` (session.slice)
+   1358  Hyprland         | session.slice/wayland-wm@hyprland.desktop.service
+   1425  quickshell       | session.slice/wayland-wm@hyprland.desktop.service
+
+# uwsm app launches: app-<Compositor>-<command or id>-<rand>.scope (app-graphical.slice)
+   3374  chromium         | app.slice/app-graphical.slice/app-Hyprland-chromium-2125de24.scope
+   8782  foot             | app.slice/app-graphical.slice/app-Hyprland-xdg\x2dterminal\x2dexec-4ac1367f.scope
+   8803  bash             | app.slice/app-graphical.slice/app-Hyprland-xdg\x2dterminal\x2dexec-4ac1367f.scope
+
+# Chromium self-scope: main process moves itself out of the launcher's unit
+   3350  chromium         | app.slice/app-org.chromium.Chromium-3350.scope
+# ... and so does any Electron app (main process; its children stay in the launcher's unit)
+   1691  electron         | app.slice/app-org.chromium.Chromium-1691.scope
+   1967  electron         | app.slice/app-graphical.slice/app-<electron-app>@autostart.service
+
+# XDG autostart
+   1689  <tray-app>       | app.slice/app-graphical.slice/app-<Id>@autostart.service
+
+# user services under app.slice (not apps)
+    990  <daemon>         | app.slice/<daemon>.service
+   1408  dconf-service    | app.slice/dconf.service
+   1545  at-spi2-registr  | app.slice/dbus-:1.22-org.a11y.atspi.Registry@0.service
+
+# desktop services in session.slice / background.slice (not apps)
+   1717  xdg-desktop-por  | session.slice/xdg-desktop-portal.service
+    989  pipewire         | session.slice/pipewire.service
+ 100789  localsearch-3    | background.slice/localsearch-3.service
+
+# login session
+   1005  sh               | session-1.scope

@@ -1,0 +1,90 @@
+# CachyOS, KDE Plasma (Wayland) — test machine screenguardTest, uid 1000 (adam), run unprivileged, 2026-10-20. Few apps open (only Alacritty) — needs a richer rerun.
+# uid=1000  desktop=KDE  session=wayland  processes=48
+    PID  COMM             EXE                KIND       APP_ID                                   HOW / UNIT
+    570  systemd          ?                  other      exe:?                                    exe unreadable (run as root) | init.scope
+    572  (sd-pam)         ?                  other      exe:?                                    exe unreadable (run as root) | init.scope
+    583  ksecretd         ksecretd           login-session exe:ksecretd                             exe fallback | session-2.scope
+    584  startplasma-way  startplasma-waylan login-session exe:startplasma-wayland                  exe fallback | session-2.scope
+    623  dbus-broker-lau  dbus-broker-launch session    exe:dbus-broker-launch                   exe fallback | dbus-broker.service
+    624  dbus-broker      dbus-broker        session    exe:dbus-broker                          exe fallback | dbus-broker.service
+    632  kwin_wayland_wr  kwin_wayland_wrapp session    exe:kwin_wayland_wrapper                 exe fallback | plasma-kwin_wayland.service
+    636  kwin_wayland     ?                  session    exe:?                                    exe unreadable (run as root) | plasma-kwin_wayland.service
+    652  pipewire         pipewire           session    exe:pipewire                             exe fallback | pipewire.service
+    653  wireplumber      wireplumber        session    exe:wireplumber                          exe fallback | wireplumber.service
+    667  Xwayland         Xwayland           session    exe:Xwayland                             exe fallback | plasma-kwin_wayland.service
+    677  at-spi-bus-laun  at-spi-bus-launche session    exe:at-spi-bus-launcher                  exe fallback | at-spi-dbus-bus.service
+    686  dbus-broker-lau  dbus-broker-launch session    exe:dbus-broker-launch                   exe fallback | at-spi-dbus-bus.service
+    687  dbus-broker      dbus-broker        session    exe:dbus-broker                          exe fallback | at-spi-dbus-bus.service
+    700  ksmserver        ksmserver          session    exe:ksmserver                            exe fallback | plasma-ksmserver.service
+    702  kded6            kded6              session    exe:kded6                                exe fallback | plasma-kded6.service
+    714  plasmashell      plasmashell        session    exe:plasmashell                          exe fallback | plasma-plasmashell.service
+    716  at-spi2-registr  at-spi2-registryd  user-service exe:at-spi2-registryd                    exe fallback | dbus-:1.14-org.a11y.atspi.Registry@0.service
+    726  kactivitymanage  kactivitymanagerd  background exe:kactivitymanagerd                    exe fallback | plasma-kactivitymanagerd.service
+    727  gmenudbusmenupr  gmenudbusmenuproxy background exe:gmenudbusmenuproxy                   exe fallback | plasma-gmenudbusmenuproxy.service
+    728  kaccess          kaccess            background exe:kaccess                              exe fallback | plasma-kaccess.service
+    729  polkit-kde-auth  ?                  background exe:?                                    exe unreadable (run as root) | plasma-polkit-agent.service
+    730  org_kde_powerde  org_kde_powerdevil background exe:org_kde_powerdevil                   exe fallback | plasma-powerdevil.service
+    731  xembedsniproxy   xembedsniproxy     background exe:xembedsniproxy                       exe fallback | plasma-xembedsniproxy.service
+    736  dconf-service    dconf-service      user-service exe:dconf-service                        exe fallback | dconf.service
+    780  pipewire-pulse   pipewire           session    exe:pipewire                             exe fallback | pipewire-pulse.service
+    790  xsettingsd       xsettingsd         session    exe:xsettingsd                           exe fallback | plasma-kded6.service
+    792  obexd            obexd              user-service exe:obexd                                exe fallback | obex.service
+    878  bash             bash               autostart  scope:limine-snapper-notify              scope (-), no .desktop | app-limine\x2dsnapper\x2dnotify@autostart.service
+    881  screenguard-tra  screenguard-tray ( autostart  scope:screenguard-tray                   scope (-), no .desktop | app-screenguard\x2dtray@autostart.service
+    884  xdg-desktop-por  xdg-desktop-portal session    exe:xdg-desktop-portal                   exe fallback | xdg-desktop-portal.service
+    896  xdg-permission-  xdg-permission-sto session    exe:xdg-permission-store                 exe fallback | xdg-permission-store.service
+    903  journalctl       journalctl         autostart  scope:limine-snapper-notify              scope (-), no .desktop | app-limine\x2dsnapper\x2dnotify@autostart.service
+    911  xdg-document-po  xdg-document-porta session    exe:xdg-document-portal                  exe fallback | xdg-document-portal.service
+    918  fusermount3      ?                  session    exe:?                                    exe unreadable (run as root) | xdg-document-portal.service
+    925  xdg-desktop-por  xdg-desktop-portal user-service exe:xdg-desktop-portal-gtk               exe fallback | xdg-desktop-portal-gtk.service
+    944  xdg-desktop-por  xdg-desktop-portal session    exe:xdg-desktop-portal-kde               exe fallback | plasma-xdg-desktop-portal-kde.service
+    946  kdeconnectd      kdeconnectd        user-service exe:kdeconnectd                          exe fallback | dbus-:1.2-org.kde.kdeconnect@0.service
+   1003  arch-update-tra  arch-update-tray   autostart  desktop:arch-update-tray                 scope (-) + .desktop | app-arch\x2dupdate\x2dtray@autostart.service
+   1208  baloorunner      baloorunner        background exe:baloorunner                          exe fallback | plasma-baloorunner.service
+   1214  alacritty        alacritty          app        desktop:Alacritty                        scope (-) + .desktop | app-Alacritty@eab9ff93037f490eb6f5e5972c4b366a.service
+   1222  fish             fish               app        desktop:Alacritty                        scope (-) + .desktop | app-Alacritty@eab9ff93037f490eb6f5e5972c4b366a.service
+   1415  kscreenlocker_g  ?                  session    exe:?                                    exe unreadable (run as root) | plasma-kwin_wayland.service
+   2483  notification.sh  bash               user-service exe:bash                                 exe fallback | arch-update-notification-20261019-161119.service
+   2502  notify-send      notify-send        user-service exe:notify-send                          exe fallback | arch-update-notification-20261019-161119.service
+   4618  sshd-session     ?                  login-session exe:?                                    exe unreadable (run as root) | session-8.scope
+   4639  fish             fish               login-session exe:fish                                 exe fallback | session-8.scope
+   4642  python3          python3.14         login-session exe:python3.14                           exe fallback | session-8.scope
+
+# summary: app_id -> process count
+     7  exe:?
+     2  desktop:Alacritty
+     2  exe:dbus-broker
+     2  exe:dbus-broker-launch
+     2  exe:pipewire
+     2  scope:limine-snapper-notify
+     1  desktop:arch-update-tray
+     1  exe:Xwayland
+     1  exe:at-spi-bus-launcher
+     1  exe:at-spi2-registryd
+     1  exe:baloorunner
+     1  exe:bash
+     1  exe:dconf-service
+     1  exe:fish
+     1  exe:gmenudbusmenuproxy
+     1  exe:kaccess
+     1  exe:kactivitymanagerd
+     1  exe:kdeconnectd
+     1  exe:kded6
+     1  exe:ksecretd
+     1  exe:ksmserver
+     1  exe:kwin_wayland_wrapper
+     1  exe:notify-send
+     1  exe:obexd
+     1  exe:org_kde_powerdevil
+     1  exe:plasmashell
+     1  exe:python3.14
+     1  exe:startplasma-wayland
+     1  exe:wireplumber
+     1  exe:xdg-desktop-portal
+     1  exe:xdg-desktop-portal-gtk
+     1  exe:xdg-desktop-portal-kde
+     1  exe:xdg-document-portal
+     1  exe:xdg-permission-store
+     1  exe:xembedsniproxy
+     1  exe:xsettingsd
+     1  scope:screenguard-tray

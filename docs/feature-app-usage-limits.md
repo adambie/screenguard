@@ -1,6 +1,6 @@
 # Feature — per-app usage reports, app groups and group limits
 
-- **Status:** Planned — Phase 0 not started
+- **Status:** In progress — Phase 0 (detection spike)
 - **Started:** 2026-10-20
 - **Tracking issue:** [#27](https://github.com/adambie/screenguard/issues/27) (separate game and screen time)
 - **Inspiration:** Google Family Link (per-app usage, app limits); Timekpr-nExT "PlayTime" (process masks, separate allowance)
@@ -44,10 +44,13 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 0 — Detection spike
-- **Last completed step:** —
-- **Next step:** 0.1
-- **In progress / half-done:** —
-- **Blockers / open questions:** see [Open questions](#open-questions)
+- **Last completed step:** 0.1 (scan script `docs/spikes/app-scan.py`)
+- **Next step:** 0.2 — richer KDE sample (open browser, a Flatpak, Steam/Minecraft on
+  screenguardTest), then GNOME and Cinnamon machines (need access to them)
+- **In progress / half-done:** 0.2 — Hyprland sample done (extra, not in the list),
+  KDE sample taken but with only one app open
+- **Blockers / open questions:** GNOME + Cinnamon test machines needed; see
+  [Open questions](#open-questions)
 
 ---
 
@@ -183,7 +186,7 @@ double-count (server upserts with the reported total).
 Purpose: prove the cgroup approach on real desktops **before** designing tables.
 Output is knowledge + a throwaway script, recorded in this doc.
 
-- [ ] **0.1 Write a read-only scan script** (`docs/spikes/app-scan.sh` or a small
+- [x] **0.1 Write a read-only scan script** (`docs/spikes/app-scan.sh` or a small
   Python file, kept out of the build). For a given UID: list processes, their
   `/proc/<pid>/cgroup` path, `exe`, `comm`, short cmdline, and the derived
   candidate `app_id`.
@@ -192,9 +195,10 @@ Output is knowledge + a throwaway script, recorded in this doc.
   and typical apps open (browser, a Flatpak, a Steam game or Minecraft, a terminal
   app, file manager):
   - [ ] GNOME (Wayland)
-  - [ ] KDE Plasma (Wayland)
+  - [ ] KDE Plasma (Wayland) — first sample `docs/spikes/kde-cachyos.txt` (only Alacritty open; rerun with more apps)
   - [ ] Cinnamon (X11)
   - [ ] (optional) XFCE
+  - [x] (extra) Hyprland via uwsm — `docs/spikes/hyprland-arch.txt`
   *Done when:* raw output for each is saved under `docs/spikes/` (redact cmdlines).
 - [ ] **0.3 Record findings in [Decision log](#decision-log):** which desktops
   create `app-*.scope` per app; scope naming format per desktop; how Steam games,
@@ -398,7 +402,7 @@ Output is knowledge + a throwaway script, recorded in this doc.
 | Q3 | Which scan interval keeps CPU ≤ 1 % on the slowest machine? | |
 | Q4 | Does an old (0.10.x) server tolerate unknown WS message types? (step 1.4) | |
 | Q5 | Should group limits be per profile only, or allow a global default per group? | |
-| Q6 | Count apps launched from a terminal as the terminal (inherited scope) or try to attribute to the child process's exe? | |
+| Q6 | Count apps launched from a terminal as the terminal (inherited scope) or try to attribute to the child process's exe? | Confirmed on KDE + Hyprland that terminal children share the terminal's unit. Decision pending. |
 
 ---
 
@@ -411,6 +415,11 @@ Output is knowledge + a throwaway script, recorded in this doc.
 | 2026-10-20 | Cmdlines never sent to the server | Privacy — may contain URLs, file names, tokens |
 | 2026-10-20 | Agent syncs per-day totals; server upserts with MAX | Retries/reconnects can't double-count |
 | 2026-10-20 | Phase 1 is observe-only | Validate detection quality on real machines before anything gets killed |
+| 2026-10-20 | Spike finding: only units named `app-…` under `app.slice` are apps; other units there are user services (`syncthing.service`, `dconf.service`, portals, `dbus-:1.x-…@0.service`) → ignore | Seen on Hyprland and KDE |
+| 2026-10-20 | Spike finding: unit formats differ — KDE: `app-<DesktopID>@<uuid>.service`; Hyprland/uwsm: `app-Hyprland-<cmd or id>-<rand>.scope`; D-Bus/xdg activation: `app-<reverse.dns.id>-<pid>.scope`; XDG autostart: `app-<id>@autostart.service`. Parser must handle all; ids are systemd-escaped (`\x2d`) | Per systemd's desktop-environment naming convention, confirmed in samples |
+| 2026-10-20 | Resolution chain: unit id → `<id>.desktop` (case-insensitive) → exe → `.desktop` whose `Exec=` binary matches → `scope:<id>` → `exe:<name>`. When several `.desktop` files share a binary, prefer the one whose id equals the binary / has no extra args (seen: `foot` matched `foot-server`) | Same app got two different unit names (Chromium); exe matching merges them |
+| 2026-10-20 | Autostart units (`@autostart.service`, tray apps like Nextcloud, Bitwarden, screenguard-tray) are tracked but **not counted as usage by default**; enforcement still applies to them if they're in a limited group | Background tray apps would otherwise accumulate "usage" all day |
+| 2026-10-20 | Strip a trailing ` (deleted)` from `/proc/<pid>/exe` targets | Binary updated while running (seen: screenguard-tray) |
 
 ---
 
@@ -419,3 +428,4 @@ Output is knowledge + a throwaway script, recorded in this doc.
 | Date | Session summary | Next |
 |---|---|---|
 | 2026-10-20 | Concept agreed, plan written (this file) | Phase 0, step 0.1 |
+| 2026-10-20 | 0.1 done (scan script). Samples: Hyprland (maintainer's machine), KDE (screenguardTest, sparse). Findings logged in decision log | Richer KDE sample; GNOME + Cinnamon access |
