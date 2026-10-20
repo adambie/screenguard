@@ -306,5 +306,7 @@
   "apps.of_limit": "de {limit}",
 
   "app_limits.today": "Tempo extra hoje:",
-  "flash.app_extra_saved": "Tempo extra guardado — a criança é avisada."
+  "flash.app_extra_saved": "Tempo extra guardado — a criança é avisada.",
+
+  "app_limits.needs_update": "Estes computadores precisam de atualizar o agente para aplicar os limites de apps: {computers}"
 }

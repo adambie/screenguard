@@ -306,5 +306,7 @@
   "apps.of_limit": "von {limit}",
 
   "app_limits.today": "Zusatzzeit heute:",
-  "flash.app_extra_saved": "Zusatzzeit gespeichert — das Kind wird benachrichtigt."
+  "flash.app_extra_saved": "Zusatzzeit gespeichert — das Kind wird benachrichtigt.",
+
+  "app_limits.needs_update": "Diese Computer brauchen ein Agenten-Update, bevor dort App-Limits gelten: {computers}"
 }

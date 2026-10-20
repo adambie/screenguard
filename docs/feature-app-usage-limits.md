@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2D: 2.15 combined real-machine run, 2.16 compatibility (old agents + UI showing which agents enforce); then 2E new-app approval. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2E new-app approval (2.18–2.22); 2.15 combined real-machine run and 2.17 docs/release at the end. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -607,7 +607,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     may undercount after lock/unlock or at session start; worth a separate look. — install the new agent,
   use apps for a while, compare reported minutes with a stopwatch (±1 tick).
   Also confirm the server log shows `app_usage` in the agent's capabilities (1.3).
-- [ ] **1.20 Compatibility checks** — new server + old agent (no app data, no
+- [x] **1.20 Compatibility checks** — new server + old agent (no app data, no
   errors); old server + new agent (no disconnects, see 1.4); upgrade path keeps
   existing pairings and screen-time numbers identical.
   → Progress 2026-10-20, with `docs/spikes/sim-agent.py`, a simulated agent
@@ -619,10 +619,8 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - **New server + new agent:** the capability is stored, the totals grow, the
     resend doesn't double-count, and the reports API returns the data. ✔
   - **Upgrade path:** verified in 1.12 (SQLite + Postgres). ✔
-  - **Still to do with a real old agent:** new server + the real 0.10.17
-    agent, i.e. no app data and no errors. By code, the old agent never sends the
-    message, and its hello sets `app_usage_available = false`, so the UI shows
-    the "update the agent" notice.
+  - **New server + real 0.10.17 agent:** done in 2.16 — no app data, no errors,
+    capability false, screen time unaffected. ✔
 - [x] **1.21 Docs** — README section "App usage reports" + privacy note
   (cmdlines never leave the machine); update this file.
   → Added a features bullet, a new "App usage reports" section (how it works,
@@ -859,8 +857,19 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 - [ ] **2.15 Real-machine tests** on every supported desktop: limit hit → warning
   → app closes → relaunch closed → other apps unaffected → overall limit still works.
-- [ ] **2.16 Compatibility** — old agent ignores `app_groups` (serde default) and
+- [x] **2.16 Compatibility** — old agent ignores `app_groups` (serde default) and
   simply doesn't enforce; UI shows which agents can enforce (capability).
+  → **Real 0.10.17 agent** (built from the tag) on the test machine against this
+  server: it connected, the server marked it `app_usage_available: false`, it
+  took config push v8 containing `app_groups` without error, and screen time
+  kept counting. Switching back to the new agent: the old agent had rewritten
+  the config without a format, so the new one reported version 0 and got the
+  full config again (`CONFIG_FORMAT` working both ways). The profile's App
+  limits card lists the child's computers whose agent can't apply app limits
+  yet (6 languages).
+  - Old server + new agent: covered in 1.20 (unknown `app_usage_sync` ignored).
+    The new agent's version-0 hello makes an old server push config once, then
+    it's back to normal.
 - [ ] **2.17 Docs + release** (includes Phase 1; version bump commit, tag only
   with the maintainer's go-ahead).
 

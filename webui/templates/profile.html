@@ -307,6 +307,9 @@
   </div>
   <div class="card-body">
     <p class="text-secondary small mb-3">{{ t('app_limits.hint') }}</p>
+    {% if no_app_limits %}
+    <div class="alert alert-warning small py-2">{{ t('app_limits.needs_update', computers=no_app_limits | join(', ')) }}</div>
+    {% endif %}
     {% for g in group_limits %}
     <form method="post" action="{{ url_for('update_app_limits', profile_id=profile.id, group_id=g.id) }}"
           class="mb-3 pb-3{% if not loop.last %} border-bottom{% endif %}">

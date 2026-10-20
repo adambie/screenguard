@@ -438,6 +438,10 @@ def profile_detail(profile_id):
     agents_by_id = {a["id"]: a for a in (r_agents.json().get("agents", []) if r_agents and r_agents.ok else [])}
     for u in data.get("agent_users", []):
         u["agent_hostname"] = agents_by_id.get(str(u.get("agent_id", "")), {}).get("hostname", "?")
+    # computers of this child whose agent can't apply app limits yet (older agent)
+    no_app_limits = sorted({agents_by_id[a]["display_name"] for a in
+                            {str(u.get("agent_id", "")) for u in data.get("agent_users", [])}
+                            if a in agents_by_id and not agents_by_id[a].get("app_usage_available")})
 
     today_date = date.today()
     week_offset = int(request.args.get('week', 0))
@@ -497,6 +501,7 @@ def profile_detail(profile_id):
                            lockout_grace_minutes=data.get("lockout_grace_minutes", 5),
                            blocked_domains=blocked_domains,
                            group_limits=group_limits,
+                           no_app_limits=no_app_limits,
                            week_bars=week_bars,
                            week_max=chart_max,
                            week_offset=week_offset,

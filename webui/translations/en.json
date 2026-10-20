@@ -326,5 +326,7 @@
   "apps.of_limit": "of {limit}",
 
   "app_limits.today": "Extra time today:",
-  "flash.app_extra_saved": "Extra time saved — the child is notified."
+  "flash.app_extra_saved": "Extra time saved — the child is notified.",
+
+  "app_limits.needs_update": "These computers need an agent update before app limits apply there: {computers}"
 }
