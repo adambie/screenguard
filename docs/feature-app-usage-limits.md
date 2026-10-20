@@ -872,6 +872,15 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     it's back to normal.
 - [ ] **2.17 Docs + release** (includes Phase 1; version bump commit, tag only
   with the maintainer's go-ahead).
+  → Docs done 2026-10-20:
+  - README features list, "App groups and limits" and "New-app approval"
+    sections;
+  - the protocol list (`app_usage_sync` groups/categories, `app_request`, and
+    what `config_push` can make the agent close).
+
+  Before the release: the upgrade test from 0.10.17 to v15 passed on SQLite and
+  Postgres (`docs/spikes/upgrade-test.sh`). Release itself pending the
+  maintainer's go-ahead.
 
 ### 2E. New-app approval ("ask a parent") — maintainer's idea, 2026-10-20
 

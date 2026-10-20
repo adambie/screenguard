@@ -11,6 +11,8 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 - Admin can send arbitrary text messages to any managed user's desktop
 - Time adjustments (add or remove minutes) with optional reason shown to the user
 - App usage reports — which apps each child used and for how long (day / week / total)
+- App groups with daily limits — e.g. 1 hour of games on school days; ready-made "Games" and "Web browsers" groups fill themselves
+- New-app approval — a new app is closed on start until a parent allows it
 - mDNS auto-discovery — agents find the server on the local network without manual configuration
 - Hosted cloud accounts — manage your machines without running a server yourself
 - Web UI for administration
@@ -63,7 +65,8 @@ The agent behaves identically whether it reports to a server on your own LAN or 
 - `user_list_update` — UID, username and display name of each local account above `min_uid`
 - `heartbeat` — per UID: seconds of active time since the last beat, an idle flag, the number of open sessions
 - `usage_sync` — per UID and date: total seconds used
-- `app_usage_sync` — per UID, date and app: the app's identifier, its menu name and icon name, and total seconds (see [App usage reports](#app-usage-reports); off with `app_tracking = false`)
+- `app_usage_sync` — per UID, date and app: the app's identifier, its menu name, icon name and menu categories, and total seconds; per app group: total seconds (see [App usage reports](#app-usage-reports); off with `app_tracking = false`)
+- `app_request` — per UID: the identifier, name and icon of an app waiting for a parent's approval (only with new-app approval on)
 
 That is all of it. App usage only names apps the child could start from the desktop menu (by their `.desktop` entry, Flatpak/Snap ID or Steam game ID) — never command lines, window titles, file names or URLs, which stay on the machine. No keystrokes, no screenshots, no file contents. Optional domain blocking runs entirely on the machine: a local DNS proxy answers blocked lookups with NXDOMAIN. The blocklist is pushed down from the server; the queries the proxy sees are never reported back up.
 
@@ -71,7 +74,7 @@ That is all of it. App usage only names apps the child could start from the desk
 
 | Message | Effect |
 |---|---|
-| `config_push` / `config_reload` | update schedules, daily limits, blocked domains |
+| `config_push` / `config_reload` | update schedules, daily limits, blocked domains, app groups and their limits, approved apps — the agent then closes the managed child's apps that are over a limit or not approved (only those apps' own processes) |
 | `remaining_update` | set remaining minutes and allow / warn / lock |
 | `lock_now` | lock the given local user |
 | `notify_user` | show a desktop notification |
@@ -251,6 +254,20 @@ What counts:
 - Steam games show by name (from Steam's own files), Minecraft Java as "Minecraft" (also via Prism Launcher / MultiMC), Windows programs under Wine by their `.exe` name.
 
 The agent keeps 35 days of app usage locally and sends day totals to the server once a minute. Turn it off per machine with `app_tracking = false` in `agent.toml`. Agents older than this feature simply don't report app usage; the page tells you to update them.
+
+### App groups and limits
+
+The **Apps** page lists every app seen on the children's computers. Put apps into groups — two are ready-made: **Games** (every app whose menu entry says it's a game, all Steam games, Minecraft) and **Web browsers** (every browser). They pick up newly installed games and browsers by themselves; take a single app out of a group or add one in with one click, or create your own groups (e.g. "School").
+
+On a child's profile, **App limits** sets daily time per group and weekday (`1:30`, `90`, empty = no limit, `0` = blocked that day), and **+15 / +30 / +60** gives extra time for today. Group time is counted once while any app of the group is open, across all the child's computers, and also counts toward the daily screen-time limit.
+
+When a group's time runs out the child gets warnings at the profile's thresholds, then "*Dota 2 will close in 10 seconds*" and the app is closed (a polite close first, forced if it doesn't quit). Starting it again closes it right away. On a blocked day the app is closed at once. Only the app's own processes are closed — never other apps, the desktop, or other users' programs.
+
+### New-app approval
+
+Turn on **New apps → Ask before new apps** on a profile and every app the child hasn't used before is closed on start; the child sees "*Your parents were asked to allow …*" and a request appears on the dashboard and the profile. **Allow** (optionally straight into a group) or **Deny** — the child is told either way. Apps already used when you turn it on stay allowed. Requests made while the computer is offline are delivered when it reconnects.
+
+System-wide installs already need an administrator password, so make sure a child's account is not an administrator: the profile page warns if it is (member of `wheel`/`sudo` or a sudo rule) and shows how to fix it. What a child can still add without admin rights — Flatpak user installs, Steam games, downloaded programs — is caught by new-app approval at first start. A program started from a terminal counts as the terminal; give terminals a group with 0 minutes if that matters.
 
 ## Configuration
 
