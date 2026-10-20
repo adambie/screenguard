@@ -31,33 +31,46 @@ impl AppAccounting {
         Self { interval, last_tick: None, carry_ms: HashMap::new() }
     }
 
-    /// Seconds to add for this tick. The first tick only starts the clock; a gap
+    /// Whole seconds per user for this tick, for users that count and have
+    /// something running (`active`). The first tick only starts the clock; a gap
     /// longer than 2× the interval (suspend, clock jump, stalled loop) is capped.
+    pub fn seconds(&mut self, now: Instant, counting: &HashSet<u32>, active: &HashSet<u32>) -> HashMap<u32, u64> {
+        let Some(last) = self.last_tick.replace(now) else {
+            return HashMap::new();
+        };
+        let elapsed_ms = now.saturating_duration_since(last).min(self.interval * 2).as_millis() as u64;
+        self.carry_ms.retain(|uid, _| counting.contains(uid));
+        let mut out = HashMap::new();
+        for &uid in active {
+            if !counting.contains(&uid) {
+                continue;
+            }
+            let carry = self.carry_ms.entry(uid).or_insert(0);
+            let total = *carry + elapsed_ms;
+            *carry = total % 1000;
+            if total >= 1000 {
+                out.insert(uid, total / 1000);
+            }
+        }
+        out
+    }
+
+    /// Seconds to add per (uid, app) for this tick: each running app gets the
+    /// user's seconds once.
+    #[cfg(test)]
     pub fn tick(
         &mut self,
         now: Instant,
         counting: &HashSet<u32>,
         running: &HashMap<u32, BTreeSet<AppId>>,
     ) -> Vec<(u32, AppId, u64)> {
-        let Some(last) = self.last_tick.replace(now) else {
-            return Vec::new();
-        };
-        let elapsed_ms = now.saturating_duration_since(last).min(self.interval * 2).as_millis() as u64;
-        self.carry_ms.retain(|uid, _| counting.contains(uid));
-        let mut out = Vec::new();
-        for (&uid, apps) in running {
-            if !counting.contains(&uid) || apps.is_empty() {
-                continue;
-            }
-            let carry = self.carry_ms.entry(uid).or_insert(0);
-            let total = *carry + elapsed_ms;
-            let secs = total / 1000;
-            *carry = total % 1000;
-            if secs > 0 {
-                out.extend(apps.iter().map(|a| (uid, a.clone(), secs)));
-            }
-        }
-        out
+        let active: HashSet<u32> = running.iter().filter(|(_, a)| !a.is_empty()).map(|(u, _)| *u).collect();
+        let secs = self.seconds(now, counting, &active);
+        running
+            .iter()
+            .filter_map(|(uid, apps)| secs.get(uid).map(|s| (uid, apps, *s)))
+            .flat_map(|(uid, apps, s)| apps.iter().map(move |a| (*uid, a.clone(), s)))
+            .collect()
     }
 }
 
@@ -65,6 +78,11 @@ impl AppAccounting {
 #[derive(Debug, Default)]
 pub struct TickResult {
     pub add: Vec<(u32, AppId, u64)>,
+    /// (uid, group id, seconds): a group gets the tick once if any member runs,
+    /// so two browsers open at once don't count double.
+    pub add_groups: Vec<(u32, String, u64)>,
+    /// Counted apps running right now, per uid.
+    pub running: HashMap<u32, BTreeSet<AppId>>,
     /// (uid, app) → name, icon and categories, in the user's profile language.
     pub names: HashMap<(u32, AppId), app_ident::Shown>,
 }
@@ -83,6 +101,8 @@ pub struct TrackedUser {
     pub language: String,
     /// Session counts as usage right now.
     pub counting: bool,
+    /// App groups from the profile's config.
+    pub groups: Vec<common::models::AppGroupConfig>,
 }
 
 impl AppTracker {
@@ -114,7 +134,22 @@ impl AppTracker {
                 running.entry(user.uid).or_default().insert(id.app_id);
             }
         }
-        result.add = self.accounting.tick(now, &counting, &running);
+        let active: HashSet<u32> = running.keys().copied().collect();
+        let secs = self.accounting.seconds(now, &counting, &active);
+        for user in users {
+            let (Some(&s), Some(apps)) = (secs.get(&user.uid), running.get(&user.uid)) else { continue };
+            result.add.extend(apps.iter().map(|a| (user.uid, a.clone(), s)));
+            for g in &user.groups {
+                let member_running = apps.iter().any(|a| {
+                    let cats = result.names.get(&(user.uid, a.clone())).map(|n| n.categories.as_slice()).unwrap_or(&[]);
+                    common::apps::group_matches(&g.rules, &a.to_string(), cats)
+                });
+                if member_running {
+                    result.add_groups.push((user.uid, g.id.clone(), s));
+                }
+            }
+        }
+        result.running = running;
         result
     }
 }
@@ -198,17 +233,38 @@ mod tests {
         fp.add(P { pid: 900, ppid: 1, start: 100, comm: "systemd", argv: &["systemd", "--user"], ..Default::default() })
             .add(P { pid: 10, ppid: 900, start: 9_000, comm: "firefox", exe: Some("/usr/lib/firefox/firefox"), argv: &["firefox"], cgroup: &ff, ..Default::default() })
             .add(P { pid: 11, ppid: 10, start: 9_001, comm: "Web Content", exe: Some("/usr/lib/firefox/firefox"), argv: &["firefox", "-contentproc"], cgroup: &ff, ..Default::default() })
+            .add(P { pid: 13, ppid: 900, start: 9_000, comm: "chromium", exe: Some("/usr/bin/chromium"), argv: &["chromium"], cgroup: &format!("{u}/app-gnome-chromium-2.scope"), ..Default::default() })
             .add(P { pid: 12, ppid: 900, start: 200, comm: "nextcloud", exe: Some("/usr/bin/nextcloud"), argv: &["nextcloud"], cgroup: &nc, ..Default::default() });
         let home = fp.path().join("home");
         fixture::standard(&home.join(".local/share/applications"), &home.join(".config/autostart"));
 
         let mut tracker = AppTracker::new();
         tracker.scanner = ProcScanner::with_root(fp.path());
-        let users = [TrackedUser { uid: 1000, home, language: "en".into(), counting: true }];
+        use common::apps::{GroupRule, RuleKind};
+        let group = |id: &str, kind, value: &str| common::models::AppGroupConfig {
+            id: id.into(),
+            name: id.into(),
+            builtin: None,
+            rules: vec![GroupRule { kind, value: value.into(), exclude: false }],
+            daily_limits: vec![],
+        };
+        let groups = vec![
+            group("browsers", RuleKind::Category, "WebBrowser"),
+            group("games", RuleKind::Category, "Game"),
+            group("all-desktop", RuleKind::Prefix, "desktop:"),
+        ];
+        let users = [TrackedUser { uid: 1000, home, language: "en".into(), counting: true, groups }];
         let t0 = Instant::now();
         assert!(tracker.tick(t0, &users).add.is_empty());
         let r = tracker.tick(t0 + SCAN_INTERVAL, &users);
-        assert_eq!(r.add, vec![(1000, AppId::parse("desktop:firefox").unwrap(), 5)]);
+        let mut add = r.add.clone();
+        add.sort();
+        assert_eq!(add, vec![(1000, AppId::parse("desktop:chromium").unwrap(), 5), (1000, AppId::parse("desktop:firefox").unwrap(), 5)]);
+        // a group counts the tick once, however many of its apps run
+        let mut g = r.add_groups.clone();
+        g.sort();
+        assert_eq!(g, vec![(1000, "all-desktop".to_string(), 5), (1000, "browsers".to_string(), 5)]);
+        assert!(r.running[&1000].contains(&AppId::parse("desktop:firefox").unwrap()));
         let shown = &r.names[&(1000, AppId::parse("desktop:firefox").unwrap())];
         assert_eq!((shown.name.as_str(), shown.icon.as_deref()), ("Firefox", Some("firefox")));
         assert_eq!(shown.categories, vec!["Network", "WebBrowser"]);

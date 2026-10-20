@@ -255,6 +255,7 @@ async fn handle_agent_message(
                     current_window_ends_at: Some(end_of_day),
                     next_window_starts_at: None,
                     enforce: EnforceAction::Allow,
+                    group_usage_elsewhere: Vec::new(),
                 })
                 .collect();
 

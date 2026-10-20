@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2.7 group accounting on the agent + sync + server v13, then 2.8 agent-side group remaining. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.8 agent-side group remaining (online + offline), then 2C enforcement. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -750,7 +750,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   change calls `propagate_all` (bump + push for every profile). The agent caches
   the groups as JSON per user (`cached_app_groups`, cleared with
   `managed_users` and on rebind). Tests on both sides.
-- [ ] **2.7 Group accounting + sync** — agent: per tick, each group with ≥ 1
+- [x] **2.7 Group accounting + sync** — agent: per tick, each group with ≥ 1
   running member app gets the tick's seconds once (same counting rule as apps);
   stored in `group_usage_log(local_uid, date, group_id, seconds, synced)`; sent
   in `AppUsageSync.groups` (`#[serde(default)]`). Server: migration v13
@@ -758,6 +758,21 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   `RemainingEntry.group_usage_elsewhere: [{group_id, used_seconds}]` = today's
   group time on the profile's *other* agents (`#[serde(default)]`). Reports by
   group use these totals (fallback: sum of member apps for older days).
+  → Agent: `AppAccounting::seconds()` returns seconds per user, and the tracker
+  gives them to each running app and to each group with a running member
+  (categories from 2.0). Then `group_usage_log`, `AppUsageSync.groups` (with
+  the first message, or alone). Server: v13 `app_group_usage` (MAX upsert, only
+  for existing groups), `group_usage_elsewhere()` in `RemainingEntry`, and
+  `group_totals()` in the reports. Tests on both sides, including "two
+  browsers at once count once".
+  - **Upgrade bug found on the real machine and fixed:** an upgraded agent
+    reported its old config version, so the server never re-sent the config,
+    and the groups the old agent had ignored never arrived. Now the agent stores
+    `CONFIG_FORMAT` (2) with the config and reports version 0 on hello when its
+    config is in an older format, so any server sends the full config. Bump
+    `CONFIG_FORMAT` whenever the agent starts storing a new part of `UserConfig`.
+  - Real machine: two `Game` apps open for 60 s → each app +60 s, the Games
+    group +60 s (not 120); it reached the server and the report.
 - [ ] **2.8 Agent computes group remaining** — `limit_today + adjustments −
   (elsewhere + local today)` per group; the last `elsewhere` and the config are
   cached in the agent DB, so the same code runs offline.
@@ -883,6 +898,7 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
 | 2026-10-20 | Scan every 5 s, identities cached by `(pid, start time)`, `.desktop` catalogue reloaded on dir mtime change | Measured ≤ 0.11 % CPU full, ~0.04 % cached (0.6); start time guards against PID reuse |
 | 2026-10-20 | The agent sends `app_usage_sync` to any server, no version gate | Every server version ignores unknown message types (Q4); the payload is small and sent at most once a minute |
+| 2026-10-20 | The agent re-requests config when its cached config predates a new `CONFIG_FORMAT` | Otherwise upgraded agents keep config without the new parts until a setting changes (seen on the test machine) |
 | 2026-10-20 | Group time is accounted on the agent (union per tick) and remaining group time is computed there from `limit − (other computers + local)` | Summing member apps double-counts overlapping apps; the agent sees exact local time live and the same code works offline |
 | 2026-10-20 | Phase 1 + 2 ship in one release | Maintainer wants a full working solution (see apps, group, limit, close) before release |
 | 2026-10-20 | Predefined "Games" and "Web browsers" groups from freedesktop categories (`Game`, `WebBrowser`) + `steam:`/`minecraft:` | Parents don't know game/browser names; categories are in every `.desktop` file and auto-include new apps |

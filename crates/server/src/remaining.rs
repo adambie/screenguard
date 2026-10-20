@@ -37,6 +37,7 @@ pub async fn calculate_remaining_for_agent(
                 current_window_ends_at: None,
                 next_window_starts_at: None,
                 enforce: EnforceAction::Allow,
+                group_usage_elsewhere: Vec::new(),
             });
             continue;
         };
@@ -64,6 +65,9 @@ pub async fn calculate_remaining_for_agent(
 
         // 5. Remaining from limit.
         let mut remaining = (limit_minutes + adjustments - used_minutes).max(0);
+
+        // Group time on the profile's other computers (the agent adds its own).
+        let group_usage_elsewhere = crate::app_usage::group_usage_elsewhere(pool, profile_id, agent_id, &today_str).await?;
 
         // 6. Schedule window check (times converted from admin_tz to agent_tz).
         let schedules = db::get_schedules(pool, profile_id).await?;
@@ -101,6 +105,7 @@ pub async fn calculate_remaining_for_agent(
                 current_window_ends_at: None,
                 next_window_starts_at: next_window,
                 enforce: EnforceAction::Lock,
+                group_usage_elsewhere,
             });
             continue;
         }
@@ -131,6 +136,7 @@ pub async fn calculate_remaining_for_agent(
             current_window_ends_at: window_ends_at,
             next_window_starts_at: next_window,
             enforce,
+            group_usage_elsewhere,
         });
     }
 

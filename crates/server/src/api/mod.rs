@@ -274,6 +274,15 @@ mod tests {
         let (_, week) = get("?range=week&date=2026-10-22".into()).await;
         let g = week["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
         assert_eq!((g["seconds"].as_i64(), g["limit_minutes"].is_null()), (Some(4200), true));
+        // once the agent reports group time, that wins over the sum of apps
+        let sync = common::messages::AppUsageSync {
+            entries: vec![],
+            groups: vec![common::messages::GroupUsageEntry { local_uid: 1001, date: "2026-10-20".parse().unwrap(), group_id: games.clone(), seconds_total: 3000 }],
+        };
+        crate::app_usage::ingest(&state.db, a1, &sync, "2026-10-20".parse().unwrap()).await.unwrap();
+        let (_, day) = get("?range=day&date=2026-10-20".into()).await;
+        let g = day["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
+        assert_eq!(g["seconds"].as_i64(), Some(3000));
 
         let (s, _) = get("?range=year".into()).await;
         assert_eq!(s, StatusCode::BAD_REQUEST);

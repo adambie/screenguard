@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 12;
+const CURRENT_VERSION: i32 = 13;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ async fn create_tables(pool: &DbPool) -> Result<()> {
 
 /// Per-app usage tables (#27): created by `create_tables` on fresh installs and
 /// by migration v10 on upgrades.
-const APP_USAGE_DDL: [&str; 6] = [
+const APP_USAGE_DDL: [&str; 7] = [
     "CREATE TABLE IF NOT EXISTS app_catalog (
         app_id       TEXT NOT NULL PRIMARY KEY,
         display_name TEXT NOT NULL,
@@ -197,6 +197,14 @@ const APP_USAGE_DDL: [&str; 6] = [
         day_of_week     INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
         allowed_minutes INTEGER NOT NULL CHECK (allowed_minutes >= 0),
         PRIMARY KEY (profile_id, group_id, day_of_week)
+    )",
+    // group time per agent user and day (v13), reported by the agent
+    "CREATE TABLE IF NOT EXISTS app_group_usage (
+        agent_user_id TEXT NOT NULL REFERENCES agent_users(id) ON DELETE CASCADE,
+        date          TEXT NOT NULL,
+        group_id      TEXT NOT NULL,
+        seconds       INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (agent_user_id, date, group_id)
     )",
 ];
 
@@ -250,6 +258,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 10 { apply_v10(pool).await?; v = 10; set_schema_version(pool, v).await?; }
     if v < 11 { apply_v11(pool).await?; v = 11; set_schema_version(pool, v).await?; }
     if v < 12 { apply_v12(pool).await?; v = 12; set_schema_version(pool, v).await?; }
+    if v < 13 { apply_v13(pool).await?; v = 13; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -498,11 +507,18 @@ pub(crate) async fn apply_v11(pool: &DbPool) -> Result<()> {
 // Migration 12: app groups and per-profile group limits, plus the predefined
 // "Games" and "Web browsers" groups (tables come from `create_tables`).
 pub(crate) async fn apply_v12(pool: &DbPool) -> Result<()> {
-    for stmt in &APP_USAGE_DDL[3..] {
+    for stmt in &APP_USAGE_DDL[3..6] {
         sqlx::query(stmt).execute(pool).await?;
     }
     crate::app_groups::seed_builtin(pool).await?;
     tracing::info!("DB migration v12 applied (app groups)");
+    Ok(())
+}
+
+// Migration 13: group time per agent user and day (#27, accounted by the agent).
+pub(crate) async fn apply_v13(pool: &DbPool) -> Result<()> {
+    sqlx::query(APP_USAGE_DDL[6]).execute(pool).await?;
+    tracing::info!("DB migration v13 applied (app group usage)");
     Ok(())
 }
 
@@ -2415,7 +2431,7 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 12);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 13);
     }
 
     #[tokio::test]

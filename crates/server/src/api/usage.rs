@@ -122,20 +122,19 @@ pub async fn get_app_usage(
     };
     let available = app_usage::profile_has_capability(&state.db, id).await.map_err(internal)?;
 
-    // per group: time of its apps in the period (an app in two groups counts in
-    // both); in the day view also that weekday's limit
+    // per group: the agents' group time (counted once while any member ran);
+    // for days before agents reported groups, the sum of the member apps
     let groups = crate::app_groups::list_groups(&state.db).await.map_err(internal)?;
+    let reported = app_usage::group_totals(&state.db, id, from, to).await.map_err(internal)?;
     let limits = crate::app_groups::limits(&state.db, &id.to_string()).await.map_err(internal)?;
     let dow = date.weekday().num_days_from_monday() as u8;
     let groups_out: Vec<serde_json::Value> = groups
         .iter()
         .map(|g| {
             let rules = g.rules();
-            let seconds: i64 = apps
-                .iter()
-                .filter(|a| common::apps::group_matches(&rules, &a.app_id, &a.categories))
-                .map(|a| a.seconds)
-                .sum();
+            let seconds: i64 = reported.get(&g.id).copied().unwrap_or_else(|| {
+                apps.iter().filter(|a| common::apps::group_matches(&rules, &a.app_id, &a.categories)).map(|a| a.seconds).sum()
+            });
             let limit = (range == "day")
                 .then(|| limits.get(&g.id).and_then(|l| l.iter().find(|(d, _)| *d == dow)).map(|(_, m)| *m))
                 .flatten();

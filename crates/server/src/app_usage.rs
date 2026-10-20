@@ -93,7 +93,69 @@ pub async fn ingest(pool: &DbPool, agent_id: Uuid, sync: &AppUsageSync, today: N
         .await?;
         out.stored += 1;
     }
+    for g in &sync.groups {
+        let known_group = crate::app_groups::group_exists(pool, &g.group_id).await?;
+        let agent_user = match users.get(&g.local_uid) {
+            Some(u) => *u,
+            None => {
+                let u = db::get_agent_user(pool, agent_id, g.local_uid).await?.map(|u| u.id);
+                users.insert(g.local_uid, u);
+                u
+            }
+        };
+        let (Some(agent_user), true, true) = (agent_user, known_group, g.date <= today.succ_opt().unwrap_or(today)) else {
+            out.rejected += 1; // deleted group, unknown user or future date
+            continue;
+        };
+        sqlx::query(
+            "INSERT INTO app_group_usage (agent_user_id, date, group_id, seconds) VALUES ($1,$2,$3,$4)
+             ON CONFLICT(agent_user_id, date, group_id)
+             DO UPDATE SET seconds=CASE
+                 WHEN EXCLUDED.seconds > app_group_usage.seconds THEN EXCLUDED.seconds
+                 ELSE app_group_usage.seconds
+             END",
+        )
+        .bind(agent_user.to_string())
+        .bind(g.date.to_string())
+        .bind(&g.group_id)
+        .bind(g.seconds_total.min(MAX_SECONDS_PER_DAY) as i64)
+        .execute(pool)
+        .await?;
+        out.stored += 1;
+    }
     Ok(out)
+}
+
+/// Today's group time on a profile's agents *other than* `agent_id`.
+pub async fn group_usage_elsewhere(pool: &DbPool, profile_id: Uuid, agent_id: Uuid, date: &str) -> Result<Vec<common::models::GroupUsage>> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT g.group_id, SUM(g.seconds) FROM app_group_usage g
+         JOIN agent_users au ON au.id = g.agent_user_id
+         WHERE au.profile_id = $1 AND au.agent_id <> $2 AND g.date = $3
+         GROUP BY g.group_id ORDER BY g.group_id",
+    )
+    .bind(profile_id.to_string())
+    .bind(agent_id.to_string())
+    .bind(date)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(group_id, s)| common::models::GroupUsage { group_id, used_seconds: s.max(0) as u64 }).collect())
+}
+
+/// Group time of a profile between two dates (inclusive) as reported by agents.
+pub async fn group_totals(pool: &DbPool, profile_id: Uuid, from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<HashMap<String, i64>> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT g.group_id, SUM(g.seconds) FROM app_group_usage g
+         JOIN agent_users au ON au.id = g.agent_user_id
+         WHERE au.profile_id = $1 AND g.date >= $2 AND g.date <= $3
+         GROUP BY g.group_id",
+    )
+    .bind(profile_id.to_string())
+    .bind(from.map_or("0000-00-00".to_string(), |d| d.to_string()))
+    .bind(to.map_or("9999-99-99".to_string(), |d| d.to_string()))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -207,7 +269,7 @@ fn clean(s: &str, max: usize) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use common::messages::AppUsageEntry;
+    use common::messages::{AppUsageEntry, GroupUsageEntry};
     use common::models::LocalUser;
 
     pub(crate) async fn agent_with_user(pool: &DbPool, machine: &str, uid: u32) -> (Uuid, Uuid) {
@@ -249,7 +311,7 @@ pub(crate) mod tests {
     async fn retry_and_growth_keep_the_largest_total() {
         let pool = db::open_in_memory().await;
         let (agent, au) = agent_with_user(&pool, "m1", 1001).await;
-        let send = |secs| AppUsageSync { entries: vec![entry(1001, "2026-10-20", "desktop:firefox", "Firefox", secs)] };
+        let send = |secs| AppUsageSync { entries: vec![entry(1001, "2026-10-20", "desktop:firefox", "Firefox", secs)], groups: vec![] };
 
         assert_eq!(ingest(&pool, agent, &send(60), day("2026-10-20")).await.unwrap(), Ingested { stored: 1, rejected: 0 });
         ingest(&pool, agent, &send(60), day("2026-10-20")).await.unwrap(); // retry
@@ -275,8 +337,12 @@ pub(crate) mod tests {
                 entry(4242, "2026-10-20", "desktop:foot", "Foot", 5),
                 entry(1001, "2026-10-21", "desktop:foot", "Foot", 5), // agent a day ahead: fine
             ],
+            groups: vec![
+                GroupUsageEntry { local_uid: 1001, date: day("2026-10-20"), group_id: "deleted-group".into(), seconds_total: 5 },
+                GroupUsageEntry { local_uid: 4242, date: day("2026-10-20"), group_id: "x".into(), seconds_total: 5 },
+            ],
         };
-        assert_eq!(ingest(&pool, agent, &sync, day("2026-10-20")).await.unwrap(), Ingested { stored: 1, rejected: 5 });
+        assert_eq!(ingest(&pool, agent, &sync, day("2026-10-20")).await.unwrap(), Ingested { stored: 1, rejected: 7 });
         assert_eq!(seconds(&pool, au, "2026-10-21", "desktop:foot").await, Some(5));
     }
 
@@ -289,7 +355,7 @@ pub(crate) mod tests {
         let cfg = crate::config::ServerConfig { database_url: Some(url), ..Default::default() };
         let pool = db::open(&cfg).await.unwrap();
         let (agent, au) = agent_with_user(&pool, "pg-m1", 1001).await;
-        let send = |secs| AppUsageSync { entries: vec![entry(1001, "2026-10-20", "desktop:firefox", "Firefox", secs)] };
+        let send = |secs| AppUsageSync { entries: vec![entry(1001, "2026-10-20", "desktop:firefox", "Firefox", secs)], groups: vec![] };
         ingest(&pool, agent, &send(60), day("2026-10-20")).await.unwrap();
         ingest(&pool, agent, &send(60), day("2026-10-20")).await.unwrap();
         ingest(&pool, agent, &send(30), day("2026-10-20")).await.unwrap();
@@ -327,7 +393,7 @@ pub(crate) mod tests {
         }
         let d = day("2026-10-20");
         let put = |agent, entries: Vec<AppUsageEntry>| async move {
-            ingest(pool, agent, &AppUsageSync { entries }, d).await.unwrap();
+            ingest(pool, agent, &AppUsageSync { entries, groups: vec![] }, d).await.unwrap();
         };
         put(a1, vec![
             entry(1001, "2026-10-20", "desktop:firefox", "Firefox", 1800),
@@ -367,6 +433,28 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn group_usage_max_upsert_elsewhere_and_totals() {
+        let pool = db::open_in_memory().await;
+        let (a1, a2, _, profile) = seeded(&pool).await;
+        let games = crate::app_groups::list_groups(&pool).await.unwrap()[0].id.clone();
+        let g = |uid, secs| AppUsageSync {
+            entries: vec![],
+            groups: vec![GroupUsageEntry { local_uid: uid, date: day("2026-10-20"), group_id: games.clone(), seconds_total: secs }],
+        };
+        ingest(&pool, a1, &g(1001, 600), day("2026-10-20")).await.unwrap();
+        ingest(&pool, a1, &g(1001, 300), day("2026-10-20")).await.unwrap(); // older total: ignored
+        ingest(&pool, a2, &g(1000, 120), day("2026-10-20")).await.unwrap();
+
+        // seen from a1: only a2's time; from a2: only a1's
+        let from = |agent| group_usage_elsewhere(&pool, profile, agent, "2026-10-20");
+        assert_eq!(from(a1).await.unwrap(), vec![common::models::GroupUsage { group_id: games.clone(), used_seconds: 120 }]);
+        assert_eq!(from(a2).await.unwrap()[0].used_seconds, 600);
+        let t = group_totals(&pool, profile, Some(day("2026-10-20")), Some(day("2026-10-20"))).await.unwrap();
+        assert_eq!(t[&games], 720);
+        assert!(group_totals(&pool, profile, Some(day("2026-10-21")), None).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn capability_follows_the_profiles_agents() {
         let pool = db::open_in_memory().await;
         let (a1, _, a3, profile) = seeded(&pool).await;
@@ -382,11 +470,11 @@ pub(crate) mod tests {
         let pool = db::open_in_memory().await;
         let (agent, _) = agent_with_user(&pool, "m1", 1001).await;
         let mut e = entry(1001, "2026-10-20", "steam:570", "Steam game 570", 5);
-        ingest(&pool, agent, &AppUsageSync { entries: vec![e.clone()] }, day("2026-10-20")).await.unwrap();
+        ingest(&pool, agent, &AppUsageSync { entries: vec![e.clone()], groups: vec![] }, day("2026-10-20")).await.unwrap();
         e.display_name = "  Dota\u{7} 2  ".into();
         e.icon = Some("".into());
         e.categories = vec!["Game".into(), "Bad;Inject".into(), "".into(), "X-Valve".into()];
-        ingest(&pool, agent, &AppUsageSync { entries: vec![e] }, day("2026-10-20")).await.unwrap();
+        ingest(&pool, agent, &AppUsageSync { entries: vec![e], groups: vec![] }, day("2026-10-20")).await.unwrap();
         let (name, icon, cats): (String, Option<String>, String) =
             sqlx::query_as("SELECT display_name, icon, categories FROM app_catalog WHERE app_id='steam:570'").fetch_one(&pool).await.unwrap();
         assert_eq!((name.as_str(), icon, cats.as_str()), ("Dota 2", None, "Game;X-Valve"));

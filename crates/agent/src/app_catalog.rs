@@ -431,7 +431,7 @@ pub(crate) mod fixture {
             ("org.kde.kded6.desktop", "Name=KDED\nExec=kded6\nNoDisplay=true"),
             ("org.kde.plasmashell.desktop", "Name=Plasma\nExec=plasmashell\nNoDisplay=true"),
             ("firefox.desktop", "Name=Firefox\nExec=/usr/lib/firefox/firefox %u\nIcon=firefox\nStartupWMClass=firefox\nCategories=Network;WebBrowser;"),
-            ("chromium.desktop", "Name=Chromium\nExec=/usr/bin/chromium %U\nIcon=chromium\nStartupWMClass=chromium"),
+            ("chromium.desktop", "Name=Chromium\nExec=/usr/bin/chromium %U\nIcon=chromium\nStartupWMClass=chromium\nCategories=Network;WebBrowser;"),
             ("bitwarden.desktop", "Name=Bitwarden\nExec=bitwarden-desktop %u\nIcon=bitwarden\nStartupWMClass=Bitwarden"),
             ("foot.desktop", "Name=Foot\nExec=foot\nIcon=foot"),
             ("foot-server.desktop", "Name=Foot Server\nExec=foot --server\nIcon=foot"),

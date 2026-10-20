@@ -85,6 +85,16 @@ pub struct RemainingEntry {
     pub current_window_ends_at: Option<NaiveTime>,
     pub next_window_starts_at: Option<NaiveTime>,
     pub enforce: EnforceAction,
+    /// Today's time per app group on the profile's *other* computers (#27); the
+    /// agent adds its own live count and checks the limit itself.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_usage_elsewhere: Vec<GroupUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupUsage {
+    pub group_id: String,
+    pub used_seconds: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -72,6 +72,18 @@ pub struct UsageSync {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppUsageSync {
     pub entries: Vec<AppUsageEntry>,
+    /// Day totals per app group (time while any member app ran). Absent from
+    /// agents before app groups.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<GroupUsageEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GroupUsageEntry {
+    pub local_uid: u32,
+    pub date: NaiveDate,
+    pub group_id: String,
+    pub seconds_total: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -196,6 +208,12 @@ mod tests {
                     seconds_total: 5,
                 },
             ],
+            groups: vec![GroupUsageEntry {
+                local_uid: 1001,
+                date: NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+                group_id: "g1".into(),
+                seconds_total: 7,
+            }],
         };
         let msg = WssMessage::new(MSG_APP_USAGE_SYNC, &sync).unwrap();
         let json = msg.to_json().unwrap();

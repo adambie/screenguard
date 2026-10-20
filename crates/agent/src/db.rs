@@ -65,6 +65,21 @@ impl Db {
                 PRIMARY KEY (local_uid, date, app_id)
             )",
         );
+        // Format of the cached config (see CONFIG_FORMAT); 0 on older DBs.
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE config_meta ADD COLUMN config_format INTEGER NOT NULL DEFAULT 0",
+        );
+        // Time per app group (#27 Phase 2): while any member app ran.
+        let _ = self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS group_usage_log (
+                local_uid INTEGER NOT NULL,
+                date      TEXT NOT NULL,
+                group_id  TEXT NOT NULL,
+                seconds   INTEGER NOT NULL DEFAULT 0,
+                synced    INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (local_uid, date, group_id)
+            )",
+        );
         // App groups from the server's config (#27 Phase 2), as JSON per user.
         let _ = self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS cached_app_groups (
@@ -232,6 +247,7 @@ impl Db {
             "managed_users",
             "usage_log",
             "app_usage_log",
+            "group_usage_log",
             "cached_app_groups",
             "server_remaining",
             "active_sessions",
@@ -300,21 +316,30 @@ impl Db {
 
 // ── config_meta ───────────────────────────────────────────────────────────────
 
+/// Bump when the agent starts storing a new part of `UserConfig` (2 = app
+/// groups). Config stored in an older format is re-requested on the next hello —
+/// otherwise an upgraded agent keeps the old cached config, without the new
+/// parts, until some setting changes on the server.
+pub const CONFIG_FORMAT: i64 = 2;
+
 impl Db {
+    /// The config version to report in `agent_hello`: 0 when the cached config
+    /// was stored in an older format, so the server sends it again in full.
     pub fn get_config_version(&self) -> Result<i64> {
-        let version: i64 = self.conn.query_row(
-            "SELECT config_version FROM config_meta WHERE id = 1",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
-        Ok(version)
+        let (version, format): (i64, i64) = self
+            .conn
+            .query_row("SELECT config_version, config_format FROM config_meta WHERE id = 1", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap_or((0, 0));
+        Ok(if format < CONFIG_FORMAT { 0 } else { version })
     }
 
     pub fn save_config_version(&self, version: i64) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
-            "INSERT OR REPLACE INTO config_meta (id, config_version, received_at) VALUES (1, ?1, ?2)",
-            params![version, now],
+            "INSERT OR REPLACE INTO config_meta (id, config_version, received_at, config_format) VALUES (1, ?1, ?2, ?3)",
+            params![version, now, CONFIG_FORMAT],
         )?;
         Ok(())
     }
@@ -513,6 +538,63 @@ impl Db {
     /// Drops days before `before` (YYYY-MM-DD compares as text).
     pub fn prune_app_usage(&self, before: &str) -> Result<usize> {
         Ok(self.conn.execute("DELETE FROM app_usage_log WHERE date < ?1", params![before])?)
+    }
+}
+
+// ── group_usage_log ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupUsageRow {
+    pub local_uid: u32,
+    pub date: String,
+    pub group_id: String,
+    pub seconds: u64,
+}
+
+impl Db {
+    pub fn add_group_usage(&self, uid: u32, date: &str, group_id: &str, seconds: u64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO group_usage_log (local_uid, date, group_id, seconds, synced) VALUES (?1, ?2, ?3, ?4, 0)
+             ON CONFLICT(local_uid, date, group_id) DO UPDATE SET seconds = seconds + ?4, synced = 0",
+            params![uid, date, group_id, seconds],
+        )?;
+        Ok(())
+    }
+
+    /// Like `get_unsynced_app_usage`: unsynced rows plus everything since `resend_since`.
+    pub fn get_unsynced_group_usage(&self, resend_since: Option<&str>) -> Result<Vec<GroupUsageRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT local_uid, date, group_id, seconds FROM group_usage_log
+             WHERE synced = 0 OR date >= ?1 ORDER BY date, local_uid, group_id",
+        )?;
+        let rows = stmt
+            .query_map(params![resend_since.unwrap_or("~")], |r| {
+                Ok(GroupUsageRow { local_uid: r.get(0)?, date: r.get(1)?, group_id: r.get(2)?, seconds: r.get(3)? })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn mark_group_usage_synced(&self, row: &GroupUsageRow) -> Result<()> {
+        self.conn.execute(
+            "UPDATE group_usage_log SET synced = 1
+             WHERE local_uid = ?1 AND date = ?2 AND group_id = ?3 AND seconds = ?4",
+            params![row.local_uid, row.date, row.group_id, row.seconds],
+        )?;
+        Ok(())
+    }
+
+    /// This machine's time per group for a user on a date.
+    pub fn get_group_usage(&self, uid: u32, date: &str) -> Result<std::collections::HashMap<String, u64>> {
+        let mut stmt = self.conn.prepare("SELECT group_id, seconds FROM group_usage_log WHERE local_uid = ?1 AND date = ?2")?;
+        let rows = stmt
+            .query_map(params![uid, date], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<std::collections::HashMap<String, u64>>>()?;
+        Ok(rows)
+    }
+
+    pub fn prune_group_usage(&self, before: &str) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM group_usage_log WHERE date < ?1", params![before])?)
     }
 }
 
@@ -976,6 +1058,35 @@ mod tests {
         assert_eq!(db.get_unsynced_app_usage(Some("2026-10-19")).unwrap().len(), 2);
         assert_eq!(db.prune_app_usage("2026-09-15").unwrap(), 1);
         assert_eq!(db.get_app_usage_seconds(1000, "2026-09-01", "steam:570").unwrap(), 0);
+    }
+
+    #[test]
+    fn config_from_an_older_agent_is_requested_again() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.save_config_version(7).unwrap();
+        assert_eq!(db.get_config_version().unwrap(), 7);
+        // what an older agent left behind: version stored, no format
+        db.conn.execute("UPDATE config_meta SET config_format = 0", []).unwrap();
+        assert_eq!(db.get_config_version().unwrap(), 0);
+        db.save_config_version(7).unwrap(); // the full push arrives
+        assert_eq!(db.get_config_version().unwrap(), 7);
+    }
+
+    #[test]
+    fn group_usage_accumulates_syncs_and_prunes() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.add_group_usage(1000, "2026-10-20", "g1", 5).unwrap();
+        db.add_group_usage(1000, "2026-10-20", "g1", 5).unwrap();
+        db.add_group_usage(1000, "2026-09-01", "g2", 60).unwrap();
+        assert_eq!(db.get_group_usage(1000, "2026-10-20").unwrap()["g1"], 10);
+        let rows = db.get_unsynced_group_usage(None).unwrap();
+        assert_eq!(rows.len(), 2);
+        for r in &rows {
+            db.mark_group_usage_synced(r).unwrap();
+        }
+        assert!(db.get_unsynced_group_usage(None).unwrap().is_empty());
+        assert_eq!(db.get_unsynced_group_usage(Some("2026-10-19")).unwrap().len(), 1);
+        assert_eq!(db.prune_group_usage("2026-09-15").unwrap(), 1);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{Datelike, Local, NaiveDate};
 use common::messages::{
-    AgentHello, AppUsageEntry, AppUsageSync, Heartbeat, HeartbeatUser, ServerMessage, UsageSync,
+    AgentHello, AppUsageEntry, AppUsageSync, GroupUsageEntry, Heartbeat, HeartbeatUser, ServerMessage, UsageSync,
     UserListUpdate, MSG_AGENT_HELLO, MSG_APP_USAGE_SYNC, MSG_HEARTBEAT, MSG_USAGE_SYNC,
     MSG_USER_LIST_UPDATE,
 };
@@ -185,6 +185,7 @@ impl HeartbeatLoop {
                         if let Err(e) = self.db.lock().await.prune_app_usage(&cutoff) {
                             tracing::warn!("Pruning app usage failed: {e}");
                         }
+                        let _ = self.db.lock().await.prune_group_usage(&cutoff);
                         last_date = today;
                         self.notified_thresholds.clear();
                     }
@@ -237,6 +238,7 @@ impl HeartbeatLoop {
                         home: homes.get(&uid)?.clone(),
                         language: db.get_cached_enforcement(uid).map(|e| e.language).unwrap_or_else(|_| "en".into()),
                         counting: uid_is_counting(session_states, uid),
+                        groups: db.get_cached_app_groups(uid).unwrap_or_default(),
                     })
                 })
                 .collect()
@@ -255,6 +257,12 @@ impl HeartbeatLoop {
             let categories = shown.map(|s| s.categories.join(";")).unwrap_or_default();
             if let Err(e) = db.add_app_usage(*uid, &today, &app.to_string(), name, icon, &categories, *secs) {
                 tracing::warn!("Storing app usage failed: {e}");
+                return;
+            }
+        }
+        for (uid, group, secs) in &result.add_groups {
+            if let Err(e) = db.add_group_usage(*uid, &today, group, *secs) {
+                tracing::warn!("Storing group usage failed: {e}");
                 return;
             }
         }
@@ -898,7 +906,21 @@ impl HeartbeatLoop {
     /// Sends per-app day totals (unsynced rows, plus all rows since
     /// `resend_since` after a reconnect). Old servers ignore the message type.
     async fn send_app_usage_sync(&self, resend_since: Option<&str>) -> Result<()> {
-        let rows = self.db.lock().await.get_unsynced_app_usage(resend_since)?;
+        let (rows, group_rows) = {
+            let db = self.db.lock().await;
+            (db.get_unsynced_app_usage(resend_since)?, db.get_unsynced_group_usage(resend_since)?)
+        };
+        // group totals go with the first message (they're few)
+        let mut groups: Vec<_> = group_rows
+            .iter()
+            .filter_map(|r| {
+                Some(GroupUsageEntry { local_uid: r.local_uid, date: r.date.parse().ok()?, group_id: r.group_id.clone(), seconds_total: r.seconds })
+            })
+            .collect();
+        if rows.is_empty() && !groups.is_empty() {
+            ws_client::send(&self.outbound_tx, MSG_APP_USAGE_SYNC, &AppUsageSync { entries: Vec::new(), groups }).await?;
+            groups = Vec::new();
+        }
         for chunk in rows.chunks(APP_SYNC_CHUNK) {
             let entries = chunk
                 .iter()
@@ -914,11 +936,16 @@ impl HeartbeatLoop {
                     })
                 })
                 .collect();
-            ws_client::send(&self.outbound_tx, MSG_APP_USAGE_SYNC, &AppUsageSync { entries }).await?;
+            let groups = std::mem::take(&mut groups);
+            ws_client::send(&self.outbound_tx, MSG_APP_USAGE_SYNC, &AppUsageSync { entries, groups }).await?;
             let db = self.db.lock().await;
             for r in chunk {
                 db.mark_app_usage_synced(r)?;
             }
+        }
+        let db = self.db.lock().await;
+        for r in &group_rows {
+            db.mark_group_usage_synced(r)?;
         }
         Ok(())
     }
@@ -1158,6 +1185,15 @@ mod tests {
         // after a reconnect, recent rows go again even though they're synced
         hb.send_app_usage_sync(Some("2026-10-19")).await.unwrap();
         assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 10), ("steam:570".into(), 5)]);
+
+        // group totals: alone when no app row changed, then synced
+        hb.db.lock().await.add_group_usage(1000, "2026-10-20", "games", 5).unwrap();
+        hb.send_app_usage_sync(None).await.unwrap();
+        let msg = rx.try_recv().unwrap();
+        let p: AppUsageSync = serde_json::from_value(msg.payload).unwrap();
+        assert_eq!((p.entries.len(), p.groups.len(), p.groups[0].seconds_total), (0, 1, 5));
+        hb.send_app_usage_sync(None).await.unwrap();
+        assert!(rx.try_recv().is_err());
     }
 
     // Screen time used to lose ~1 s per 10 s heartbeat (seen on a real machine:
