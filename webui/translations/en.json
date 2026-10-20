@@ -348,5 +348,9 @@
   "approval.dashboard_title": "App requests waiting ({n})",
   "flash.approval_on": "New apps now need approval. Apps already used stay allowed.",
   "flash.approval_off": "New apps no longer need approval.",
-  "flash.approval_failed": "Couldn't save."
+  "flash.approval_failed": "Couldn't save.",
+
+  "approval.will_allow": "These {n} apps this child already used will stay allowed:",
+  "approval.none_used": "No app has been used on this profile yet, so turning this on would close every app until you allow it. Let the child use the computer for a while first (with an up-to-date agent).",
+  "approval.confirm_empty": "No app has been used on this profile yet — every app will need your approval. Turn on anyway?"
 }

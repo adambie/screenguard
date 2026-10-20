@@ -26,6 +26,9 @@ pub const RELAUNCH_WINDOW: Duration = Duration::from_secs(60);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunningProc {
     pub pid: u32,
+    pub ppid: u32,
+    /// Started with the session (XDG autostart): not subject to new-app approval.
+    pub autostart: bool,
     pub start_ticks: u64,
     pub uid: u32,
     pub app_id: AppId,
@@ -56,6 +59,9 @@ impl Reason {
 pub struct Target {
     pub pid: u32,
     pub start_ticks: u64,
+    /// The app's top process (its parent isn't the same app): the only one that
+    /// gets SIGTERM, so the app can close its own helpers cleanly.
+    pub top: bool,
     pub uid: u32,
     pub app_id: AppId,
     /// Group (limits) or the app id (approval) — notices are rate-limited per key.
@@ -89,9 +95,12 @@ pub fn targets(
         let shown = names.get(&(p.uid, p.app_id.clone()));
         let app_name = shown.map_or(p.app_id.name.clone(), |s| s.name.clone());
         let id = p.app_id.to_string();
-        if let Some(a) = approval.get(&p.uid).filter(|a| !a.approved.contains(&id)) {
+        // autostarted tray apps were there before the mode was on; their usage
+        // is never counted, so they would never be "already used" — leave them
+        // to group limits only
+        if let Some(a) = approval.get(&p.uid).filter(|a| !p.autostart && !a.approved.contains(&id)) {
             let reason = if a.denied.contains(&id) { Reason::Denied } else { Reason::NeedsApproval };
-            out.push(Target { pid: p.pid, start_ticks: p.start_ticks, uid: p.uid, app_id: p.app_id.clone(), key: id, group_name: String::new(), app_name, reason });
+            out.push(Target { pid: p.pid, start_ticks: p.start_ticks, top: true, uid: p.uid, app_id: p.app_id.clone(), key: id, group_name: String::new(), app_name, reason });
             continue;
         }
         let (Some(st), Some(gs)) = (status.get(&p.uid), groups.get(&p.uid)) else { continue };
@@ -104,6 +113,7 @@ pub fn targets(
             out.push(Target {
                 pid: p.pid,
                 start_ticks: p.start_ticks,
+                top: true,
                 uid: p.uid,
                 app_id: p.app_id.clone(),
                 key: s.group_id.clone(),
@@ -111,6 +121,15 @@ pub fn targets(
                 app_name,
                 reason: if s.blocked() { Reason::Blocked } else { Reason::Limit },
             });
+        }
+    }
+    // a target whose parent is a target of the same app is a helper, not the top
+    let of_app: HashMap<u32, AppId> = procs.iter().map(|p| (p.pid, p.app_id.clone())).collect();
+    let targeted: HashSet<u32> = out.iter().map(|t| t.pid).collect();
+    let parents: HashMap<u32, u32> = procs.iter().map(|p| (p.pid, p.ppid)).collect();
+    for t in &mut out {
+        if let Some(pp) = parents.get(&t.pid) {
+            t.top = !(targeted.contains(pp) && of_app.get(pp) == Some(&t.app_id));
         }
     }
     out
@@ -186,20 +205,24 @@ impl Closer {
                         });
                     }
                     if immediate {
-                        tracing::info!("uid={}: closing '{}' (pid {}, {:?} {})", t.uid, t.app_name, t.pid, t.reason, t.group_name);
-                        sig.term(t.pid, t.start_ticks);
+                        if t.top {
+                            tracing::info!("uid={}: closing '{}' (pid {}, {:?} {})", t.uid, t.app_name, t.pid, t.reason, t.group_name);
+                            sig.term(t.pid, t.start_ticks);
+                        }
                         self.stage.insert(key, Stage::Termed(now));
                     } else {
                         self.stage.insert(key, Stage::Warned(now));
                     }
                 }
                 Some(Stage::Warned(at)) if now.duration_since(at) >= GRACE => {
-                    tracing::info!("uid={}: closing '{}' (pid {}, {:?} {})", t.uid, t.app_name, t.pid, t.reason, t.group_name);
-                    sig.term(t.pid, t.start_ticks);
+                    if t.top {
+                        tracing::info!("uid={}: closing '{}' (pid {}, {:?} {})", t.uid, t.app_name, t.pid, t.reason, t.group_name);
+                        sig.term(t.pid, t.start_ticks);
+                    }
                     self.stage.insert(key, Stage::Termed(now));
                 }
                 Some(Stage::Termed(at)) if now.duration_since(at) >= GRACE => {
-                    tracing::info!("uid={}: '{}' ignored SIGTERM, killing pid {}", t.uid, t.app_name, t.pid);
+                    tracing::info!("uid={}: '{}' still running after the grace period, killing pid {}", t.uid, t.app_name, t.pid);
                     sig.kill(t.pid, t.start_ticks);
                 }
                 _ => {}
@@ -248,7 +271,7 @@ mod tests {
     use std::cell::RefCell;
 
     fn proc_(pid: u32, uid: u32, app: &str, comm: &str) -> RunningProc {
-        RunningProc { pid, start_ticks: 100 + pid as u64, uid, app_id: AppId::parse(app).unwrap(), comm: comm.into(), exe: Some(format!("/usr/bin/{comm}")) }
+        RunningProc { pid, ppid: 1, autostart: false, start_ticks: 100 + pid as u64, uid, app_id: AppId::parse(app).unwrap(), comm: comm.into(), exe: Some(format!("/usr/bin/{comm}")) }
     }
 
     type Setup = (HashMap<u32, Vec<GroupStatus>>, HashMap<u32, Vec<AppGroupConfig>>, HashMap<(u32, AppId), Shown>);
@@ -301,6 +324,37 @@ mod tests {
         let t = targets(&procs, &st, &gs, &approval, &names, &managed);
         let r: Vec<(u32, Reason)> = t.iter().map(|t| (t.pid, t.reason)).collect();
         assert_eq!(r, vec![(10, Reason::NeedsApproval), (11, Reason::Denied)]); // firefox approved; others untouched
+
+        // autostarted apps are not asked about (only group limits apply to them)
+        let mut auto = proc_(16, 1001, "desktop:supertux", "supertux2");
+        auto.autostart = true;
+        assert!(targets(&[auto.clone()], &st, &gs, &approval, &names, &managed).is_empty());
+        let (st0, gs0, names0) = setup(0, 60);
+        assert_eq!(targets(&[auto], &st0, &gs0, &none, &names0, &managed)[0].reason, Reason::Limit);
+    }
+
+    #[test]
+    fn only_the_top_process_of_an_app_gets_sigterm() {
+        let managed: HashSet<u32> = [1001].into();
+        let (st, gs, names) = setup(0, 0); // blocked: close at once
+        let mut main = proc_(10, 1001, "desktop:supertux", "supertux2");
+        main.ppid = 900;
+        let mut helper = proc_(11, 1001, "desktop:supertux", "supertux2");
+        helper.ppid = 10;
+        let mut helper2 = proc_(12, 1001, "desktop:supertux", "supertux2");
+        helper2.ppid = 11;
+        let t = targets(&[main, helper, helper2], &st, &gs, &HashMap::new(), &names, &managed);
+        assert_eq!(t.iter().map(|t| (t.pid, t.top)).collect::<Vec<_>>(), vec![(10, true), (11, false), (12, false)]);
+
+        // the helpers ignore nothing here, but only pid 10 is signalled; after the
+        // grace period anything left is killed
+        let sig = FakeSignals { ignores_term: [10, 11, 12].into(), ..Default::default() };
+        let mut c = Closer::new();
+        let t0 = Instant::now();
+        c.enforce(t0, &t, &sig);
+        assert_eq!(*sig.log.borrow(), vec![("term", 10)]);
+        c.enforce(t0 + GRACE, &t, &sig);
+        assert_eq!(*sig.log.borrow(), vec![("term", 10), ("kill", 10), ("kill", 11), ("kill", 12)]);
     }
 
     #[derive(Default)]
@@ -330,6 +384,7 @@ mod tests {
         Target {
             pid,
             start_ticks: 1,
+            top: true,
             uid: 1001,
             app_id: AppId::parse("desktop:supertux").unwrap(),
             key: "games".into(),
@@ -396,7 +451,7 @@ mod tests {
         let start = |pid: u32| ProcSignals::start_ticks(pid).unwrap();
         let t = |child: &std::process::Child| {
             let pid = child.id();
-            Target { pid, start_ticks: start(pid), uid: 1001, app_id: AppId::parse("desktop:x").unwrap(), key: "g".into(), group_name: "G".into(), app_name: "x".into(), reason: Reason::Blocked }
+            Target { pid, start_ticks: start(pid), top: true, uid: 1001, app_id: AppId::parse("desktop:x").unwrap(), key: "g".into(), group_name: "G".into(), app_name: "x".into(), reason: Reason::Blocked }
         };
         let targets = [t(&victim), t(&stubborn)];
         // a wrong start time (reused PID) is never signalled

@@ -328,5 +328,9 @@
   "approval.dashboard_title": "Oczekujące prośby o aplikacje ({n})",
   "flash.approval_on": "Nowe aplikacje wymagają teraz zgody. Używane już aplikacje pozostają dozwolone.",
   "flash.approval_off": "Nowe aplikacje nie wymagają już zgody.",
-  "flash.approval_failed": "Nie udało się zapisać."
+  "flash.approval_failed": "Nie udało się zapisać.",
+
+  "approval.will_allow": "Te {n} używane już aplikacje pozostaną dozwolone:",
+  "approval.none_used": "Na tym profilu nie użyto jeszcze żadnej aplikacji, więc po włączeniu każda aplikacja będzie zamykana, dopóki jej nie zatwierdzisz. Najpierw pozwól dziecku chwilę korzystać z komputera (z aktualnym agentem).",
+  "approval.confirm_empty": "Na tym profilu nie użyto jeszcze żadnej aplikacji — każda będzie wymagać Twojej zgody. Włączyć mimo to?"
 }

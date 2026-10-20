@@ -138,6 +138,8 @@ impl AppTracker {
                 let p = &mine[&pid];
                 result.procs.push(crate::app_enforce::RunningProc {
                     pid,
+                    ppid: p.ppid,
+                    autostart: id.launch == Launch::Autostart,
                     start_ticks: p.start_ticks,
                     uid: p.uid,
                     app_id: id.app_id.clone(),

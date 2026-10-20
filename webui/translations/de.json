@@ -328,5 +328,9 @@
   "approval.dashboard_title": "Wartende App-Anfragen ({n})",
   "flash.approval_on": "Neue Apps brauchen jetzt eine Zustimmung. Bereits benutzte Apps bleiben erlaubt.",
   "flash.approval_off": "Neue Apps brauchen keine Zustimmung mehr.",
-  "flash.approval_failed": "Konnte nicht gespeichert werden."
+  "flash.approval_failed": "Konnte nicht gespeichert werden.",
+
+  "approval.will_allow": "Diese {n} bereits benutzten Apps bleiben erlaubt:",
+  "approval.none_used": "Auf diesem Profil wurde noch keine App benutzt, also würde jede App geschlossen, bis du sie erlaubst. Lass das Kind den Computer zuerst eine Weile benutzen (mit aktuellem Agenten).",
+  "approval.confirm_empty": "Auf diesem Profil wurde noch keine App benutzt — jede App braucht dann deine Zustimmung. Trotzdem einschalten?"
 }

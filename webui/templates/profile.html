@@ -357,7 +357,8 @@
 <div class="card mb-4" id="newApps">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span>{{ t('approval.card') }}</span>
-    <form method="post" action="{{ url_for('app_approval_mode', profile_id=profile.id) }}">
+    <form method="post" action="{{ url_for('app_approval_mode', profile_id=profile.id) }}"
+          {% if not approvals.enabled and not approvals.will_allow %}onsubmit='return confirm({{ t("approval.confirm_empty") | tojson }})'{% endif %}>
       <input type="hidden" name="enabled" value="{{ '0' if approvals.enabled else '1' }}">
       <button class="btn btn-sm {% if approvals.enabled %}btn-outline-secondary{% else %}btn-primary{% endif %}">
         {{ t('approval.turn_off') if approvals.enabled else t('approval.turn_on') }}</button>
@@ -365,6 +366,14 @@
   </div>
   <div class="card-body small">
     <p class="text-secondary mb-3">{{ t('approval.hint_on') if approvals.enabled else t('approval.hint_off') }}</p>
+    {% if not approvals.enabled %}
+      {% if approvals.will_allow %}
+      <p class="mb-3">{{ t('approval.will_allow', n=approvals.will_allow | length) }}
+        <span class="text-secondary">{{ approvals.will_allow[:12] | join(', ') }}{% if approvals.will_allow | length > 12 %}, …{% endif %}</span></p>
+      {% else %}
+      <div class="alert alert-warning py-2 mb-3">{{ t('approval.none_used') }}</div>
+      {% endif %}
+    {% endif %}
     {% set pending = approvals.apps | selectattr('status', 'equalto', 'pending') | list %}
     {% set decided = approvals.apps | rejectattr('status', 'equalto', 'pending') | list %}
     {% for a in pending %}

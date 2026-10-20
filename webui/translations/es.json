@@ -328,5 +328,9 @@
   "approval.dashboard_title": "Solicitudes de apps pendientes ({n})",
   "flash.approval_on": "Las apps nuevas necesitan ahora aprobación. Las ya usadas siguen permitidas.",
   "flash.approval_off": "Las apps nuevas ya no necesitan aprobación.",
-  "flash.approval_failed": "No se pudo guardar."
+  "flash.approval_failed": "No se pudo guardar.",
+
+  "approval.will_allow": "Estas {n} apps ya usadas seguirán permitidas:",
+  "approval.none_used": "En este perfil aún no se ha usado ninguna app, así que al activarlo se cerraría cualquier app hasta que la permitas. Deja primero que el menor use el equipo un tiempo (con el agente actualizado).",
+  "approval.confirm_empty": "En este perfil aún no se ha usado ninguna app: todas necesitarán tu aprobación. ¿Activar de todos modos?"
 }

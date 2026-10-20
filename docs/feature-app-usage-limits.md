@@ -958,6 +958,23 @@ Design: approval at first launch, using the Phase 2 closing machinery.
   - Real machine: server stopped → new app closed offline → server started →
     the request arrived 24 s later without a relaunch.
 
+Review follow-ups (2026-10-20), all fixed and tested:
+- **Autostarted apps are not approval targets**, only group limits apply to
+  them. Their usage is never counted, so turning the mode on never approved
+  them, and tray apps (Bitwarden, Nextcloud, Steam) would have been closed at
+  every login.
+- **Only the app's top process gets SIGTERM** (its parent isn't the same app),
+  and anything left after the grace period gets SIGKILL. Real machine: Firefox
+  with 10 processes → 2 SIGTERMs (main + crash helper), all gone within 3 s, no
+  SIGKILL. Firefox treats SIGTERM as at logout (no clean-shutdown checkpoints),
+  so it may offer to restore the session; the README says so.
+- **The profile card lists the apps that will stay allowed** before the mode is
+  switched on, excluding earlier denied/pending ones. It warns and asks for
+  confirmation when there are none (a fresh profile).
+- **Wine's system programs** (`services.exe`, `explorer.exe`, `winedevice.exe`, …)
+  are no longer apps: they go to "other" under plain Wine/Lutris/Bottles
+  (fixture test).
+
 Limitation to state in the UI/README: only things the agent can identify as an
 app are covered (menu entries, Flatpak, Snap, Steam, Minecraft, Wine). A program
 started from a terminal counts as the terminal — block the terminal (a group with

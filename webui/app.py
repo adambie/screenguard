@@ -464,6 +464,13 @@ def profile_detail(profile_id):
 
     r_ap = api("GET", f"/profiles/{profile_id}/app-approvals")
     approvals = r_ap.json() if r_ap and r_ap.ok else {"enabled": False, "apps": []}
+    approvals["will_allow"] = []
+    if not approvals.get("enabled"):
+        # what turning the mode on would keep allowed: every app this child used
+        r_used = api("GET", f"/profiles/{profile_id}/app-usage", params={"range": "total"})
+        undecided_or_no = {a["app_id"] for a in approvals.get("apps", []) if a.get("status") != "approved"}
+        approvals["will_allow"] = [a["name"] for a in (r_used.json().get("apps", []) if r_used and r_used.ok else [])
+                                   if a["app_id"] not in undecided_or_no]  # earlier decisions are kept
 
     r4 = api("GET", f"/profiles/{profile_id}/blocked-domains")
     blocked_domains = r4.json().get("blocked_domains", []) if r4 and r4.ok else []

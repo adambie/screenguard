@@ -19,6 +19,13 @@ const AUTOSTART_WINDOW_TICKS: u64 = 60 * 100; // USER_HZ = 100
 /// this id, whatever the real app is.
 const SELF_SCOPE_IDS: &[&str] = &["org.chromium.Chromium"];
 const MAX_DEPTH: usize = 64;
+/// Processes Wine itself starts next to any Windows program (plain Wine, Lutris,
+/// Bottles). Under Proton they inherit the game's `steam:` id from `reaper`.
+const WINE_SYSTEM_EXES: &[&str] = &[
+    "services.exe", "winedevice.exe", "plugplay.exe", "explorer.exe", "svchost.exe", "rpcss.exe",
+    "winemenubuilder.exe", "conhost.exe", "start.exe", "rundll32.exe", "wineboot.exe", "winedbg.exe",
+    "tabtip.exe", "mscorsvw.exe", "iexplore.exe",
+];
 /// In a `java` command line: Minecraft main classes / mod loaders, and the
 /// entry points of Prism Launcher and MultiMC (they pass the main class on stdin).
 const MINECRAFT_MARKERS: &[&str] =
@@ -329,8 +336,10 @@ impl<'a> Ctx<'a> {
         }
         for q in self.ancestors(p) {
             for a in q.argv.iter().take(2) {
-                if a.to_lowercase().ends_with(".exe") {
-                    return AppId::new(AppKind::Wine, basename(a).to_lowercase());
+                let exe = basename(a).to_lowercase();
+                // Wine's own system programs run beside every Windows app: not apps
+                if exe.ends_with(".exe") && !WINE_SYSTEM_EXES.contains(&exe.as_str()) {
+                    return AppId::new(AppKind::Wine, exe);
                 }
             }
         }
@@ -605,6 +614,8 @@ mod tests {
             .add(P { pid: 4000, ppid: 900, start: 90_000, comm: "java", exe: Some("/usr/lib/jvm/java-21/bin/java"), argv: &["/usr/lib/jvm/java-21/bin/java", "-Xmx2G", "-cp", "/home/kid/.minecraft/libraries/x.jar", "net.minecraft.client.main.Main"], cgroup: &cg("app.slice/app-gnome-minecraft\\x2dlauncher-3999.scope"), ..Default::default() })
             .add(P { pid: 4100, ppid: 900, start: 90_000, comm: "java", exe: Some("/usr/lib/jvm/java-21/bin/java"), argv: &["/usr/lib/jvm/java-21/bin/java", "-cp", "/usr/share/prismlauncher/NewLaunch.jar", "org.prismlauncher.EntryPoint"], cgroup: &cg("app.slice/app-gnome-org.prismlauncher.PrismLauncher-4099.scope"), ..Default::default() })
             .add(P { pid: 4200, ppid: 900, start: 90_000, comm: "java", exe: Some("/usr/lib/jvm/java-21/bin/java"), argv: &["java", "-jar", "/opt/tool/server.jar"], cgroup: &cg("app.slice/app-gnome-tool-4199.scope"), ..Default::default() })
+            .add(P { pid: 4600, ppid: 900, start: 90_000, comm: "services.exe", exe: Some("/usr/bin/wine64-preloader"), argv: &["C:\\windows\\system32\\services.exe"], cgroup: "/user.slice/user-1000.slice/session-2.scope", ..Default::default() })
+            .add(P { pid: 4601, ppid: 900, start: 90_000, comm: "explorer.exe", exe: Some("/usr/bin/wine64-preloader"), argv: &["C:\\windows\\system32\\explorer.exe", "/desktop"], cgroup: "/user.slice/user-1000.slice/session-2.scope", ..Default::default() })
             .add(P { pid: 4500, ppid: 900, start: 90_000, comm: "game.exe", exe: Some("/usr/bin/wine64-preloader"), argv: &["C:\\Games\\game.exe"], cgroup: "/user.slice/user-1000.slice/session-2.scope", ..Default::default() });
         let r = w.run();
         is(&r, 3000, "desktop:steam", Launch::App);
@@ -614,6 +625,8 @@ mod tests {
         is(&r, 4100, "minecraft:java", Launch::App);
         assert_ne!(r[&4200].app_id.to_string(), "minecraft:java");
         is(&r, 4500, "wine:game.exe", Launch::App);
+        is(&r, 4600, "exe:wine64-preloader", Launch::Other);
+        is(&r, 4601, "exe:wine64-preloader", Launch::Other);
     }
 
     #[test]
