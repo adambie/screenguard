@@ -1,6 +1,6 @@
 # Feature — per-app usage reports, app groups and group limits
 
-- **Status:** In progress — Phase 0 (detection spike)
+- **Status:** In progress — Phase 0 (detection research)
 - **Started:** 2026-10-20
 - **Tracking issue:** [#27](https://github.com/adambie/screenguard/issues/27) (separate game and screen time)
 - **Inspiration:** Google Family Link (per-app usage, app limits); Timekpr-nExT "PlayTime" (process masks, separate allowance)
@@ -43,13 +43,12 @@ progress — not chat history.
 
 > Update this block at the end of every session.
 
-- **Phase:** 0 — Detection spike
-- **Last completed step:** 0.1 (scan script `docs/spikes/app-scan.py`)
-- **Next step:** 0.2 — richer KDE sample (open browser, a Flatpak, Steam/Minecraft on
-  screenguardTest), then GNOME and Cinnamon machines (need access to them)
-- **In progress / half-done:** 0.2 — Hyprland sample done (extra, not in the list),
-  KDE sample taken but with only one app open
-- **Blockers / open questions:** GNOME + Cinnamon test machines needed; see
+- **Phase:** 0 — Detection research
+- **Last completed step:** 0.4 (signal matrix, identification algorithm, app filter)
+- **Next step:** 0.5 — implement the algorithm in `docs/spikes/app-scan.py` and
+  sanity-check on Hyprland + the KDE test machine (root needed for `environ`)
+- **In progress / half-done:** —
+- **Blockers / open questions:** Q2 (Minecraft launcher variants), see
   [Open questions](#open-questions)
 
 ---
@@ -181,43 +180,100 @@ double-count (server upserts with the reported total).
 
 ---
 
-## Phase 0 — Detection spike (no product code)
+## Phase 0 — Detection research (no product code)
 
-Purpose: prove the cgroup approach on real desktops **before** designing tables.
-Output is knowledge + a throwaway script, recorded in this doc.
+Purpose: decide **from documentation and known behaviour** how apps can be identified
+on any desktop — not by sampling every desktop (impossible to cover all
+combinations). Real machines are only used to sanity-check the result
+(maintainer's Hyprland machine, the KDE test machine `screenguardTest`).
 
-- [x] **0.1 Write a read-only scan script** (`docs/spikes/app-scan.sh` or a small
-  Python file, kept out of the build). For a given UID: list processes, their
-  `/proc/<pid>/cgroup` path, `exe`, `comm`, short cmdline, and the derived
-  candidate `app_id`.
-  *Done when:* it runs as root on a test machine and prints one line per process.
-- [ ] **0.2 Run it on every desktop we support**, with a child account logged in
-  and typical apps open (browser, a Flatpak, a Steam game or Minecraft, a terminal
-  app, file manager):
-  - [ ] GNOME (Wayland)
-  - [ ] KDE Plasma (Wayland) — first sample `docs/spikes/kde-cachyos.txt` (only Alacritty open; rerun with more apps)
-  - [ ] Cinnamon (X11)
-  - [ ] (optional) XFCE
-  - [x] (extra) Hyprland via uwsm — `docs/spikes/hyprland-arch.txt`
-  *Done when:* raw output for each is saved under `docs/spikes/` (redact cmdlines).
-- [ ] **0.3 Record findings in [Decision log](#decision-log):** which desktops
-  create `app-*.scope` per app; scope naming format per desktop; how Steam games,
-  Minecraft (Java) and Wine/Proton look; what lands in `session.slice` /
-  `background.slice`; what apps launched from a terminal look like (they inherit
-  the terminal's scope).
-- [ ] **0.4 Decide fallback** for desktops without per-app scopes (ignore list +
-  exe keying) and write the initial **ignore list** (desktop shells, panels,
-  portals, pipewire, gvfs, …) into the decision log.
-- [ ] **0.5 Measure cost:** time one full scan of `/proc` on the slowest test
-  machine; pick the scan interval (target ≤ 1 % CPU; expected 5 s).
+- [x] **0.1 Write a read-only scan script** (`docs/spikes/app-scan.py`): lists a
+  user's processes with cgroup unit, exe and derived candidate `app_id`. Used to
+  sanity-check rules on available machines.
+- [x] **0.2 Research the signals and where they exist** → [Signal matrix](#signal-matrix).
+- [x] **0.3 Define a desktop-independent identification algorithm** →
+  [Identification algorithm](#identification-algorithm).
+- [x] **0.4 Define a desktop-independent "is this an app?" filter** (no per-desktop
+  ignore lists) → [What counts as an app](#what-counts-as-an-app).
+- [ ] **0.5 Sanity-check the algorithm** on the available machines by extending
+  `app-scan.py` to implement it (incl. `environ` and process-tree steps; needs
+  root for other users' `environ`/`exe`). *Done when:* on Hyprland and KDE every
+  real app the user opened maps to the right `app_id` and no desktop component is
+  listed as an app.
+- [ ] **0.6 Measure cost:** time one full scan (incl. `environ` reads) on the
+  slowest available machine; pick the scan interval (target ≤ 1 % CPU; expected 5 s).
 
 **Exit criteria (Phase 0):**
-- [ ] Identification rules confirmed or adjusted for every supported desktop
-- [ ] Fallback strategy + ignore list decided
-- [ ] Scan interval decided
-- [ ] [Open questions](#open-questions) Q1–Q3 answered
+- [x] Identification rules defined independently of the desktop
+- [x] "Is it an app" filter defined without per-desktop lists
+- [ ] Sanity check passed on available machines (0.5)
+- [ ] Scan interval decided (0.6)
 
----
+### Signal matrix
+
+Researched 2026-10-20. "Unit" = systemd unit following the
+[systemd desktop-environment convention](https://systemd.io/DESKTOP_ENVIRONMENTS/):
+`app[-<launcher>]-<ApplicationID>-<RANDOM>.scope` or
+`app[-<launcher>]-<ApplicationID>[@<RANDOM>].service` (ids systemd-escaped, e.g. `\x2d`).
+
+| Signal | Where it exists | Notes |
+|---|---|---|
+| App **unit** under `app.slice` | GNOME (gnome-shell: `app-gnome-<id>-<pid>.scope`); KDE Plasma (KIO: `app-<id>@<uuid>.service` / scope); compositors started via **uwsm** (Hyprland, Sway, …: `app-<Compositor>-<id>-<rand>.scope`); apps that move themselves (Chromium: `app-org.chromium.Chromium-<pid>.scope`); D-Bus/xdg activation; XDG autostart (`app-<id>@autostart.service`); Fedora/RHEL also patch GLib so every GIO launch gets a scope | Best signal when present. **Not** guaranteed: upstream GLib does not create scopes; no evidence that Cinnamon, MATE, XFCE, LXQt or plain i3/Openbox do. |
+| **Flatpak** scope `app-flatpak-<id>-<n>.scope` | Any desktop, Flatpak apps (created by flatpak itself) | Reliable; id = Flatpak app id. |
+| **Snap** scope `snap.<name>.<app>-<uuid>.scope` | Any desktop, Snap apps (created by snapd) | Reliable. |
+| `GIO_LAUNCHED_DESKTOP_FILE` + `GIO_LAUNCHED_DESKTOP_FILE_PID` in `/proc/<pid>/environ` | Anything launched through GIO's `GAppInfo` — GNOME, Cinnamon, MATE, Budgie and most GTK launchers/menus | Gives the exact `.desktop` path. Inherited by children (the `_PID` tells which process was launched). Reading another user's `environ` needs root — the agent is root. |
+| **Process tree** + `.desktop` matching (`Exec=`/`TryExec=` binary, `StartupWMClass`) | Everywhere | Universal fallback; weaker with wrapper scripts. |
+| Steam: ancestor `reaper SteamLaunch AppId=<n> -- …` | Steam games (native and Proton) | `steam:<n>`. |
+| Cmdline patterns: `java` + Minecraft main class/jar; `*.exe` under Wine/Proton | Minecraft Java, Wine apps | Local only (privacy rule). |
+
+Sanity-check samples: `docs/spikes/hyprland-arch.txt` (uwsm scopes, Chromium
+self-scope, autostart), `docs/spikes/kde-cachyos.txt` (`app-<id>@<uuid>.service`).
+
+### Identification algorithm
+
+For each process of a managed child (real UID), first match wins:
+
+1. **Flatpak / Snap unit** → `flatpak:<id>` / `snap:<name>`.
+2. **App unit** (`app-…` under `app.slice`) → parse launcher + application id →
+   resolve to a `.desktop` file (see resolution chain below) → `desktop:<id>`.
+3. **GIO launch env**: if `environ` has `GIO_LAUNCHED_DESKTOP_FILE` and the process
+   is `GIO_LAUNCHED_DESKTOP_FILE_PID` or a descendant of it → `desktop:<id>` from
+   that path.
+4. **Special cases** (checked on the process and its ancestors): Steam `reaper`
+   ancestor → `steam:<AppId>`; Minecraft Java → `minecraft:java`; Wine/Proton
+   `.exe` → `wine:<exe>`. These take precedence over 1–3 when they match, because
+   e.g. a Steam game otherwise inherits Steam's own unit/env.
+5. **Process tree**: walk up to the **launch root** — the highest ancestor still
+   owned by the child that isn't a session/desktop process (parent is
+   `systemd --user`, the login session leader, the desktop shell or PID 1) —
+   then resolve the root's exe via the resolution chain → `desktop:<id>`.
+6. **No `.desktop` match** → not an app (see filter below), kept only as
+   `exe:<name>` in a hidden "other" bucket for diagnostics.
+
+**Resolution chain** (unit id or exe → `.desktop` file): `<id>.desktop`
+(case-insensitive) → `.desktop` whose `Exec=`/`TryExec=` binary equals the exe
+(prefer an entry whose file id equals the binary and has no extra args; seen:
+`foot` vs `foot-server`) → `StartupWMClass` match. Search
+`$XDG_DATA_DIRS/applications` + the child's `~/.local/share/applications` +
+Flatpak/Snap export dirs. Always strip ` (deleted)` from `/proc/<pid>/exe`.
+
+### What counts as an app
+
+Desktop-independent rule — **an app is something the child could launch from a
+menu**:
+
+- it resolves to a `.desktop` entry with `Type=Application`, not `NoDisplay=true`,
+  not `Hidden=true`; **and**
+- it is not an autostart launch (`@autostart.service` unit, or the root process
+  matches an entry in `/etc/xdg/autostart` / `~/.config/autostart` and started
+  within the first minutes of the session) — autostart apps are tracked but not
+  counted as usage by default; **and**
+- it is not in `session.slice` / `background.slice`, and not a non-`app-` unit
+  under `app.slice` (user services).
+
+Desktop components (panels, shells, portals, daemons) either have no visible
+`.desktop` entry or are `NoDisplay`/autostart, so they drop out **without any
+per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ## Phase 1 — Per-app usage reports (observe only, no enforcement)
 
@@ -240,12 +296,18 @@ Output is knowledge + a throwaway script, recorded in this doc.
   server ignores an unknown WS message type without dropping the connection.
   Record result in decision log; if it drops, gate sending on server version.
 - [ ] **1.5 `app_scan.rs` — process enumeration**: iterate `/proc`, keep PIDs whose
-  real UID is a managed child, read cgroup path, `exe` basename, cmdline (local only).
+  real UID is a managed child, read cgroup path, ppid, `exe` basename, cmdline and
+  the two `GIO_LAUNCHED_DESKTOP_FILE*` variables from `environ` (local only).
   *Done when:* unit tests run against a fake `/proc` tree fixture (tempdir).
-- [ ] **1.6 Identification** — implement the rules from Phase 0 (scope name →
-  desktop id, flatpak, snap, Steam AppId, Minecraft Java, Wine `.exe`, exe fallback)
-  and the ignore list. *Done when:* table-driven tests using the real samples
-  captured in Phase 0 produce the expected `app_id`s.
+- [ ] **1.6 Identification** — implement the [Identification algorithm](#identification-algorithm)
+  and the [app filter](#what-counts-as-an-app). Needs `environ` and the process
+  tree (ppid) from 1.5. *Done when:* table-driven tests pass against a **fixture
+  catalogue built from the documented formats**, one fake `/proc` tree each:
+  GNOME scope, KDE service, uwsm scope, Chromium self-scope, Flatpak, Snap,
+  XDG autostart, GIO env without units (Cinnamon/MATE style), plain process tree
+  without units or env (XFCE/i3 style), terminal with children, Steam reaper +
+  Proton game, Minecraft Java, Wine `.exe`, binary `(deleted)`, plus desktop
+  components that must *not* become apps.
 - [ ] **1.7 `.desktop` lookup** — map desktop ids to `Name=` (+ localized
   `Name[xx]=` if the profile language matches) and `Icon=` from
   `/usr/share/applications`, `~/.local/share/applications`, flatpak/snap export
@@ -397,12 +459,12 @@ Output is knowledge + a throwaway script, recorded in this doc.
 
 | # | Question | Answer (with date) |
 |---|---|---|
-| Q1 | Does Cinnamon (and XFCE) create per-app `app-*.scope` units? If not, how good is the exe-keyed fallback? | |
-| Q2 | How do Steam games, Minecraft Java and Proton games appear (scope, exe, cmdline)? | |
+| Q1 | Does Cinnamon (and XFCE) create per-app `app-*.scope` units? If not, how good is the exe-keyed fallback? | 2026-10-20: no evidence they do (upstream GLib doesn't create scopes; only Fedora/RHEL patch it). Design no longer depends on it: GIO env (Cinnamon/MATE) and process tree (XFCE etc.) cover them. |
+| Q2 | How do Steam games, Minecraft Java and Proton games appear (scope, exe, cmdline)? | 2026-10-20: Steam — `reaper SteamLaunch AppId=<n> -- …` ancestor (native + Proton). Minecraft — `java` with Minecraft main class/jar; launcher variants (official, Prism, MultiMC, Flatpak) still to confirm in tests. |
 | Q3 | Which scan interval keeps CPU ≤ 1 % on the slowest machine? | |
 | Q4 | Does an old (0.10.x) server tolerate unknown WS message types? (step 1.4) | |
 | Q5 | Should group limits be per profile only, or allow a global default per group? | |
-| Q6 | Count apps launched from a terminal as the terminal (inherited scope) or try to attribute to the child process's exe? | Confirmed on KDE + Hyprland that terminal children share the terminal's unit. Decision pending. |
+| Q6 | Count apps launched from a terminal as the terminal (inherited scope) or try to attribute to the child process's exe? | 2026-10-20: v1 counts them as the terminal (the launch root) — simple and consistent across desktops; revisit if needed. |
 
 ---
 
@@ -418,6 +480,8 @@ Output is knowledge + a throwaway script, recorded in this doc.
 | 2026-10-20 | Spike finding: only units named `app-…` under `app.slice` are apps; other units there are user services (`syncthing.service`, `dconf.service`, portals, `dbus-:1.x-…@0.service`) → ignore | Seen on Hyprland and KDE |
 | 2026-10-20 | Spike finding: unit formats differ — KDE: `app-<DesktopID>@<uuid>.service`; Hyprland/uwsm: `app-Hyprland-<cmd or id>-<rand>.scope`; D-Bus/xdg activation: `app-<reverse.dns.id>-<pid>.scope`; XDG autostart: `app-<id>@autostart.service`. Parser must handle all; ids are systemd-escaped (`\x2d`) | Per systemd's desktop-environment naming convention, confirmed in samples |
 | 2026-10-20 | Resolution chain: unit id → `<id>.desktop` (case-insensitive) → exe → `.desktop` whose `Exec=` binary matches → `scope:<id>` → `exe:<name>`. When several `.desktop` files share a binary, prefer the one whose id equals the binary / has no extra args (seen: `foot` matched `foot-server`) | Same app got two different unit names (Chromium); exe matching merges them |
+| 2026-10-20 | **Don't sample every desktop.** Identification is designed from documented signals (systemd convention, Flatpak/Snap scopes, GIO launch env, process tree) with fallbacks so it works on any desktop; real machines only sanity-check it | Maintainer can't provide every desktop/distro combination |
+| 2026-10-20 | "Is it an app" = resolves to a visible `.desktop` launcher entry and isn't autostart/session/background — no per-desktop ignore lists | Desktop components lack visible `.desktop` entries, so they drop out on any desktop |
 | 2026-10-20 | Autostart units (`@autostart.service`, tray apps like Nextcloud, Bitwarden, screenguard-tray) are tracked but **not counted as usage by default**; enforcement still applies to them if they're in a limited group | Background tray apps would otherwise accumulate "usage" all day |
 | 2026-10-20 | Strip a trailing ` (deleted)` from `/proc/<pid>/exe` targets | Binary updated while running (seen: screenguard-tray) |
 
@@ -429,3 +493,4 @@ Output is knowledge + a throwaway script, recorded in this doc.
 |---|---|---|
 | 2026-10-20 | Concept agreed, plan written (this file) | Phase 0, step 0.1 |
 | 2026-10-20 | 0.1 done (scan script). Samples: Hyprland (maintainer's machine), KDE (screenguardTest, sparse). Findings logged in decision log | Richer KDE sample; GNOME + Cinnamon access |
+| 2026-10-20 | Switched Phase 0 from sampling desktops to research: signal matrix, desktop-independent algorithm and app filter written (0.2–0.4) | 0.5 sanity check on Hyprland + KDE |
