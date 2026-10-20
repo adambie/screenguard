@@ -430,13 +430,17 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_unsynced_app_usage(&self) -> Result<Vec<AppUsageRow>> {
+    /// Unsynced rows, plus every row from `resend_since` on (YYYY-MM-DD) when
+    /// given — used after a reconnect, as rows sent just before a disconnect may
+    /// never have arrived. The server keeps the larger total, so resending is safe.
+    pub fn get_unsynced_app_usage(&self, resend_since: Option<&str>) -> Result<Vec<AppUsageRow>> {
         let mut stmt = self.conn.prepare(
             "SELECT local_uid, date, app_id, display_name, icon, seconds FROM app_usage_log
-             WHERE synced = 0 ORDER BY date, local_uid, app_id",
+             WHERE synced = 0 OR date >= ?1 ORDER BY date, local_uid, app_id",
         )?;
+        // '~' sorts after any date: no resend
         let rows = stmt
-            .query_map([], |r| {
+            .query_map(params![resend_since.unwrap_or("~")], |r| {
                 Ok(AppUsageRow {
                     local_uid: r.get(0)?,
                     date: r.get(1)?,
@@ -921,7 +925,7 @@ mod tests {
         db.add_app_usage(1000, "2026-09-01", "steam:570", "Dota 2", None, 60).unwrap();
         assert_eq!(db.get_app_usage_seconds(1000, "2026-10-20", "desktop:firefox").unwrap(), 10);
 
-        let unsynced = db.get_unsynced_app_usage().unwrap();
+        let unsynced = db.get_unsynced_app_usage(None).unwrap();
         assert_eq!(unsynced.len(), 2);
         let ff = unsynced.iter().find(|r| r.app_id == "desktop:firefox").unwrap().clone();
         assert_eq!((ff.seconds, ff.icon.as_deref()), (10, Some("firefox")));
@@ -929,11 +933,13 @@ mod tests {
         // seconds added between reading and marking keep the row unsynced
         db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
         db.mark_app_usage_synced(&ff).unwrap();
-        assert_eq!(db.get_unsynced_app_usage().unwrap().iter().find(|r| r.app_id == "desktop:firefox").unwrap().seconds, 15);
-        let ff = db.get_unsynced_app_usage().unwrap().into_iter().find(|r| r.app_id == "desktop:firefox").unwrap();
+        assert_eq!(db.get_unsynced_app_usage(None).unwrap().iter().find(|r| r.app_id == "desktop:firefox").unwrap().seconds, 15);
+        let ff = db.get_unsynced_app_usage(None).unwrap().into_iter().find(|r| r.app_id == "desktop:firefox").unwrap();
         db.mark_app_usage_synced(&ff).unwrap();
-        assert!(db.get_unsynced_app_usage().unwrap().iter().all(|r| r.app_id != "desktop:firefox"));
+        assert!(db.get_unsynced_app_usage(None).unwrap().iter().all(|r| r.app_id != "desktop:firefox"));
 
+        // firefox is synced but recent; steam is old but still unsynced
+        assert_eq!(db.get_unsynced_app_usage(Some("2026-10-19")).unwrap().len(), 2);
         assert_eq!(db.prune_app_usage("2026-09-15").unwrap(), 1);
         assert_eq!(db.get_app_usage_seconds(1000, "2026-09-01", "steam:570").unwrap(), 0);
     }

@@ -1,8 +1,9 @@
 use anyhow::Result;
 use chrono::{Datelike, Local, NaiveDate};
 use common::messages::{
-    AgentHello, Heartbeat, HeartbeatUser, ServerMessage, UsageSync, UserListUpdate,
-    MSG_AGENT_HELLO, MSG_HEARTBEAT, MSG_USAGE_SYNC, MSG_USER_LIST_UPDATE,
+    AgentHello, AppUsageEntry, AppUsageSync, Heartbeat, HeartbeatUser, ServerMessage, UsageSync,
+    UserListUpdate, MSG_AGENT_HELLO, MSG_APP_USAGE_SYNC, MSG_HEARTBEAT, MSG_USAGE_SYNC,
+    MSG_USER_LIST_UPDATE,
 };
 use common::models::{EnforceAction, LocalUser, UsageEntry};
 use common::protocol::WssMessage;
@@ -23,6 +24,10 @@ type SessionStates = HashMap<u32, HashMap<String, SessionUsageState>>;
 
 /// Per-app usage rows older than this are pruned at midnight.
 const APP_USAGE_KEEP_DAYS: i64 = 35;
+/// Send per-app totals every 12 scan ticks (60 s) while online.
+const APP_SYNC_EVERY_TICKS: u64 = 12;
+/// Entries per `app_usage_sync` message (a long offline period can pile up days).
+const APP_SYNC_CHUNK: usize = 500;
 
 fn uid_is_counting(session_states: &SessionStates, uid: u32) -> bool {
     session_states.get(&uid)
@@ -131,6 +136,7 @@ impl HeartbeatLoop {
         let mut user_scan_ticker = tokio::time::interval(self.user_scan_interval);
         let mut app_scan_ticker = tokio::time::interval(APP_SCAN_INTERVAL);
         app_scan_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut app_ticks: u64 = 0;
         let mut last_date: NaiveDate = Local::now().date_naive();
 
         let mut active_since: HashMap<u32, Option<Instant>> = HashMap::new();
@@ -188,6 +194,13 @@ impl HeartbeatLoop {
 
                 _ = app_scan_ticker.tick(), if self.app_tracker.is_some() => {
                     self.track_app_usage(&session_states).await;
+                    app_ticks += 1;
+                    if app_ticks.is_multiple_of(APP_SYNC_EVERY_TICKS) {
+                        let online = self.db.lock().await.get_agent_mode().ok() == Some(AgentMode::Online);
+                        if online && let Err(e) = self.send_app_usage_sync(None).await {
+                            tracing::warn!("App usage sync failed: {e}");
+                        }
+                    }
                 }
             }
         }
@@ -240,6 +253,12 @@ impl HeartbeatLoop {
                 self.send_agent_hello().await?;
                 self.send_usage_sync().await?;
                 self.send_user_list_update().await?;
+                if self.app_tracker.is_some() {
+                    let yesterday = (Local::now().date_naive() - chrono::Duration::days(1)).to_string();
+                    if let Err(e) = self.send_app_usage_sync(Some(&yesterday)).await {
+                        tracing::warn!("App usage sync failed: {e}");
+                    }
+                }
             }
             ConnectionEvent::Disconnected => {
                 tracing::warn!("Connection lost — switching to offline mode");
@@ -860,6 +879,33 @@ impl HeartbeatLoop {
         .await
     }
 
+    /// Sends per-app day totals (unsynced rows, plus all rows since
+    /// `resend_since` after a reconnect). Old servers ignore the message type.
+    async fn send_app_usage_sync(&self, resend_since: Option<&str>) -> Result<()> {
+        let rows = self.db.lock().await.get_unsynced_app_usage(resend_since)?;
+        for chunk in rows.chunks(APP_SYNC_CHUNK) {
+            let entries = chunk
+                .iter()
+                .filter_map(|r| {
+                    Some(AppUsageEntry {
+                        local_uid: r.local_uid,
+                        date: r.date.parse().ok()?,
+                        app_id: r.app_id.clone(),
+                        display_name: r.display_name.clone(),
+                        icon: r.icon.clone(),
+                        seconds_total: r.seconds,
+                    })
+                })
+                .collect();
+            ws_client::send(&self.outbound_tx, MSG_APP_USAGE_SYNC, &AppUsageSync { entries }).await?;
+            let db = self.db.lock().await;
+            for r in chunk {
+                db.mark_app_usage_synced(r)?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn send_usage_sync(&self) -> Result<()> {
         let unsynced = {
             let db = self.db.lock().await;
@@ -1062,6 +1108,37 @@ mod tests {
             None,
         );
         (hb, outbound_rx)
+    }
+
+    #[tokio::test]
+    async fn app_usage_sync_sends_growing_totals_and_resends_after_reconnect() {
+        let (hb, mut rx) = test_loop();
+        let recv = |rx: &mut mpsc::Receiver<WssMessage>| -> Vec<(String, u64)> {
+            let msg = rx.try_recv().expect("app_usage_sync sent");
+            assert_eq!(msg.msg_type, MSG_APP_USAGE_SYNC);
+            let p: AppUsageSync = serde_json::from_value(msg.payload).unwrap();
+            p.entries.into_iter().map(|e| (e.app_id, e.seconds_total)).collect()
+        };
+        {
+            let db = hb.db.lock().await;
+            db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+            db.add_app_usage(1000, "2026-10-20", "steam:570", "Dota 2", None, 5).unwrap();
+        }
+        hb.send_app_usage_sync(None).await.unwrap();
+        assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 5), ("steam:570".into(), 5)]);
+
+        // nothing new: nothing sent
+        hb.send_app_usage_sync(None).await.unwrap();
+        assert!(rx.try_recv().is_err());
+
+        // only the app that grew, with its whole total (not a delta)
+        hb.db.lock().await.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+        hb.send_app_usage_sync(None).await.unwrap();
+        assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 10)]);
+
+        // after a reconnect, recent rows go again even though they're synced
+        hb.send_app_usage_sync(Some("2026-10-19")).await.unwrap();
+        assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 10), ("steam:570".into(), 5)]);
     }
 
     // Regression test for #13: once a managed uid's session count drops to

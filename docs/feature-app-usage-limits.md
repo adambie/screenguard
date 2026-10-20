@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.9 (agent storage + tracker wired into the loop)
-- **Next step:** 1.10 — send unsynced totals via `MSG_APP_USAGE_SYNC` on connect and every 60 s
+- **Last completed step:** 1.10 (agent → server sync)
+- **Next step:** 1.11 — agent config switch `app_tracking`
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -469,11 +469,21 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - `counting` = `uid_is_counting(session_states)`, the screen-time rule.
 
   Errors are logged and never stop the loop. The `allow(dead_code)`s are removed.
-- [ ] **1.10 Sync** — send today's (and any unsynced past days') totals via
+- [x] **1.10 Sync** — send today's (and any unsynced past days') totals via
   `MSG_APP_USAGE_SYNC` on connect and every heartbeat N (e.g. every 60 s);
   only when connected; never block the existing heartbeat.
   *Done when:* simulated server receives monotonically growing totals; reconnect
   re-sends totals without double counting server-side.
+  → `HeartbeatLoop::send_app_usage_sync(resend_since)`: unsynced rows, in chunks
+  of 500.
+  - Sent every 12th scan tick (60 s) while online, and on `Connected`.
+  - On `Connected` it also resends yesterday's and today's rows, because rows sent
+    just before a disconnect may never have arrived.
+  - Errors are logged, never `?`, so they can't stop the loop.
+
+  Agent-side test: growing totals, nothing sent when unchanged, resend after a
+  reconnect. "Without double counting server-side" is the server's MAX upsert
+  (1.13).
 - [ ] **1.11 Feature switch** — agent config `app_tracking = true|false`
   (default true) so it can be disabled per machine without a rebuild.
 
@@ -661,3 +671,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.7 done: `name_for(lang)`, `CatalogCache` (mtime signature, 30 s), `display()` for Steam/Snap/Flatpak/Minecraft/Wine | 1.8 accounting loop |
 | 2026-10-20 | 1.8 done: `AppAccounting` (fake-clock tests: exact totals, carry, 2× cap) + `AppTracker`; `AppId` now `Ord` | 1.9 storage + wiring |
 | 2026-10-20 | 1.9 done: `app_usage_log` table + DB functions (2 tests), tracker wired into `HeartbeatLoop` (5 s), prune > 35 days; clippy clean on new code | 1.10 sync |
+| 2026-10-20 | 1.10 done: `send_app_usage_sync` (60 s + on connect with 2-day resend), test | 1.11 config switch |
