@@ -83,6 +83,8 @@ pub struct TickResult {
     pub add_groups: Vec<(u32, String, u64)>,
     /// Counted apps running right now, per uid.
     pub running: HashMap<u32, BTreeSet<AppId>>,
+    /// Every process of an app (counted or autostarted) — what app limits can close.
+    pub procs: Vec<crate::app_enforce::RunningProc>,
     /// (uid, app) → name, icon and categories, in the user's profile language.
     pub names: HashMap<(u32, AppId), app_ident::Shown>,
 }
@@ -123,15 +125,27 @@ impl AppTracker {
                 continue;
             }
             let catalog = self.catalogs.get(&user.home);
-            for id in app_ident::identify_all(&mine, catalog).into_values() {
-                if id.launch != Launch::App {
-                    continue; // autostart and "other" are not counted (decision log)
+            for (pid, id) in app_ident::identify_all(&mine, catalog) {
+                if id.launch == Launch::Other {
+                    continue;
                 }
                 result
                     .names
                     .entry((user.uid, id.app_id.clone()))
                     .or_insert_with(|| app_ident::display(&id, catalog, &user.language, &user.home));
-                running.entry(user.uid).or_default().insert(id.app_id);
+                let p = &mine[&pid];
+                result.procs.push(crate::app_enforce::RunningProc {
+                    pid,
+                    start_ticks: p.start_ticks,
+                    uid: p.uid,
+                    app_id: id.app_id.clone(),
+                    comm: p.comm.clone(),
+                    exe: p.exe.clone(),
+                });
+                if id.launch == Launch::App {
+                    // autostarted apps are not counted (decision log)
+                    running.entry(user.uid).or_default().insert(id.app_id);
+                }
             }
         }
         let active: HashSet<u32> = running.keys().copied().collect();

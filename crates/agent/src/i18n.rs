@@ -196,3 +196,15 @@ pub fn notif_group_blocked_title(lang: &str, group: &str) -> String {
         _ => format!("{group}: not allowed today"),
     }
 }
+
+/// "Dota 2 was closed."
+pub fn notif_app_closed_body(lang: &str, app: &str) -> String {
+    match lang {
+        "es" => format!("{app} se ha cerrado."),
+        "fr" => format!("{app} a été fermée."),
+        "de" => format!("{app} wurde geschlossen."),
+        "pt" => format!("{app} foi fechada."),
+        "pl" => format!("{app} została zamknięta."),
+        _ => format!("{app} was closed."),
+    }
+}

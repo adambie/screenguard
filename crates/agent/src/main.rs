@@ -1,4 +1,5 @@
 mod app_catalog;
+mod app_enforce;
 mod app_ident;
 mod app_limits;
 mod app_scan;

@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2C enforcement: 2.9 warnings, 2.10 closing apps (safety rules!), 2.11 relaunch, 2.12 blocked groups. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.13 interaction with the overall screen-time lock, 2.14 extra time per group. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -797,15 +797,41 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   back above them; none once exhausted. Sent from the app tick via the existing
   desktop-notification path, title = group name, body localized in 6 languages;
   the state clears at midnight. Real-machine check is done together with 2.10.
-- [ ] **2.10 Closing apps** — at 0: SIGTERM matched processes → grace (~10 s) →
+- [x] **2.10 Closing apps** — at 0: SIGTERM matched processes → grace (~10 s) →
   `cgroup.kill` on the app scope → fallback SIGKILL of the process tree.
   Strictly obey the safety rules in [Enforcement](#enforcement-agent-phase-2).
   *Done when:* integration test with dummy processes in a test cgroup (or a
   container) proves only matched processes die.
-- [ ] **2.11 Relaunch handling** — killed-again on next tick + notification,
+  → `app_enforce.rs`. `targets()` is pure, with the safety rules built in:
+  managed uid ≥ 1000, never `screenguard*`, only apps (not "other") in an
+  exhausted group, autostarted apps included. `Closer` runs warn ("closes in 10
+  seconds") → 10 s → SIGTERM → 10 s → SIGKILL.
+  - **Changed from the plan:** no `cgroup.kill`. A unit can hold more than the
+    app (a terminal's scope), so only the identified processes are signalled,
+    and each one's start time is re-checked first (no reused PIDs).
+  - Enforcement runs every tick, even when nothing is being counted.
+  - Tests: target selection, a fake-signal state machine, and **real
+    processes**: the target dies, one that ignores SIGTERM gets SIGKILL, a
+    bystander survives, a wrong start time is never signalled.
+  - **Bug found by the real-machine test and fixed:** `.desktop` entries whose
+    `Exec=` starts with a generic program identified every such process as the
+    app. A `sleep` in the test script was closed as the test game; with real
+    entries the same happens with `sh -c …` and `flatpak run …`. Now
+    `exec_binary` takes the first program inside `sh -c "…"`, and launchers
+    (`flatpak`, `xdg-open`, `gio`, `gtk-launch`, `kioclient`, …) and
+    `steam://` shortcuts never identify an app by their binary.
+  - Real machine: the game closed 10–15 s after the notice (5 s ticks); a
+    bystander `sleep` survived; Firefox (not in the group) unaffected.
+- [x] **2.11 Relaunch handling** — killed-again on next tick + notification,
   rate-limited (no notification spam).
-- [ ] **2.12 Blocked groups (0 min)** — apps are closed immediately on start with
+  → A relaunch within 60 s of the last notice for that group is closed
+  immediately without another notice. Real machine: relaunch closed at the
+  next tick (≤ 5 s), one notice in total.
+- [x] **2.12 Blocked groups (0 min)** — apps are closed immediately on start with
   a "not allowed" notification.
+  → Real machine: Games set to 0 today; a game started straight from a shell
+  (process-tree identification) was closed 2.6 s later with "Games: not allowed
+  today — SG Test Game 2 was closed".
 - [ ] **2.13 Interaction with the overall limit** — group time also counts toward
   daily screen time (it already does, since it's session time); when the overall
   limit is hit the existing lock logic wins. Verify no double-locking/kill races.
@@ -913,6 +939,8 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
 | 2026-10-20 | Scan every 5 s, identities cached by `(pid, start time)`, `.desktop` catalogue reloaded on dir mtime change | Measured ≤ 0.11 % CPU full, ~0.04 % cached (0.6); start time guards against PID reuse |
 | 2026-10-20 | The agent sends `app_usage_sync` to any server, no version gate | Every server version ignores unknown message types (Q4); the payload is small and sent at most once a minute |
+| 2026-10-20 | Closing signals only the processes identified as the app (start time re-checked), not the whole cgroup via `cgroup.kill` | A unit can contain unrelated processes (terminal scope, shared launcher unit); safety rule (b) |
+| 2026-10-20 | Generic launchers / shells / `steam://` shortcuts never identify an app by their `Exec=` binary | Otherwise every `sh`/`flatpak` process counts as (and can be closed as) that app — found on the test machine |
 | 2026-10-20 | The agent re-requests config when its cached config predates a new `CONFIG_FORMAT` | Otherwise upgraded agents keep config without the new parts until a setting changes (seen on the test machine) |
 | 2026-10-20 | Group time is accounted on the agent (union per tick) and remaining group time is computed there from `limit − (other computers + local)` | Summing member apps double-counts overlapping apps; the agent sees exact local time live and the same code works offline |
 | 2026-10-20 | Phase 1 + 2 ship in one release | Maintainer wants a full working solution (see apps, group, limit, close) before release |

@@ -356,11 +356,30 @@ fn parse_entry(text: &str, id: &str) -> Option<DesktopEntry> {
 
 /// `Exec=` value → (binary basename, has extra args). Drops field codes and a
 /// leading `env VAR=…`.
+/// Programs that start *another* program: their basename says nothing about
+/// which app runs, so it must not identify one (any `sh` or `flatpak` process
+/// would otherwise count as — and be closed as — that app).
+const LAUNCHERS: &[&str] = &[
+    "flatpak", "flatpak-spawn", "xdg-open", "gio", "gtk-launch", "kioclient", "kioclient5", "kioclient6",
+    "kde-open", "kde-open5", "systemd-run", "uwsm", "uwsm-app", "app2unit", "nohup", "setsid", "exec",
+];
+
 fn exec_binary(cmd: &str) -> Option<(String, bool)> {
     let mut argv: Vec<String> = split_exec(cmd)
         .into_iter()
         .filter(|a| !(a.len() == 2 && a.starts_with('%')))
         .collect();
+    // `sh -c "cd /opt/game && ./run"`: the app is the first program in the script
+    let shell = |a: &str| matches!(a.rsplit('/').next().unwrap_or(a), "sh" | "bash" | "dash" | "zsh");
+    if argv.len() >= 3 && shell(&argv[0]) && argv[1] == "-c" {
+        let script = argv[2].clone();
+        argv = script
+            .split(['&', ';', '|'])
+            .map(str::trim)
+            .find(|part| !part.is_empty() && !part.starts_with("cd ") && part != &"cd")
+            .map(split_exec)
+            .unwrap_or_default();
+    }
     while let Some(first) = argv.first() {
         let base = first.rsplit('/').next().unwrap_or(first);
         let is_assignment = first.split_once('=').is_some_and(|(k, _)| {
@@ -373,7 +392,12 @@ fn exec_binary(cmd: &str) -> Option<(String, bool)> {
         }
     }
     let first = argv.first()?;
-    Some((first.rsplit('/').next().unwrap_or(first).to_string(), argv.len() > 1))
+    let binary = first.rsplit('/').next().unwrap_or(first).to_string();
+    // a Steam game shortcut (`steam steam://rungameid/570`) is not the Steam client
+    if LAUNCHERS.contains(&binary.as_str()) || shell(&binary) || argv.iter().any(|a| a.starts_with("steam://")) {
+        return None;
+    }
+    Some((binary, argv.len() > 1))
 }
 
 /// Splits an `Exec=` value: whitespace-separated, `"…"` quoting with `\` escapes.
@@ -476,6 +500,14 @@ mod tests {
         assert_eq!(exec_binary("env GDK_BACKEND=x11 mousepad %F"), Some(("mousepad".into(), false)));
         assert_eq!(exec_binary("\"/opt/My App/run\" --x"), Some(("run".into(), true)));
         assert_eq!(exec_binary("%u"), None);
+        // launchers and wrappers never identify an app by their own binary
+        assert_eq!(exec_binary("/usr/bin/flatpak run --branch=stable org.mozilla.firefox @@u %u @@"), None);
+        assert_eq!(exec_binary("steam steam://rungameid/570"), None);
+        assert_eq!(exec_binary("xdg-open https://example.com"), None);
+        assert_eq!(exec_binary("sh -c \"echo hi; read\""), Some(("echo".into(), true)));
+        assert_eq!(exec_binary("sh -c \"cd /opt/game && ./run-game --fullscreen\""), Some(("run-game".into(), true)));
+        assert_eq!(exec_binary("bash -c \"cd /opt/x\""), None);
+        assert_eq!(exec_binary("/bin/sh"), None);
     }
 
     #[test]
@@ -502,6 +534,11 @@ mod tests {
         assert_eq!(cat.by_name("bitwarden").unwrap().id, "bitwarden"); // StartupWMClass
         assert_eq!(cat.by_name("dolphin").unwrap().id, "org.kde.dolphin");
         assert_eq!(cat.by_unit_id("org.chromium.Chromium").map(|e| e.id.as_str()), None);
+        // generic programs map to no app: a `flatpak` or `sh` process isn't an app,
+        // and `steam` is the Steam client, not a game with a Steam shortcut
+        assert!(cat.by_name("flatpak").is_none());
+        assert!(cat.by_name("sh").is_none());
+        assert_eq!(cat.by_name("steam").unwrap().id, "steam");
         assert!(cat.is_autostart("nextcloud"));
         assert!(!cat.is_autostart("disabled-app"));
         let _ = fs::remove_dir_all(&d);

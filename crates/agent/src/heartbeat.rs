@@ -93,6 +93,8 @@ pub struct HeartbeatLoop {
     group_status: HashMap<u32, Vec<crate::app_limits::GroupStatus>>,
     /// App-group warning thresholds already shown today: uid → group → thresholds.
     group_warned: HashMap<u32, HashMap<String, HashSet<u32>>>,
+    /// Closes apps of groups that are out of time or blocked.
+    closer: crate::app_enforce::Closer,
 }
 
 impl HeartbeatLoop {
@@ -131,6 +133,7 @@ impl HeartbeatLoop {
             app_tracker: (app_tracking && crate::app_scan::supported()).then(AppTracker::new),
             group_status: HashMap::new(),
             group_warned: HashMap::new(),
+            closer: crate::app_enforce::Closer::new(),
         }
     }
 
@@ -252,33 +255,66 @@ impl HeartbeatLoop {
         };
         // ~2-6 ms of /proc reads (Phase 0, step 0.6): fine inline every 5 s.
         let result = tracker.tick(Instant::now(), &users);
+        let today = Local::now().date_naive().to_string();
+        self.store_app_usage(&result, &today).await;
+        let in_use: HashMap<u32, HashSet<String>> = result.add_groups.iter().fold(HashMap::new(), |mut m, (uid, g, _)| {
+            m.entry(*uid).or_default().insert(g.clone());
+            m
+        });
+        self.update_group_status(&users, &today, &in_use).await;
+        // enforcement runs even when nothing was counted (screen locked, idle)
+        self.close_apps_over_limit(&users, &result);
+    }
+
+    /// Closes apps whose group has no time left today (or is blocked).
+    fn close_apps_over_limit(&mut self, users: &[TrackedUser], result: &crate::app_usage::TickResult) {
+        let managed: HashSet<u32> = users.iter().map(|u| u.uid).collect();
+        let groups: HashMap<u32, Vec<common::models::AppGroupConfig>> = users.iter().map(|u| (u.uid, u.groups.clone())).collect();
+        let targets = crate::app_enforce::targets(&result.procs, &self.group_status, &groups, &result.names, &managed);
+        for t in &targets {
+            tracing::debug!("uid={}: closing '{}' (pid {}, group '{}')", t.uid, t.app_name, t.pid, t.group_name);
+        }
+        let notices = self.closer.enforce(Instant::now(), &targets, &crate::app_enforce::ProcSignals);
+        for n in notices {
+            let lang = users.iter().find(|u| u.uid == n.uid).map_or("en", |u| u.language.as_str());
+            let (title, body) = if n.blocked {
+                (crate::i18n::notif_group_blocked_title(lang, &n.group_name), crate::i18n::notif_app_closed_body(lang, &n.app_name))
+            } else if n.closes_in > 0 {
+                (crate::i18n::notif_group_time_up_title(lang, &n.group_name), crate::i18n::notif_app_closing_body(lang, &n.app_name, n.closes_in))
+            } else {
+                (crate::i18n::notif_group_time_up_title(lang, &n.group_name), crate::i18n::notif_app_closed_body(lang, &n.app_name))
+            };
+            tracing::info!("uid={}: app limit — {title}: {body}", n.uid);
+            let uid = n.uid;
+            tokio::spawn(async move {
+                if let Err(e) = crate::dbus::send_desktop_notification(uid, &title, &body).await {
+                    tracing::warn!("App limit notification failed for uid={uid}: {e}");
+                }
+            });
+        }
+    }
+
+    async fn store_app_usage(&self, result: &crate::app_usage::TickResult, today: &str) {
         if result.add.is_empty() {
             return;
         }
-        let today = Local::now().date_naive().to_string();
         let db = self.db.lock().await;
         for (uid, app, secs) in &result.add {
             let shown = result.names.get(&(*uid, app.clone()));
             let name = shown.map_or(app.name.as_str(), |s| s.name.as_str());
             let icon = shown.and_then(|s| s.icon.as_deref());
             let categories = shown.map(|s| s.categories.join(";")).unwrap_or_default();
-            if let Err(e) = db.add_app_usage(*uid, &today, &app.to_string(), name, icon, &categories, *secs) {
+            if let Err(e) = db.add_app_usage(*uid, today, &app.to_string(), name, icon, &categories, *secs) {
                 tracing::warn!("Storing app usage failed: {e}");
                 return;
             }
         }
         for (uid, group, secs) in &result.add_groups {
-            if let Err(e) = db.add_group_usage(*uid, &today, group, *secs) {
+            if let Err(e) = db.add_group_usage(*uid, today, group, *secs) {
                 tracing::warn!("Storing group usage failed: {e}");
                 return;
             }
         }
-        drop(db);
-        let in_use: HashMap<u32, HashSet<String>> = result.add_groups.iter().fold(HashMap::new(), |mut m, (uid, g, _)| {
-            m.entry(*uid).or_default().insert(g.clone());
-            m
-        });
-        self.update_group_status(&users, &today, &in_use).await;
     }
 
     /// Recomputes remaining time per limited group from this machine's group
