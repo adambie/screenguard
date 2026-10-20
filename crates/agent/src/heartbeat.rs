@@ -55,6 +55,20 @@ fn update_usage_timer(
     }
 }
 
+/// Moves a counting timer forward by the whole seconds just counted, so the
+/// fraction carries into the next heartbeat. Resetting it to "now" instead lost
+/// the sub-second remainder of every beat — elapsed is measured a hair under the
+/// interval, rounded down to 9 s of every 10 s: ~10 % less screen time. A gap of
+/// more than two intervals (stalled loop, clock jump) is dropped, not caught up.
+fn advance_usage_timer(since: Instant, counted_secs: u32, interval: Duration) -> Instant {
+    let now = Instant::now();
+    if now.saturating_duration_since(since) > interval * 2 {
+        now
+    } else {
+        since + Duration::from_secs(counted_secs as u64)
+    }
+}
+
 pub struct HeartbeatLoop {
     db: Arc<Mutex<Db>>,
     outbound_tx: mpsc::Sender<common::protocol::WssMessage>,
@@ -746,10 +760,8 @@ impl HeartbeatLoop {
                 db.add_usage_seconds(uid, today, active_secs as u64)?;
             }
 
-            if let Some(ts) = active_since.get_mut(&uid)
-                && ts.is_some()
-            {
-                *ts = Some(Instant::now());
+            if let Some(Some(since)) = active_since.get_mut(&uid) {
+                *since = advance_usage_timer(*since, active_secs, self.heartbeat_interval);
             }
 
             hb_users.push(HeartbeatUser {
@@ -1141,6 +1153,35 @@ mod tests {
         // after a reconnect, recent rows go again even though they're synced
         hb.send_app_usage_sync(Some("2026-10-19")).await.unwrap();
         assert_eq!(recv(&mut rx), vec![("desktop:firefox".into(), 10), ("steam:570".into(), 5)]);
+    }
+
+    // Screen time used to lose ~1 s per 10 s heartbeat (seen on a real machine:
+    // +9 per beat). The remainder must carry over to the next beat.
+    #[tokio::test]
+    async fn heartbeat_keeps_the_sub_second_remainder() {
+        let (hb, _rx) = test_loop();
+        let mut session_states: SessionStates = HashMap::new();
+        session_states.insert(1000, HashMap::from([("1".to_string(), SessionUsageState::default())]));
+        let today = "2026-10-20";
+
+        // 9.7 s since the last beat: count 9 s, keep the 0.7 s
+        let mut active_since = HashMap::from([(1000, Some(Instant::now() - Duration::from_millis(9_700)))]);
+        hb.send_heartbeat(&session_states, &mut active_since, true, today).await.unwrap();
+        let left = active_since[&1000].unwrap().elapsed();
+        assert!(left >= Duration::from_millis(650) && left < Duration::from_millis(900), "{left:?}");
+        assert_eq!(hb.db.lock().await.get_usage_seconds(1000, today).unwrap(), 9);
+
+        // the carried 0.7 s plus another 9.4 s add up to a full 10 s beat
+        let since = active_since[&1000].unwrap() - Duration::from_millis(9_400);
+        active_since.insert(1000, Some(since));
+        hb.send_heartbeat(&session_states, &mut active_since, true, today).await.unwrap();
+        assert_eq!(hb.db.lock().await.get_usage_seconds(1000, today).unwrap(), 19);
+
+        // a long gap counts one interval and starts afresh
+        active_since.insert(1000, Some(Instant::now() - Duration::from_secs(600)));
+        hb.send_heartbeat(&session_states, &mut active_since, true, today).await.unwrap();
+        assert_eq!(hb.db.lock().await.get_usage_seconds(1000, today).unwrap(), 29);
+        assert!(active_since[&1000].unwrap().elapsed() < Duration::from_millis(100));
     }
 
     // Regression test for #13: once a managed uid's session count drops to
