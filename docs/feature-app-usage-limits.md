@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** Phase 2 — 2B: 2.6 `UserConfig.app_groups`, 2.7 server-side group remaining, 2.8 agent cache/offline. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+- **Next step:** Phase 2 — 2.7 group accounting on the agent + sync + server v13, then 2.8 agent-side group remaining. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
   No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
@@ -739,11 +739,17 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 > *any* member app runs, which only the agent sees per tick. So the agent
 > accounts groups itself and computes remaining group time locally.
 
-- [ ] **2.6 `UserConfig.app_groups`** (`#[serde(default)]`): *all* groups with
+- [x] **2.6 `UserConfig.app_groups`** (`#[serde(default)]`): *all* groups with
   `id`, `name`, `builtin`, `rules`, and this profile's `daily_limits` (empty =
   no limit). Bump the config version of every profile when groups/rules change
   (and of the profile when its group limits change, already done in 2.4) so
   `config_push` is sent.
+  → `common::models::AppGroupConfig { id, name, builtin, rules, daily_limits }`;
+  `UserConfig.app_groups` is omitted when empty, so the wire is unchanged
+  without groups. `build_config_push` fills it; every group/rule/membership
+  change calls `propagate_all` (bump + push for every profile). The agent caches
+  the groups as JSON per user (`cached_app_groups`, cleared with
+  `managed_users` and on rebind). Tests on both sides.
 - [ ] **2.7 Group accounting + sync** — agent: per tick, each group with ≥ 1
   running member app gets the tick's seconds once (same counting rule as apps);
   stored in `group_usage_log(local_uid, date, group_id, seconds, synced)`; sent

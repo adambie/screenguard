@@ -32,6 +32,23 @@ pub struct UserConfig {
     pub language: String,
     #[serde(default)]
     pub blocked_domains: Vec<String>,
+    /// App groups with this profile's limits (#27). Absent from older servers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub app_groups: Vec<AppGroupConfig>,
+}
+
+/// An app group as the agent needs it: who's in it and today's limits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppGroupConfig {
+    pub id: String,
+    pub name: String,
+    /// `games` / `browsers` for the predefined groups (the agent localizes those names).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<String>,
+    pub rules: Vec<crate::apps::GroupRule>,
+    /// Empty = no limit; 0 minutes = blocked that day.
+    #[serde(default)]
+    pub daily_limits: Vec<DailyLimit>,
 }
 
 fn default_lang() -> String { "en".to_string() }

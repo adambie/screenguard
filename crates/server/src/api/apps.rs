@@ -17,6 +17,14 @@ use crate::state::AppState;
 
 type ApiResult = Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)>;
 
+/// Group definitions are shared by every profile: push new config to all of them.
+async fn propagate_all(state: &AppState) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    for p in crate::db::list_profiles(&state.db).await.map_err(internal)? {
+        crate::api::profiles::bump_and_propagate(state, p.id).await.map_err(internal)?;
+    }
+    Ok(())
+}
+
 fn bad(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Value>) {
     (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e.to_string() })))
 }
@@ -52,6 +60,7 @@ pub struct GroupBody {
 
 pub async fn create_group(State(state): State<Arc<AppState>>, Json(body): Json<GroupBody>) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     let id = app_groups::create_group(&state.db, &body.name).await.map_err(bad)?;
+    propagate_all(&state).await?;
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id }))))
 }
 
@@ -59,6 +68,7 @@ pub async fn rename_group(State(state): State<Arc<AppState>>, Path(id): Path<Str
     if !app_groups::rename_group(&state.db, &id, &body.name).await.map_err(bad)? {
         return Err(not_found());
     }
+    propagate_all(&state).await?;
     Ok(Json(serde_json::json!({ "message": "Group renamed" })))
 }
 
@@ -66,6 +76,7 @@ pub async fn delete_group(State(state): State<Arc<AppState>>, Path(id): Path<Str
     if !app_groups::delete_group(&state.db, &id).await.map_err(internal)? {
         return Err(not_found());
     }
+    propagate_all(&state).await?;
     Ok(Json(serde_json::json!({ "message": "Group deleted" })))
 }
 
@@ -75,6 +86,7 @@ pub async fn add_rule(State(state): State<Arc<AppState>>, Path(id): Path<String>
         return Err(not_found());
     }
     let rule_id = app_groups::add_rule(&state.db, &id, &rule).await.map_err(bad)?;
+    propagate_all(&state).await?;
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": rule_id }))))
 }
 
@@ -82,6 +94,7 @@ pub async fn delete_rule(State(state): State<Arc<AppState>>, Path((id, rule_id))
     if !app_groups::delete_rule(&state.db, &id, &rule_id).await.map_err(internal)? {
         return Err(not_found());
     }
+    propagate_all(&state).await?;
     Ok(Json(serde_json::json!({ "message": "Rule deleted" })))
 }
 
@@ -145,5 +158,6 @@ pub async fn set_membership(State(state): State<Arc<AppState>>, Path(id): Path<S
         .await
         .map_err(bad)?
         .ok_or_else(not_found)?;
+    propagate_all(&state).await?;
     Ok(Json(serde_json::json!({ "message": "Membership updated" })))
 }

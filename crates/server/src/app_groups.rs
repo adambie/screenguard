@@ -337,6 +337,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn config_push_carries_groups_and_this_profiles_limits() {
+        let pool = db::open_in_memory().await;
+        let (agent, au) = crate::app_usage::tests::agent_with_user(&pool, "m1", 1001).await;
+        let p = db::create_profile(&pool, "Kid").await.unwrap().id;
+        db::update_agent_user(&pool, au, Some(p), Some("managed")).await.unwrap();
+        let games = list_groups(&pool).await.unwrap()[0].id.clone();
+        replace_limits(&pool, &p.to_string(), &games, &[(5, 120)]).await.unwrap();
+
+        let push = crate::remaining::build_config_push(&pool, agent, 7).await.unwrap();
+        let groups = &push.users[0].app_groups;
+        assert_eq!(groups.len(), 2);
+        let g = groups.iter().find(|g| g.id == games).unwrap();
+        assert_eq!((g.builtin.as_deref(), g.daily_limits.len(), g.daily_limits[0].allowed_minutes), (Some("games"), 1, 120));
+        assert!(groups.iter().find(|g| g.id != games).unwrap().daily_limits.is_empty());
+        assert!(common::apps::group_matches(&g.rules, "steam:570", &[]));
+    }
+
+    #[tokio::test]
     async fn membership_toggles_through_entries_and_exclusions() {
         let pool = db::open_in_memory().await;
         let browsers = list_groups(&pool).await.unwrap()[1].clone();

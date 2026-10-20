@@ -65,6 +65,13 @@ impl Db {
                 PRIMARY KEY (local_uid, date, app_id)
             )",
         );
+        // App groups from the server's config (#27 Phase 2), as JSON per user.
+        let _ = self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS cached_app_groups (
+                local_uid INTEGER PRIMARY KEY,
+                groups    TEXT NOT NULL
+            )",
+        );
         // App categories (#27 Phase 2) — on DBs created before the column existed.
         let _ = self.conn.execute_batch(
             "ALTER TABLE app_usage_log ADD COLUMN categories TEXT NOT NULL DEFAULT ''",
@@ -225,6 +232,7 @@ impl Db {
             "managed_users",
             "usage_log",
             "app_usage_log",
+            "cached_app_groups",
             "server_remaining",
             "active_sessions",
             "config_meta",
@@ -323,6 +331,7 @@ impl Db {
         let tx = self.conn.unchecked_transaction()?;
 
         tx.execute("DELETE FROM managed_users", [])?;
+        tx.execute("DELETE FROM cached_app_groups", [])?;
 
         for u in users {
             let status = match u.status {
@@ -383,6 +392,11 @@ impl Db {
             )?;
 
             tx.execute(
+                "INSERT OR REPLACE INTO cached_app_groups (local_uid, groups) VALUES (?1, ?2)",
+                params![u.local_uid, serde_json::to_string(&u.app_groups)?],
+            )?;
+
+            tx.execute(
                 "DELETE FROM cached_blocked_domains WHERE local_uid = ?1",
                 params![u.local_uid],
             )?;
@@ -396,6 +410,15 @@ impl Db {
 
         tx.commit()?;
         Ok(())
+    }
+
+    /// App groups of a managed user from the last config push (empty if none).
+    pub fn get_cached_app_groups(&self, uid: u32) -> Result<Vec<common::models::AppGroupConfig>> {
+        let json: Option<String> = self
+            .conn
+            .query_row("SELECT groups FROM cached_app_groups WHERE local_uid = ?1", params![uid], |r| r.get(0))
+            .optional()?;
+        Ok(json.map(|j| serde_json::from_str(&j)).transpose()?.unwrap_or_default())
     }
 
     pub fn get_managed_uids(&self) -> Result<Vec<u32>> {
@@ -875,6 +898,7 @@ mod tests {
             warning_thresholds_minutes: vec![15, 5, 1],
             language: "en".to_string(),
             blocked_domains: Vec::new(),
+            app_groups: Vec::new(),
         }
     }
 
@@ -952,6 +976,28 @@ mod tests {
         assert_eq!(db.get_unsynced_app_usage(Some("2026-10-19")).unwrap().len(), 2);
         assert_eq!(db.prune_app_usage("2026-09-15").unwrap(), 1);
         assert_eq!(db.get_app_usage_seconds(1000, "2026-09-01", "steam:570").unwrap(), 0);
+    }
+
+    #[test]
+    fn app_groups_are_cached_from_config_push() {
+        use common::apps::{GroupRule, RuleKind};
+        use common::models::{AppGroupConfig, DailyLimit};
+        let db = Db::open(Some(":memory:")).unwrap();
+        let mut cfg = user_config(1000, false);
+        cfg.app_groups = vec![AppGroupConfig {
+            id: "g1".into(),
+            name: "Games".into(),
+            builtin: Some("games".into()),
+            rules: vec![GroupRule { kind: RuleKind::Category, value: "Game".into(), exclude: false }],
+            daily_limits: vec![DailyLimit { day_of_week: 0, allowed_minutes: 60 }],
+        }];
+        db.apply_config_push(&[cfg]).unwrap();
+        let g = db.get_cached_app_groups(1000).unwrap();
+        assert_eq!((g.len(), g[0].id.as_str(), g[0].daily_limits[0].allowed_minutes), (1, "g1", 60));
+        assert!(db.get_cached_app_groups(1001).unwrap().is_empty());
+        // a later push without the user drops its groups
+        db.apply_config_push(&[]).unwrap();
+        assert!(db.get_cached_app_groups(1000).unwrap().is_empty());
     }
 
     #[test]

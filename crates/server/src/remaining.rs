@@ -140,6 +140,7 @@ pub async fn calculate_remaining_for_agent(
 pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i64) -> Result<ConfigPush> {
     let agent_users = db::list_agent_users(pool, agent_id).await?;
     let mut user_configs = Vec::new();
+    let groups = crate::app_groups::list_groups(pool).await?;
 
     for au in &agent_users {
         if au.status != "managed" {
@@ -178,6 +179,22 @@ pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i6
             .map(|p| p.language)
             .unwrap_or_else(|| "en".to_string());
         let blocked_domains = db::get_enabled_blocked_domains(pool, profile_id).await?;
+        let group_limits = crate::app_groups::limits(pool, &profile_id.to_string()).await?;
+        let app_groups = groups
+            .iter()
+            .map(|g| common::models::AppGroupConfig {
+                id: g.id.clone(),
+                name: g.name.clone(),
+                builtin: g.builtin.clone(),
+                rules: g.rules(),
+                daily_limits: group_limits
+                    .get(&g.id)
+                    .into_iter()
+                    .flatten()
+                    .map(|&(day_of_week, mins)| ModelDailyLimit { day_of_week, allowed_minutes: mins as u32 })
+                    .collect(),
+            })
+            .collect();
 
         user_configs.push(UserConfig {
             local_uid: au.local_uid as u32,
@@ -196,6 +213,7 @@ pub async fn build_config_push(pool: &DbPool, agent_id: Uuid, config_version: i6
                 .collect(),
             language,
             blocked_domains,
+            app_groups,
         });
     }
 

@@ -1098,6 +1098,7 @@ mod tests {
             warning_thresholds_minutes: vec![15, 5, 1],
             language: "en".to_string(),
             blocked_domains: Vec::new(),
+            app_groups: Vec::new(),
         }
     }
 
