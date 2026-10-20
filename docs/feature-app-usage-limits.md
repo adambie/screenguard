@@ -44,10 +44,9 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.21 (README); 1.18 skipped, 1.20 mostly done
-- **Next step:** 1.19 + rest of 1.20 on a real test machine — needs the
-  maintainer (root install of the new agent, and a server running this build),
-  then 1.22 release
+- **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
+- **Next step:** rest of 1.20 (a real 0.10.17 agent against this server),
+  then 1.22 release (version bump; tag only with the go-ahead)
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -576,13 +575,36 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 1E. Verification and release
 
-- [ ] **1.19 End-to-end on a real test machine**
+- [x] **1.19 End-to-end on a real test machine**
   Prerequisites checked 2026-10-20:
   - `deploy/screenguard-agent.service` has no `CapabilityBoundingSet` (root
     keeps `CAP_SYS_PTRACE`, so it can read other users' `exe`/`environ`) and no
     `ProtectProc`/`ProcSubset`.
   - Its `ProtectHome=read-only` still lets the agent read the child's
-    `.desktop` files and Steam manifests. — install the new agent,
+    `.desktop` files and Steam manifests.
+
+  → **Passed 2026-10-20** on screenguardTest (CachyOS, KDE Plasma 6 Wayland).
+  The agent was built from this branch and installed as root with the real unit
+  file, then paired with its code to a server running this build on the
+  maintainer's PC (mDNS off). uid 1000 was linked to a profile with no limits.
+  - **Capability:** the server log shows
+    `capabilities=["web_filter", "app_usage"]` (1.3 ✔).
+  - **Apps:** Firefox, KCalc and Dolphin were launched via KIO, KWrite via
+    `gtk-launch`. After 80/140/200 s each app had 85/145/205 s; the 5 s offset is
+    the launch just before T0 plus one tick.
+  - **Closing and opening apps:** Dolphin, closed at +221 s, stayed at 225 s.
+    Konsole, opened then, had 179 s 180 s later (it moves into its own
+    `…/main.scope` sub-cgroup).
+  - **Locked screen:** 60 s locked added 0 s. The first tick after unlocking
+    adds up to one tick (±1 tick, as planned).
+  - **Arithmetic:** Firefox total = 593 s wall − 60 s locked = 533 s, exactly as
+    recorded.
+  - **Server:** equals the agent's totals as of the last sync (60 s cadence);
+    8 syncs arrived and none were rejected. The web UI page shows the real
+    names and icons.
+  - **Side observation (not this feature):** the screen-time counter
+    (`usage_log`) showed 488 s for the same period, where app time was 533 s. It
+    may undercount after lock/unlock or at session start; worth a separate look. — install the new agent,
   use apps for a while, compare reported minutes with a stopwatch (±1 tick).
   Also confirm the server log shows `app_usage` in the agent's capabilities (1.3).
 - [ ] **1.20 Compatibility checks** — new server + old agent (no app data, no
@@ -597,7 +619,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - **New server + new agent:** the capability is stored, the totals grow, the
     resend doesn't double-count, and the reports API returns the data. ✔
   - **Upgrade path:** verified in 1.12 (SQLite + Postgres). ✔
-  - **Still to do with real agents (with 1.19):** new server + the real 0.10.17
+  - **Still to do with a real old agent:** new server + the real 0.10.17
     agent, i.e. no app data and no errors. By code, the old agent never sends the
     message, and its hello sets `app_usage_available = false`, so the UI shows
     the "update the agent" notice.
@@ -765,3 +787,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.18 skipped (optional). 1.20 mostly done via `sim-agent.py` (old server ignores the message, new server ingests); real old agent pending | 1.21 docs, then 1.19 with maintainer |
 | 2026-10-20 | 1.21 done: README section + corrected privacy statement | 1.19 real-machine e2e (maintainer), 1.22 release |
 | 2026-10-20 | Review follow-ups: unit hardening OK for 1.19, ppid refreshed per tick, full tick measured (0.12 % CPU), README desktop claim limited to what was tested | 1.19 (maintainer) |
+| 2026-10-20 | 1.19 passed on screenguardTest against a local server: per-app seconds exact, lock = 0 s, server matches agent, UI OK; noted possible screen-time undercount (separate issue) | 1.20 real old agent, 1.22 release |
