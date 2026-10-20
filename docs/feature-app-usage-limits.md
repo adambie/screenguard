@@ -734,16 +734,28 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 2B. Config delivery and remaining time
 
-- [ ] **2.6 `UserConfig.app_groups`** (`#[serde(default)]`): for each group with a
-  limit today: group id, name, rules, `allowed_minutes` per weekday. Bump config
-  version when groups/limits change so `config_push` is sent.
-- [ ] **2.7 Server-side group remaining** — in `remaining.rs`: per group,
-  `allowed − used today across all agents of the profile` (+ future adjustments);
-  add `group_remaining: Vec<GroupRemaining>` to `RemainingEntry` (`#[serde(default)]`).
-- [ ] **2.8 Agent caches** groups + limits + last server remaining in its DB,
-  and evaluates offline from local `app_usage_log` (same pattern as offline
-  screen-time evaluation in `enforcement.rs`).
-  *Done when:* unit tests for online (server value) and offline (local) paths.
+> **Design change (2026-10-20):** group time can't be summed from per-app totals —
+> two browsers open at once would count double. Group time = wall time while
+> *any* member app runs, which only the agent sees per tick. So the agent
+> accounts groups itself and computes remaining group time locally.
+
+- [ ] **2.6 `UserConfig.app_groups`** (`#[serde(default)]`): *all* groups with
+  `id`, `name`, `builtin`, `rules`, and this profile's `daily_limits` (empty =
+  no limit). Bump the config version of every profile when groups/rules change
+  (and of the profile when its group limits change, already done in 2.4) so
+  `config_push` is sent.
+- [ ] **2.7 Group accounting + sync** — agent: per tick, each group with ≥ 1
+  running member app gets the tick's seconds once (same counting rule as apps);
+  stored in `group_usage_log(local_uid, date, group_id, seconds, synced)`; sent
+  in `AppUsageSync.groups` (`#[serde(default)]`). Server: migration v13
+  `app_group_usage(agent_user_id, date, group_id, seconds)` with MAX upsert;
+  `RemainingEntry.group_usage_elsewhere: [{group_id, used_seconds}]` = today's
+  group time on the profile's *other* agents (`#[serde(default)]`). Reports by
+  group use these totals (fallback: sum of member apps for older days).
+- [ ] **2.8 Agent computes group remaining** — `limit_today + adjustments −
+  (elsewhere + local today)` per group; the last `elsewhere` and the config are
+  cached in the agent DB, so the same code runs offline.
+  *Done when:* unit tests for online, offline and the day boundary.
 
 ### 2C. Enforcement
 
@@ -865,6 +877,7 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
 | 2026-10-20 | Scan every 5 s, identities cached by `(pid, start time)`, `.desktop` catalogue reloaded on dir mtime change | Measured ≤ 0.11 % CPU full, ~0.04 % cached (0.6); start time guards against PID reuse |
 | 2026-10-20 | The agent sends `app_usage_sync` to any server, no version gate | Every server version ignores unknown message types (Q4); the payload is small and sent at most once a minute |
+| 2026-10-20 | Group time is accounted on the agent (union per tick) and remaining group time is computed there from `limit − (other computers + local)` | Summing member apps double-counts overlapping apps; the agent sees exact local time live and the same code works offline |
 | 2026-10-20 | Phase 1 + 2 ship in one release | Maintainer wants a full working solution (see apps, group, limit, close) before release |
 | 2026-10-20 | Predefined "Games" and "Web browsers" groups from freedesktop categories (`Game`, `WebBrowser`) + `steam:`/`minecraft:` | Parents don't know game/browser names; categories are in every `.desktop` file and auto-include new apps |
 | 2026-10-20 | No regex match rules in Phase 2 | Keep it simple; ids, prefixes, categories and exclusions cover the known needs |
