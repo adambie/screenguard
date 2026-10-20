@@ -45,8 +45,9 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** rest of 1.20 (a real 0.10.17 agent against this server),
-  then 1.22 release (version bump; tag only with the go-ahead)
+- **Next step:** Phase 2 — 2.0 app categories, then 2.1–2.3 (groups + "Apps"
+  admin page). Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
+  No release until Phase 2 is done (decision log).
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -643,20 +644,42 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ## Phase 2 — App groups, group limits, enforcement
 
+> **Release decision (2026-10-20, maintainer):** no release after Phase 1 alone —
+> Phase 1 + Phase 2 ship together as one working feature (seeing apps, grouping,
+> limits, closing). Step 1.22 is folded into 2.17.
+
 ### 2A. Model and admin UI
 
+- [ ] **2.0 App categories** — the agent sends each app's freedesktop
+  `Categories=` (from its `.desktop` entry) in `AppUsageEntry.categories`
+  (`#[serde(default)]`, so old servers/agents are unaffected); `steam:` and
+  `minecraft:` ids get `Game` automatically. Server stores them in
+  `app_catalog.categories`. *Done when:* catalogue + ingest tests; real-machine
+  check that Firefox → `WebBrowser`, a game → `Game`.
 - [ ] **2.1 Matching rules in `common`** — `AppMatcher` shared by server and agent
-  so they always agree: rule kinds `app_id` (exact), `app_id_prefix`
-  (e.g. `steam:` = all Steam games), and `exe_regex` / `cmdline_regex`
-  (evaluated **only on the agent**, see privacy rule).
-  *Done when:* table-driven tests; regexes are size-limited and pre-compiled.
+  so they always agree. Rule kinds: `app_id` (exact), `app_id_prefix`
+  (e.g. `steam:` = all Steam games), `category` (freedesktop category, e.g.
+  `Game`, `WebBrowser`), and per-group **exclusions** (`app_id`) so a parent can
+  take one app out of a category-based group. No regex rules (decided: keep it
+  simple; revisit only if real use needs it).
+  *Done when:* table-driven tests.
 - [ ] **2.2 Migration v11** —
-  `app_groups(id, name, created_at)`,
-  `app_group_members(group_id FK, kind, value)`,
-  `app_group_limits(profile_id FK, group_id FK, day_of_week, allowed_minutes)` (0 = blocked).
+  `app_groups(id, name, builtin, created_at)`,
+  `app_group_members(group_id FK, kind, value, exclude)`,
+  `app_group_limits(profile_id FK, group_id FK, day_of_week, allowed_minutes)` (0 = blocked),
+  `app_catalog.categories`.
   Groups are global (shared by all children); limits are per profile.
-- [ ] **2.3 Groups API + UI** — CRUD groups; add members from the catalog
-  (pick seen apps) or as a rule; show "ungrouped apps" to make grouping easy.
+  **Predefined groups** created by the migration (maintainer's request: most
+  parents don't know which games/browsers exist):
+  - **Games** = category `Game` + prefixes `steam:`, `minecraft:`;
+  - **Web browsers** = category `WebBrowser`.
+  New apps of those categories join automatically. Parents can rename them,
+  add/exclude apps, or delete them; no limit is set by default (they only group
+  the reports until a parent sets a limit).
+- [ ] **2.3 Groups API + "Apps" admin page** — one page listing every app seen
+  on any computer (name, category, last seen, which groups it's in), with
+  "add to group" / "remove"; a groups list (members, create/rename/delete);
+  "ungrouped apps" filter to make grouping easy.
 - [ ] **2.4 Limits API + UI** — per profile: per group, per weekday minutes, same
   editor style as daily limits; "blocked" toggle = 0.
 - [ ] **2.5 Reports by group** — the Phase 1 reports gain a "by group" view.
@@ -699,7 +722,44 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   → app closes → relaunch closed → other apps unaffected → overall limit still works.
 - [ ] **2.16 Compatibility** — old agent ignores `app_groups` (serde default) and
   simply doesn't enforce; UI shows which agents can enforce (capability).
-- [ ] **2.17 Docs + release.**
+- [ ] **2.17 Docs + release** (includes Phase 1; version bump commit, tag only
+  with the maintainer's go-ahead).
+
+### 2E. New-app approval ("ask a parent") — maintainer's idea, 2026-10-20
+
+Like Google Family Link's install approval. What is and isn't possible on Linux:
+
+- **System-wide installs already need an admin**: pacman/apt/dnf need root;
+  GNOME Software / KDE Discover go through PackageKit and system Flatpak through
+  polkit, which ask for an *admin* password. A child account that is **not in
+  `wheel`/`sudo`** cannot install system software at all.
+- **What a child can still add without root:** `flatpak --user` apps, Steam
+  games, AppImages / downloaded programs, Minecraft launchers/mods, browser web apps.
+  Those can't be stopped at install time without breaking the home directory,
+  but they can be stopped **at first launch** — which is what matters.
+
+Design: approval at first launch, using the Phase 2 closing machinery.
+
+- [ ] **2.18 Admin-rights check** — agent reports whether each managed account is
+  in `wheel`/`sudo`/`admin` (or has a sudoers rule); the UI warns "this child can
+  install software as administrator" with how to fix it.
+- [ ] **2.19 Approval mode per profile** — off (default) / "new apps need
+  approval". Turning it on approves every app already seen for that child, so
+  nothing existing breaks.
+- [ ] **2.20 Request flow** — an app not yet approved is closed on start (≤ 5 s,
+  same safety rules as 2.10) with a notification "Asked your parent for
+  permission"; the agent sends `app_request { local_uid, app_id, name, icon }`
+  (once per app until answered); the server stores pending requests.
+- [ ] **2.21 Approve / deny UI** — requests badge on the dashboard and profile;
+  approve (optionally straight into a group) or deny; the decision goes down in
+  the profile config, the child gets a notification.
+- [ ] **2.22 Offline behaviour** — while the server is unreachable, unapproved
+  apps stay blocked; requests are queued and sent on reconnect.
+
+Limitation to state in the UI/README: only things the agent can identify as an
+app are covered (menu entries, Flatpak, Snap, Steam, Minecraft, Wine). A program
+started from a terminal counts as the terminal — block the terminal (a group with
+0 minutes) if that matters.
 
 **Exit criteria (Phase 2):**
 - [ ] A Games group limit is enforced reliably on all supported desktops
@@ -717,7 +777,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   groups (deny exec for the child's UID) — careful with over-blocking (`java`).
 - [ ] **3.3 Web-domain groups** via the DNS web filter (count time per domain
   group, e.g. "YouTube") — separate design doc first.
-- [ ] **3.4 Allow-list mode** — "only approved apps may run" for a profile.
+- [ ] **3.4 Allow-list mode** — superseded by 2E (new-app approval).
 - [ ] **3.5 Weekly limits** for groups (in addition to per-day).
 
 ---
@@ -757,6 +817,10 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | Interpreter processes (Electron, Python, Java, …) are identified by the script/archive in `argv` | Wrapper scripts `exec electron /usr/lib/<app>/app.asar` — the exe says nothing |
 | 2026-10-20 | Scan every 5 s, identities cached by `(pid, start time)`, `.desktop` catalogue reloaded on dir mtime change | Measured ≤ 0.11 % CPU full, ~0.04 % cached (0.6); start time guards against PID reuse |
 | 2026-10-20 | The agent sends `app_usage_sync` to any server, no version gate | Every server version ignores unknown message types (Q4); the payload is small and sent at most once a minute |
+| 2026-10-20 | Phase 1 + 2 ship in one release | Maintainer wants a full working solution (see apps, group, limit, close) before release |
+| 2026-10-20 | Predefined "Games" and "Web browsers" groups from freedesktop categories (`Game`, `WebBrowser`) + `steam:`/`minecraft:` | Parents don't know game/browser names; categories are in every `.desktop` file and auto-include new apps |
+| 2026-10-20 | No regex match rules in Phase 2 | Keep it simple; ids, prefixes, categories and exclusions cover the known needs |
+| 2026-10-20 | New-app approval = approval at first launch (2E), not install blocking | System installs already need an admin; user-level installs (Flatpak --user, Steam, AppImage) can't be blocked at install, but can at launch |
 | 2026-10-20 | `session.slice` isn't excluded, only `background.slice` and non-`app-` user services | uwsm compositor keybinding launches without `uwsm app` stay in the compositor's unit |
 
 ---
@@ -788,3 +852,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.21 done: README section + corrected privacy statement | 1.19 real-machine e2e (maintainer), 1.22 release |
 | 2026-10-20 | Review follow-ups: unit hardening OK for 1.19, ppid refreshed per tick, full tick measured (0.12 % CPU), README desktop claim limited to what was tested | 1.19 (maintainer) |
 | 2026-10-20 | 1.19 passed on screenguardTest against a local server: per-app seconds exact, lock = 0 s, server matches agent, UI OK; noted possible screen-time undercount (separate issue) | 1.20 real old agent, 1.22 release |
+| 2026-10-20 | Found and fixed a screen-time undercount (~10 %, heartbeat dropped the remainder) — verified on the test machine. Plan revised: release after Phase 2, predefined Games/Web browsers groups via categories, 2E new-app approval | Phase 2.0 |
