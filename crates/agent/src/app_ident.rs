@@ -2,7 +2,6 @@
 //! and the "is it an app" filter of docs/feature-app-usage-limits.md (validated
 //! in Phase 0 with `docs/spikes/app-scan.py`).
 
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::collections::HashMap;
 use std::fs;
@@ -258,13 +257,13 @@ impl<'a> Ctx<'a> {
         let mut found: Option<(&DesktopEntry, Option<&ProcInfo>)> = self.gio(p).map(|e| (e, None));
 
         // 4. app unit
-        if found.is_none() {
-            if let Some((_, app)) = &parsed {
-                found = self.cat.by_unit_id(app).map(|e| (e, None)).or_else(|| {
-                    // uwsm / xdg-terminal-exec units carry a command, not an id
-                    self.units.get(unit)?.iter().find_map(|q| self.cat.by_process(q).map(|e| (e, None)))
-                });
-            }
+        if found.is_none()
+            && let Some((_, app)) = &parsed
+        {
+            found = self.cat.by_unit_id(app).map(|e| (e, None)).or_else(|| {
+                // uwsm / xdg-terminal-exec units carry a command, not an id
+                self.units.get(unit)?.iter().find_map(|q| self.cat.by_process(q).map(|e| (e, None)))
+            });
         }
 
         // 5. process tree
@@ -296,12 +295,12 @@ impl<'a> Ctx<'a> {
     fn special_case(&self, p: &'a ProcInfo) -> Option<AppId> {
         let a0 = |q: &'a ProcInfo| q.argv.first().map(|s| basename(s)).unwrap_or("");
         for q in self.ancestors(p) {
-            if a0(q) == "reaper" && q.argv.iter().any(|a| a == "SteamLaunch") {
-                if let Some(id) = q.argv.iter().find_map(|a| a.strip_prefix("AppId=")) {
-                    if let Some(id) = AppId::new(AppKind::Steam, id) {
-                        return Some(id);
-                    }
-                }
+            if a0(q) == "reaper"
+                && q.argv.iter().any(|a| a == "SteamLaunch")
+                && let Some(id) = q.argv.iter().find_map(|a| a.strip_prefix("AppId="))
+                && let Some(id) = AppId::new(AppKind::Steam, id)
+            {
+                return Some(id);
             }
         }
         for q in self.ancestors(p) {
@@ -656,7 +655,7 @@ mod real {
         let cat = cache.get(std::path::Path::new(&home));
         let procs = crate::app_scan::ProcScanner::new().scan(&HashSet::from([uid]));
         let mut summary: BTreeMap<(String, String), usize> = BTreeMap::new();
-        for id in identify_all(&procs, &cat).values() {
+        for id in identify_all(&procs, cat).values() {
             *summary.entry((format!("{:?}", id.launch), id.app_id.to_string())).or_default() += 1;
         }
         for ((launch, app), n) in summary {

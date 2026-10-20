@@ -57,6 +57,21 @@ fn parse_passwd(content: &str, min_uid: u32) -> Vec<LocalUser> {
     users
 }
 
+/// Home directories by uid, from `/etc/passwd`.
+pub fn home_dirs() -> HashMap<u32, std::path::PathBuf> {
+    std::fs::read_to_string("/etc/passwd").map(|c| parse_home_dirs(&c)).unwrap_or_default()
+}
+
+fn parse_home_dirs(content: &str) -> HashMap<u32, std::path::PathBuf> {
+    content
+        .lines()
+        .filter_map(|l| {
+            let parts: Vec<&str> = l.trim().split(':').collect();
+            (parts.len() >= 7).then(|| Some((parts[2].parse().ok()?, parts[5].into()))).flatten()
+        })
+        .collect()
+}
+
 /// Computes the diff between a previous user snapshot and the current scan.
 /// Returns (current_list, added, removed_uids).
 pub fn diff_users(
@@ -88,6 +103,13 @@ pub fn users_to_map(users: &[LocalUser]) -> HashMap<u32, LocalUser> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_home_dirs() {
+        let homes = parse_home_dirs("root:x:0:0:root:/root:/bin/bash\nkid:x:1001:1001:Kid:/home/kid:/bin/bash\nbroken\n");
+        assert_eq!(homes[&1001], std::path::PathBuf::from("/home/kid"));
+        assert_eq!(homes.len(), 2);
+    }
 
     #[test]
     fn parse_passwd_filters_correctly() {

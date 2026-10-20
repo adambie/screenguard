@@ -51,6 +51,19 @@ impl Db {
                 checked_at  INTEGER NOT NULL
             )",
         );
+        // Per-app usage (#27). Keyed by date, so a new day starts new rows.
+        let _ = self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS app_usage_log (
+                local_uid       INTEGER NOT NULL,
+                date            TEXT NOT NULL,
+                app_id          TEXT NOT NULL,
+                display_name    TEXT NOT NULL,
+                icon            TEXT,
+                seconds         INTEGER NOT NULL DEFAULT 0,
+                synced          INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (local_uid, date, app_id)
+            )",
+        );
         let _ = self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS cached_blocked_domains (
                 local_uid   INTEGER NOT NULL REFERENCES managed_users(local_uid) ON DELETE CASCADE,
@@ -124,6 +137,17 @@ impl Db {
                 PRIMARY KEY (local_uid, date)
             );
 
+            CREATE TABLE IF NOT EXISTS app_usage_log (
+                local_uid       INTEGER NOT NULL,
+                date            TEXT NOT NULL,
+                app_id          TEXT NOT NULL,
+                display_name    TEXT NOT NULL,
+                icon            TEXT,
+                seconds         INTEGER NOT NULL DEFAULT 0,
+                synced          INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (local_uid, date, app_id)
+            );
+
             CREATE TABLE IF NOT EXISTS server_remaining (
                 local_uid           INTEGER PRIMARY KEY,
                 remaining_minutes   INTEGER NOT NULL,
@@ -194,6 +218,7 @@ impl Db {
             "cached_enforcement",
             "managed_users",
             "usage_log",
+            "app_usage_log",
             "server_remaining",
             "active_sessions",
             "config_meta",
@@ -375,6 +400,82 @@ impl Db {
             .query_map([], |row| row.get(0))?
             .collect::<rusqlite::Result<Vec<u32>>>()?;
         Ok(uids)
+    }
+}
+
+// ── app_usage_log ─────────────────────────────────────────────────────────────
+
+/// One row of `app_usage_log`: an app's running total for a day.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppUsageRow {
+    pub local_uid: u32,
+    pub date: String,
+    pub app_id: String,
+    pub display_name: String,
+    pub icon: Option<String>,
+    pub seconds: u64,
+}
+
+impl Db {
+    /// Adds seconds to the day's total and flags the row for the next sync; the
+    /// name/icon are refreshed (language or `.desktop` may have changed).
+    pub fn add_app_usage(&self, uid: u32, date: &str, app_id: &str, name: &str, icon: Option<&str>, seconds: u64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO app_usage_log (local_uid, date, app_id, display_name, icon, seconds, synced)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
+             ON CONFLICT(local_uid, date, app_id) DO UPDATE SET
+                seconds = seconds + ?6, display_name = ?4, icon = ?5, synced = 0",
+            params![uid, date, app_id, name, icon, seconds],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_unsynced_app_usage(&self) -> Result<Vec<AppUsageRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT local_uid, date, app_id, display_name, icon, seconds FROM app_usage_log
+             WHERE synced = 0 ORDER BY date, local_uid, app_id",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(AppUsageRow {
+                    local_uid: r.get(0)?,
+                    date: r.get(1)?,
+                    app_id: r.get(2)?,
+                    display_name: r.get(3)?,
+                    icon: r.get(4)?,
+                    seconds: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Marks a row synced only if it still holds the total that was sent, so
+    /// seconds added in between are picked up by the next sync.
+    pub fn mark_app_usage_synced(&self, row: &AppUsageRow) -> Result<()> {
+        self.conn.execute(
+            "UPDATE app_usage_log SET synced = 1
+             WHERE local_uid = ?1 AND date = ?2 AND app_id = ?3 AND seconds = ?4",
+            params![row.local_uid, row.date, row.app_id, row.seconds],
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn get_app_usage_seconds(&self, uid: u32, date: &str, app_id: &str) -> Result<u64> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT seconds FROM app_usage_log WHERE local_uid = ?1 AND date = ?2 AND app_id = ?3",
+                params![uid, date, app_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0))
+    }
+
+    /// Drops days before `before` (YYYY-MM-DD compares as text).
+    pub fn prune_app_usage(&self, before: &str) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM app_usage_log WHERE date < ?1", params![before])?)
     }
 }
 
@@ -810,6 +911,40 @@ mod tests {
         // folded into the already-synced row.
         db.add_usage_seconds(1000, today, 30).unwrap();
         assert_eq!(db.get_unsynced_usage().unwrap(), vec![(1000, today.to_string(), 90)]);
+    }
+
+    #[test]
+    fn app_usage_accumulates_syncs_and_prunes() {
+        let db = Db::open(Some(":memory:")).unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+        db.add_app_usage(1000, "2026-09-01", "steam:570", "Dota 2", None, 60).unwrap();
+        assert_eq!(db.get_app_usage_seconds(1000, "2026-10-20", "desktop:firefox").unwrap(), 10);
+
+        let unsynced = db.get_unsynced_app_usage().unwrap();
+        assert_eq!(unsynced.len(), 2);
+        let ff = unsynced.iter().find(|r| r.app_id == "desktop:firefox").unwrap().clone();
+        assert_eq!((ff.seconds, ff.icon.as_deref()), (10, Some("firefox")));
+
+        // seconds added between reading and marking keep the row unsynced
+        db.add_app_usage(1000, "2026-10-20", "desktop:firefox", "Firefox", Some("firefox"), 5).unwrap();
+        db.mark_app_usage_synced(&ff).unwrap();
+        assert_eq!(db.get_unsynced_app_usage().unwrap().iter().find(|r| r.app_id == "desktop:firefox").unwrap().seconds, 15);
+        let ff = db.get_unsynced_app_usage().unwrap().into_iter().find(|r| r.app_id == "desktop:firefox").unwrap();
+        db.mark_app_usage_synced(&ff).unwrap();
+        assert!(db.get_unsynced_app_usage().unwrap().iter().all(|r| r.app_id != "desktop:firefox"));
+
+        assert_eq!(db.prune_app_usage("2026-09-15").unwrap(), 1);
+        assert_eq!(db.get_app_usage_seconds(1000, "2026-09-01", "steam:570").unwrap(), 0);
+    }
+
+    #[test]
+    fn app_usage_table_is_added_to_old_dbs() {
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Db { conn };
+        db.migrate().unwrap();
+        db.add_app_usage(1000, "2026-10-20", "desktop:foot", "Foot", None, 5).unwrap();
+        assert_eq!(db.get_app_usage_seconds(1000, "2026-10-20", "desktop:foot").unwrap(), 5);
     }
 
     #[test]

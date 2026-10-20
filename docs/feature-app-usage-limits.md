@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.8 (`AppAccounting` / `AppTracker`)
-- **Next step:** 1.9 — agent DB table `app_usage_log` + wire `AppTracker` into `HeartbeatLoop` (5 s ticker, counting = `uid_is_counting`, home from passwd, language from cached config)
+- **Last completed step:** 1.9 (agent storage + tracker wired into the loop)
+- **Next step:** 1.10 — send unsynced totals via `MSG_APP_USAGE_SYNC` on connect and every 60 s
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -449,10 +449,26 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   - Only `Launch::App` is counted; autostart and "other" aren't reported in v1.
   - 5 tests. Wiring into `HeartbeatLoop` happens in 1.9 together with storage
     (nothing to persist without it); the `allow(dead_code)`s go then.
-- [ ] **1.9 Local storage** — agent DB table
+- [x] **1.9 Local storage** — agent DB table
   `app_usage_log(local_uid, date, app_id, display_name, icon, seconds, PRIMARY KEY(local_uid,date,app_id))`;
   midnight rollover like `usage_log`; prune > 35 days.
   *Done when:* DB tests pass; restarting the agent keeps today's totals.
+  → Table plus `add_app_usage` / `get_unsynced_app_usage` / `mark_app_usage_synced`
+  / `prune_app_usage` in `db.rs`:
+  - Created in `create_schema` and `migrate`, so old DBs get it.
+  - Cleared by `wipe_for_rebind`.
+  - `mark_app_usage_synced` only marks a row if it still holds the total that was
+    sent.
+  - No midnight reset: rows are per date, and days older than 35 are pruned at
+    midnight. Today's totals live in SQLite, so they survive a restart.
+
+  Wired into `HeartbeatLoop`: a 5 s `app_scan_ticker` arm (only with cgroup v2)
+  → `track_app_usage()`, which builds `TrackedUser`s:
+  - home from `users::home_dirs()`;
+  - language from the cached enforcement config;
+  - `counting` = `uid_is_counting(session_states)`, the screen-time rule.
+
+  Errors are logged and never stop the loop. The `allow(dead_code)`s are removed.
 - [ ] **1.10 Sync** — send today's (and any unsynced past days') totals via
   `MSG_APP_USAGE_SYNC` on connect and every heartbeat N (e.g. every 60 s);
   only when connected; never block the existing heartbeat.
@@ -644,3 +660,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.6 done: `app_catalog.rs` + `app_ident.rs`, 13 fixture tests; Steam-vs-Wine precedence fix; Prism/MultiMC markers (Q2 answered) | 1.7 localized names + catalogue reload |
 | 2026-10-20 | 1.7 done: `name_for(lang)`, `CatalogCache` (mtime signature, 30 s), `display()` for Steam/Snap/Flatpak/Minecraft/Wine | 1.8 accounting loop |
 | 2026-10-20 | 1.8 done: `AppAccounting` (fake-clock tests: exact totals, carry, 2× cap) + `AppTracker`; `AppId` now `Ord` | 1.9 storage + wiring |
+| 2026-10-20 | 1.9 done: `app_usage_log` table + DB functions (2 tests), tracker wired into `HeartbeatLoop` (5 s), prune > 35 days; clippy clean on new code | 1.10 sync |

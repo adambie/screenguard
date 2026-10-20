@@ -6,8 +6,6 @@
 //! Privacy: command lines and environment values stay on this machine; only the
 //! derived app id is ever reported.
 
-// Wired into the agent loop in step 1.8; remove this then.
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::collections::{HashMap, HashSet};
 use std::fs;

@@ -4,7 +4,6 @@
 //! something the child could launch from a menu" — a `Type=Application` entry
 //! without `NoDisplay`/`Hidden`.
 
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -304,10 +303,11 @@ fn desktop_group(text: &str) -> HashMap<String, String> {
         let line = line.trim();
         if line.starts_with('[') {
             in_group = line == "[Desktop Entry]";
-        } else if in_group && !line.starts_with('#') {
-            if let Some((k, v)) = line.split_once('=') {
-                kv.entry(k.trim().to_string()).or_insert_with(|| v.trim().to_string());
-            }
+        } else if in_group
+            && !line.starts_with('#')
+            && let Some((k, v)) = line.split_once('=')
+        {
+            kv.entry(k.trim().to_string()).or_insert_with(|| v.trim().to_string());
         }
     }
     kv
@@ -476,7 +476,7 @@ mod tests {
         let d = tmp();
         let (apps, auto) = (d.join("apps"), d.join("autostart"));
         fixture::standard(&apps, &auto);
-        let cat = Catalog::load(&[apps.clone()], &[auto]);
+        let cat = Catalog::load(std::slice::from_ref(&apps), &[auto]);
 
         assert_eq!(cat.get("org.kde.dolphin").unwrap().name, "Dolphin");
         assert_eq!(cat.get("org.kde.dolphin").unwrap().icon.as_deref(), Some("system-file-manager"));

@@ -14,11 +14,15 @@ use tokio::sync::{mpsc, Mutex};
 use crate::db::{AgentMode, Db};
 use crate::dbus::{SessionEvent, SessionUsageState, uid_counts_usage};
 use crate::enforcement::{evaluate_enforcement, execute_lock, handle_midnight};
-use crate::users::{diff_users, scan_local_users, users_to_map};
+use crate::app_usage::{AppTracker, TrackedUser, SCAN_INTERVAL as APP_SCAN_INTERVAL};
+use crate::users::{diff_users, home_dirs, scan_local_users, users_to_map};
 use crate::web_filter::WebFilter;
 use crate::ws_client::{self, ConnectionEvent};
 
 type SessionStates = HashMap<u32, HashMap<String, SessionUsageState>>;
+
+/// Per-app usage rows older than this are pruned at midnight.
+const APP_USAGE_KEEP_DAYS: i64 = 35;
 
 fn uid_is_counting(session_states: &SessionStates, uid: u32) -> bool {
     session_states.get(&uid)
@@ -64,6 +68,8 @@ pub struct HeartbeatLoop {
     /// Experimental cloud mode: present ⇒ sent on every `agent_hello` so the
     /// cloud server can resolve this agent's tenant on each reconnect.
     cloud_account: Option<String>,
+    /// Per-app usage (#27); `None` without cgroup v2.
+    app_tracker: Option<AppTracker>,
 }
 
 impl HeartbeatLoop {
@@ -98,6 +104,7 @@ impl HeartbeatLoop {
             status_handle,
             web_filter: WebFilter::new(web_filter_available),
             cloud_account,
+            app_tracker: crate::app_scan::supported().then(AppTracker::new),
         }
     }
 
@@ -122,6 +129,8 @@ impl HeartbeatLoop {
 
         let mut heartbeat_ticker = tokio::time::interval(self.heartbeat_interval);
         let mut user_scan_ticker = tokio::time::interval(self.user_scan_interval);
+        let mut app_scan_ticker = tokio::time::interval(APP_SCAN_INTERVAL);
+        app_scan_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut last_date: NaiveDate = Local::now().date_naive();
 
         let mut active_since: HashMap<u32, Option<Instant>> = HashMap::new();
@@ -151,6 +160,10 @@ impl HeartbeatLoop {
 
                     if today != last_date {
                         handle_midnight(&self.db, &self.locked_uids).await?;
+                        let cutoff = (today - chrono::Duration::days(APP_USAGE_KEEP_DAYS)).to_string();
+                        if let Err(e) = self.db.lock().await.prune_app_usage(&cutoff) {
+                            tracing::warn!("Pruning app usage failed: {e}");
+                        }
                         last_date = today;
                         self.notified_thresholds.clear();
                     }
@@ -172,6 +185,46 @@ impl HeartbeatLoop {
                 _ = user_scan_ticker.tick() => {
                     self.maybe_rescan_users(&mut known_users).await?;
                 }
+
+                _ = app_scan_ticker.tick(), if self.app_tracker.is_some() => {
+                    self.track_app_usage(&session_states).await;
+                }
+            }
+        }
+    }
+
+    /// One per-app usage tick: scan, identify, add seconds to today's rows.
+    /// Errors are logged and never stop the heartbeat loop.
+    async fn track_app_usage(&mut self, session_states: &SessionStates) {
+        let Some(tracker) = self.app_tracker.as_mut() else { return };
+        let users: Vec<TrackedUser> = {
+            let db = self.db.lock().await;
+            let homes = home_dirs();
+            db.get_managed_uids()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|uid| {
+                    Some(TrackedUser {
+                        uid,
+                        home: homes.get(&uid)?.clone(),
+                        language: db.get_cached_enforcement(uid).map(|e| e.language).unwrap_or_else(|_| "en".into()),
+                        counting: uid_is_counting(session_states, uid),
+                    })
+                })
+                .collect()
+        };
+        // ~2-6 ms of /proc reads (Phase 0, step 0.6): fine inline every 5 s.
+        let result = tracker.tick(Instant::now(), &users);
+        if result.add.is_empty() {
+            return;
+        }
+        let today = Local::now().date_naive().to_string();
+        let db = self.db.lock().await;
+        for (uid, app, secs) in &result.add {
+            let (name, icon) = result.names.get(&(*uid, app.clone())).cloned().unwrap_or_else(|| (app.name.clone(), None));
+            if let Err(e) = db.add_app_usage(*uid, &today, &app.to_string(), &name, icon.as_deref(), *secs) {
+                tracing::warn!("Storing app usage failed: {e}");
+                return;
             }
         }
     }

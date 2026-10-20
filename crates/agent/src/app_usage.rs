@@ -4,7 +4,6 @@
 //! seconds once — but only while the user's session counts as usage (active,
 //! unlocked, not idle: the same rule as screen time).
 
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -108,11 +107,10 @@ impl AppTracker {
                 if id.launch != Launch::App {
                     continue; // autostart and "other" are not counted (decision log)
                 }
-                let key = (user.uid, id.app_id.clone());
-                if !result.names.contains_key(&key) {
-                    let shown = app_ident::display(&id, catalog, &user.language, &user.home);
-                    result.names.insert(key, shown);
-                }
+                result
+                    .names
+                    .entry((user.uid, id.app_id.clone()))
+                    .or_insert_with(|| app_ident::display(&id, catalog, &user.language, &user.home));
                 running.entry(user.uid).or_default().insert(id.app_id);
             }
         }
@@ -129,7 +127,10 @@ mod tests {
         ids.iter().map(|s| AppId::parse(s).unwrap()).collect()
     }
 
-    fn totals(acc: &mut AppAccounting, t0: Instant, ticks: &[(u64, &[u32], &HashMap<u32, BTreeSet<AppId>>)]) -> HashMap<(u32, String), u64> {
+    /// (ms since t0, counting uids, running apps)
+    type Tick<'a> = (u64, &'a [u32], &'a HashMap<u32, BTreeSet<AppId>>);
+
+    fn totals(acc: &mut AppAccounting, t0: Instant, ticks: &[Tick]) -> HashMap<(u32, String), u64> {
         let mut out = HashMap::new();
         for (ms, counting, running) in ticks {
             let counting: HashSet<u32> = counting.iter().copied().collect();
@@ -163,7 +164,7 @@ mod tests {
         let t0 = Instant::now();
         let running = HashMap::from([(1000, apps(&["desktop:foot"]))]);
         let mut acc = AppAccounting::new(Duration::from_secs(5));
-        let ticks: Vec<(u64, &[u32], &HashMap<u32, BTreeSet<AppId>>)> =
+        let ticks: Vec<Tick> =
             (0..=100).map(|i| (i * 5_010, &[1000u32][..], &running)).collect();
         // 100 ticks of 5.01 s = 501 s
         assert_eq!(totals(&mut acc, t0, &ticks)[&(1000, "desktop:foot".into())], 501);
