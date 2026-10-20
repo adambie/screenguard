@@ -45,7 +45,7 @@ progress — not chat history.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
 - **Last completed step:** 1.17 (translations)
-- **Next step:** 1.18 (optional dashboard teaser) or skip to 1.19 — end-to-end on a real test machine (needs root there: maintainer installs the build)
+- **Next step:** 1.21 — README docs; then 1.19 + rest of 1.20 on a real test machine (needs the maintainer: root install of the new agent + a new server)
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -567,6 +567,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     (`agents.badge_web_filter`, `profile.card_blocked_sites`,
     `flash.domain_*`, …) exist only in `en.json`.
 - [ ] **1.18 Dashboard teaser (optional)** — top 3 apps today per child.
+  → 2026-10-20: skipped for now (keep it lean); revisit after real use.
 
 ### 1E. Verification and release
 
@@ -576,6 +577,19 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 - [ ] **1.20 Compatibility checks** — new server + old agent (no app data, no
   errors); old server + new agent (no disconnects, see 1.4); upgrade path keeps
   existing pairings and screen-time numbers identical.
+  → Progress 2026-10-20, with `docs/spikes/sim-agent.py`, a simulated agent
+  speaking the real protocol: pair via code, hello, user list,
+  `app_usage_sync` ×3, then a heartbeat.
+  - **Old server (0.10.17) + new agent:** the server logs `unknown message type
+    'app_usage_sync'` at debug and keeps the connection; the following heartbeat
+    gets its `remaining_update`. ✔
+  - **New server + new agent:** the capability is stored, the totals grow, the
+    resend doesn't double-count, and the reports API returns the data. ✔
+  - **Upgrade path:** verified in 1.12 (SQLite + Postgres). ✔
+  - **Still to do with real agents (with 1.19):** new server + the real 0.10.17
+    agent, i.e. no app data and no errors. By code, the old agent never sends the
+    message, and its hello sets `app_usage_available = false`, so the UI shows
+    the "update the agent" notice.
 - [ ] **1.21 Docs** — README section "App usage reports" + privacy note
   (cmdlines never leave the machine); update this file.
 - [ ] **1.22 Release** — version bump commit, tag only with maintainer go-ahead.
@@ -731,3 +745,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.15 done: `GET /profiles/{id}/app-usage` (day/week/total), tests on SQLite + Postgres | 1.16 web UI |
 | 2026-10-20 | 1.16 done: `/profiles/<id>/apps` page (day/week/total), links from the profile page, checked locally with screenshots | 1.17 translations |
 | 2026-10-20 | 1.17 done: de/es/fr/pt/pl, profile header wraps on phones; noted 17 untranslated web-filter keys (older gap) | 1.18 optional / 1.19 e2e |
+| 2026-10-20 | 1.18 skipped (optional). 1.20 mostly done via `sim-agent.py` (old server ignores the message, new server ingests); real old agent pending | 1.21 docs, then 1.19 with maintainer |
