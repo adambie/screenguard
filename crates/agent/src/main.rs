@@ -1,3 +1,5 @@
+mod app_catalog;
+mod app_ident;
 mod app_scan;
 mod config;
 mod db;

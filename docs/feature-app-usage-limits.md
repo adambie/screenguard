@@ -44,10 +44,10 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.5 (`ProcScanner` process enumeration)
-- **Next step:** 1.6 — identification algorithm + fixture catalogue (port `identify()` from `docs/spikes/app-scan.py`)
+- **Last completed step:** 1.6 (identification + `.desktop` catalogue)
+- **Next step:** 1.7 — localized `Name[xx]=`, catalogue caching with dir-mtime reload
 - **In progress / half-done:** —
-- **Blockers / open questions:** Q2 (Minecraft launcher variants), see
+- **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
 
 ---
@@ -400,7 +400,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
     re-read on every tick. A tick reads only `stat` per process.
   - `fake_proc::FakeProc` (test-only, no new dependency) is reused by 1.6.
   - The module has `allow(dead_code)` until 1.8 wires it in; remove it then.
-- [ ] **1.6 Identification** — implement the [Identification algorithm](#identification-algorithm)
+- [x] **1.6 Identification** — implement the [Identification algorithm](#identification-algorithm)
   and the [app filter](#what-counts-as-an-app). Needs `environ` and the process
   tree (ppid) from 1.5. *Done when:* table-driven tests pass against a **fixture
   catalogue built from the documented formats**, one fake `/proc` tree each:
@@ -409,7 +409,18 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
   without units or env (XFCE/i3 style), terminal with children, Steam reaper +
   Proton game, Minecraft Java, Wine `.exe`, binary `(deleted)`, plus desktop
   components that must *not* become apps.
-- [ ] **1.7 `.desktop` lookup** — map desktop ids to `Name=` (+ localized
+  → `app_catalog.rs` (`.desktop` catalogue: ids, `Exec`/`TryExec`/`StartupWMClass`,
+  visibility, `Name`, `Icon`, autostart set; fixture `app_catalog::fixture::standard`)
+  and `app_ident.rs` (`identify_all(procs, catalog)` → `Identified { app_id,
+  launch: App|Autostart|Other, desktop_id }`). 13 table tests cover every case
+  above plus a nested GIO launch inside another app's unit, Prism/MultiMC, and a
+  non-Minecraft `java`. Ignored `print_real_scan` test matches the Python spike
+  on the maintainer's session.
+  - Fix found while porting: special-case rules are tried along the whole
+    ancestor chain one rule at a time (Steam → Minecraft → Wine). Otherwise a
+    Proton game's own `Game.exe` matched `wine:` before the `reaper` ancestor.
+- [ ] **1.7 `.desktop` lookup** — (unlocalized `Name=`/`Icon=` already parsed
+  by `app_catalog.rs` in 1.6) map desktop ids to `Name=` (+ localized
   `Name[xx]=` if the profile language matches) and `Icon=` from
   `/usr/share/applications`, `~/.local/share/applications`, flatpak/snap export
   dirs. Cache, reload when an applications dir's mtime changes, refresh on miss. *Done when:* tests with fixture `.desktop` files pass.
@@ -562,7 +573,7 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | # | Question | Answer (with date) |
 |---|---|---|
 | Q1 | Does Cinnamon (and XFCE) create per-app `app-*.scope` units? If not, how good is the exe-keyed fallback? | 2026-10-20: no evidence they do (upstream GLib doesn't create scopes; only Fedora/RHEL patch it). Design no longer depends on it: GIO env (Cinnamon/MATE) and process tree (XFCE etc.) cover them. |
-| Q2 | How do Steam games, Minecraft Java and Proton games appear (scope, exe, cmdline)? | 2026-10-20: Steam — `reaper SteamLaunch AppId=<n> -- …` ancestor (native + Proton). Minecraft — `java` with Minecraft main class/jar; launcher variants (official, Prism, MultiMC, Flatpak) still to confirm in tests. |
+| Q2 | How do Steam games, Minecraft Java and Proton games appear (scope, exe, cmdline)? | 2026-10-20: Steam — `reaper SteamLaunch AppId=<n> -- …` ancestor (native + Proton). Minecraft — `java` with a Minecraft main class/jar or mod loader (`net.minecraft`, `cpw.mods`, `fabricmc`, `quiltmc`); Prism/MultiMC start `org.prismlauncher.EntryPoint` / `org.multimc.EntryPoint` and pass the main class on stdin, so those entry points are markers too. Flatpak launchers are `flatpak:` ids (their whole sandbox counts as the launcher app; acceptable for v1). Covered by tests in 1.6. |
 | Q3 | Which scan interval keeps CPU ≤ 1 % on the slowest machine? | 2026-10-20: 5 s — ≤ 0.11 % of one core even with full reads; ~0.04 % with cached identities (see 0.6). |
 | Q4 | Does an old (0.10.x) server tolerate unknown WS message types? (step 1.4) | 2026-10-20: yes — catch-all arm logs at debug since `204a3be`; handler errors never close the socket. |
 | Q5 | Should group limits be per profile only, or allow a global default per group? | |
@@ -609,3 +620,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.2 done: `AppUsageSync` / `AppUsageEntry` + round-trip test | 1.3 capability, 1.4 old-server check |
 | 2026-10-20 | 1.3 done (`app_usage` capability when cgroup v2; real log check moved into 1.19). 1.4 done by code inspection: unknown types ignored since the first server | 1.5 process enumeration |
 | 2026-10-20 | 1.5 done: `app_scan::ProcScanner` with (pid, start, comm) cache + fake `/proc` fixture, 5 tests | 1.6 identification |
+| 2026-10-20 | 1.6 done: `app_catalog.rs` + `app_ident.rs`, 13 fixture tests; Steam-vs-Wine precedence fix; Prism/MultiMC markers (Q2 answered) | 1.7 localized names + catalogue reload |
