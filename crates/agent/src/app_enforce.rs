@@ -251,7 +251,9 @@ mod tests {
         RunningProc { pid, start_ticks: 100 + pid as u64, uid, app_id: AppId::parse(app).unwrap(), comm: comm.into(), exe: Some(format!("/usr/bin/{comm}")) }
     }
 
-    fn setup(remaining: i64, limit: u32) -> (HashMap<u32, Vec<GroupStatus>>, HashMap<u32, Vec<AppGroupConfig>>, HashMap<(u32, AppId), Shown>) {
+    type Setup = (HashMap<u32, Vec<GroupStatus>>, HashMap<u32, Vec<AppGroupConfig>>, HashMap<(u32, AppId), Shown>);
+
+    fn setup(remaining: i64, limit: u32) -> Setup {
         let g = AppGroupConfig {
             id: "games".into(),
             name: "Games".into(),

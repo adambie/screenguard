@@ -406,6 +406,17 @@ pub(crate) mod tests {
         crate::app_groups::add_rule(&pool, &groups[1].id, &rule).await.unwrap();
         assert!(crate::app_groups::list_groups(&pool).await.unwrap()[1].rules.iter().any(|r| r.rule.exclude));
         assert!(crate::app_groups::delete_group(&pool, &id).await.unwrap());
+
+        // group usage, adjustments and approvals on Postgres
+        crate::app_groups::add_adjustment(&pool, &profile.to_string(), &groups[0].id, "2026-10-20", 15).await.unwrap();
+        assert_eq!(crate::app_groups::adjustments(&pool, &profile.to_string(), "2026-10-20").await.unwrap()[&groups[0].id], 15);
+        let gsync = AppUsageSync { entries: vec![], groups: vec![GroupUsageEntry { local_uid: 1001, date: day("2026-10-20"), group_id: groups[0].id.clone(), seconds_total: 90 }] };
+        ingest(&pool, a1, &gsync, day("2026-10-20")).await.unwrap();
+        assert_eq!(group_totals(&pool, profile, None, None).await.unwrap()[&groups[0].id], 90);
+        crate::app_approvals::set_mode(&pool, profile, true).await.unwrap();
+        assert!(crate::app_approvals::request(&pool, profile, "steam:42").await.unwrap());
+        crate::app_approvals::decide(&pool, profile, "steam:42", false).await.unwrap();
+        assert_eq!(crate::app_approvals::config(&pool, profile).await.unwrap().unwrap().denied, vec!["steam:42"]);
     }
 
     /// Two agents in one profile, one in another; returns (agent1, agent2, other, profile).
