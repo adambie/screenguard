@@ -267,5 +267,19 @@
   "flash.pairing_attempts_exhausted": "Too many wrong codes — the agent will show a new pairing code shortly.",
   "flash.agent_not_waiting": "This agent isn't waiting for approval right now. Make sure it's running, then enter the code it currently shows.",
   "flash.agent_accept_failed": "Failed to accept agent: {error}",
-  "agent.pairing_hint_old": "Agents older than 0.10.17:"
+  "agent.pairing_hint_old": "Agents older than 0.10.17:",
+
+  "profile.btn_app_usage": "App usage",
+  "apps.heading": "App usage",
+  "apps.range_day": "Day",
+  "apps.range_week": "Week",
+  "apps.range_total": "Total",
+  "apps.today": "Today",
+  "apps.previous": "Previous",
+  "apps.next": "Next",
+  "apps.card_apps": "Apps",
+  "apps.total": "Total: {time}",
+  "apps.empty": "No app usage recorded for this period.",
+  "apps.not_available": "None of this profile's computers report app usage yet. Update the ScreenGuard agent on them to see which apps are used.",
+  "apps.footnote": "Time counts while an app is open and the child is active at the computer; apps open at the same time each count. Programs started from a terminal count as the terminal."
 }

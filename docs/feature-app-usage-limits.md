@@ -44,8 +44,8 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.15 (reports API) — **server side of Phase 1 done**
-- **Next step:** 1.16 — web UI "App usage" page
+- **Last completed step:** 1.16 (web UI page, English strings)
+- **Next step:** 1.17 — translate the `apps.*` + `profile.btn_app_usage` strings into de, es, fr, pt, pl
 - **In progress / half-done:** —
 - **Blockers / open questions:** none blocking; Q5 open, see
   [Open questions](#open-questions)
@@ -541,9 +541,22 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 
 ### 1D. Web UI (`webui/`)
 
-- [ ] **1.16 Profile → "App usage" tab/page** — range switch (day / week / total),
+- [x] **1.16 Profile → "App usage" tab/page** — range switch (day / week / total),
   date picker, table sorted by time with bar per app; empty state; notice when no
   agent of the profile has the `app_usage` capability ("update the agent").
+  → A separate page `/profiles/<id>/apps` (`profile_apps.html`), because the
+  profile page is already a long column of cards. It's linked from an "App
+  usage" button in the profile header and from the Usage card.
+  - Day/Week/Total switch, ‹ › period navigation (future dates are clamped), a
+    per-day bar chart in the week view (click a day to open it), and an app list
+    with time bars.
+  - Empty state, the capability notice, and a footnote explaining how time is
+    counted. A letter avatar stands in for icons (theme icon names can't be
+    rendered in a browser).
+  - New `fmt_secs` filter (`<1m` under a minute). English strings added.
+  - Checked locally (server + web UI on localhost with seeded data): totals
+    match, and headless Chromium screenshots look right at desktop and phone
+    widths.
 - [ ] **1.17 Translations** — all new strings in all 6 languages
   (`en, de, es, fr, pt, pl`).
 - [ ] **1.18 Dashboard teaser (optional)** — top 3 apps today per child.
@@ -709,3 +722,4 @@ per-desktop ignore list**. Everything else goes to the hidden "other" bucket.
 | 2026-10-20 | 1.11 done: `app_tracking` config (default on), capability follows it. Agent side (1A–1B) complete | 1.12 server migration |
 | 2026-10-20 | 1.12–1.14 done: v10 (`app_catalog`, `app_usage`, `agents.app_usage_available`), upgrade from 0.10.17 verified on SQLite + Postgres; `app_usage::ingest` with MAX upsert (tests on both DBs); capability stored and in agents API | 1.15 reports API |
 | 2026-10-20 | 1.15 done: `GET /profiles/{id}/app-usage` (day/week/total), tests on SQLite + Postgres | 1.16 web UI |
+| 2026-10-20 | 1.16 done: `/profiles/<id>/apps` page (day/week/total), links from the profile page, checked locally with screenshots | 1.17 translations |

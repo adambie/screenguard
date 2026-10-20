@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ t('apps.heading') }} · {{ profile.display_name }} – ScreenGuard{% endblock %}
+
+{% block content %}
+
+<!-- ── page header ──────────────────────────────────────────────────── -->
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb mb-2">
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-secondary">{{ t('profile.back_dashboard') }}</a>
+    </li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('profile_detail', profile_id=profile.id) }}" class="text-decoration-none text-secondary">{{ profile.display_name }}</a>
+    </li>
+    <li class="breadcrumb-item active">{{ t('apps.heading') }}</li>
+  </ol>
+</nav>
+<h1 class="h2 fw-bold mb-3">{{ t('apps.heading') }}</h1>
+
+{% if not available %}
+<div class="alert alert-info small">{{ t('apps.not_available') }}</div>
+{% endif %}
+
+<!-- ── range + period ───────────────────────────────────────────────── -->
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <div class="btn-group" role="group" aria-label="{{ t('apps.heading') }}">
+    {% for r in ['day', 'week', 'total'] %}
+    <a href="{{ url_for('profile_apps', profile_id=profile.id, range=r, date=day) }}"
+       class="btn btn-sm {% if range == r %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ t('apps.range_' ~ r) }}</a>
+    {% endfor %}
+  </div>
+
+  {% if range != 'total' %}
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('profile_apps', profile_id=profile.id, range=range, date=prev_date) }}"
+       class="btn btn-sm btn-outline-secondary" aria-label="{{ t('apps.previous') }}"
+       style="width:38px;height:36px;padding:0;display:flex;align-items:center;justify-content:center">‹</a>
+    <span style="font-size:13px;color:var(--t2);min-width:150px;text-align:center;white-space:nowrap">
+      {% if range == 'day' %}
+        {% if day|string == today %}{{ t('apps.today') }}{% else %}{{ day.strftime('%a %b %-d, %Y') }}{% endif %}
+      {% else %}
+        {{ period_from }} – {{ period_to }}
+      {% endif %}
+    </span>
+    {% if next_date %}
+    <a href="{{ url_for('profile_apps', profile_id=profile.id, range=range, date=next_date) }}"
+       class="btn btn-sm btn-outline-secondary" aria-label="{{ t('apps.next') }}"
+       style="width:38px;height:36px;padding:0;display:flex;align-items:center;justify-content:center">›</a>
+    {% else %}
+    <span class="btn btn-sm btn-outline-secondary disabled"
+          style="width:38px;height:36px;padding:0;display:flex;align-items:center;justify-content:center">›</span>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── week: one bar per day ────────────────────────────────────────── -->
+{% if range == 'week' and week %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div style="display:flex;align-items:flex-end;gap:6px;height:90px">
+      {% for d in week %}
+      <a href="{{ url_for('profile_apps', profile_id=profile.id, range='day', date=d.date) }}"
+         title="{{ d.date }}: {{ d.seconds | fmt_secs }}"
+         style="flex:1;height:{{ [d.pct, 2] | max }}%;border-radius:4px 4px 0 0;background:var(--ac);
+                {% if d.seconds == 0 %}opacity:.15;{% elif not d.is_today %}opacity:.5;{% endif %}"></a>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      {% for d in week %}
+      <div style="flex:1;text-align:center;min-width:0">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;
+                    font-weight:{% if d.is_today %}700{% else %}500{% endif %};color:{% if d.is_today %}var(--t1){% else %}var(--t2){% endif %}">{{ d.name }}</div>
+        <div style="font-size:10px;color:var(--t2);white-space:nowrap">{{ d.seconds | fmt_secs if d.seconds else '—' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── apps ─────────────────────────────────────────────────────────── -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between">
+    <span>{{ t('apps.card_apps') }}</span>
+    <span class="text-secondary small">{{ t('apps.total', time=(total_seconds | fmt_secs)) }}</span>
+  </div>
+  {% if apps %}
+  <ul class="list-group list-group-flush">
+    {% for a in apps %}
+    <li class="list-group-item d-flex align-items-center gap-3" style="padding:10px 16px">
+      <div aria-hidden="true"
+           style="width:32px;height:32px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+                  background:var(--bd);color:var(--t1);font-weight:600;font-size:14px">{{ a.name[:1] | upper }}</div>
+      <div style="flex:1;min-width:0">
+        <div class="d-flex justify-content-between gap-2">
+          <span class="text-truncate" title="{{ a.app_id }}">{{ a.name }}</span>
+          <span class="text-nowrap" style="font-variant-numeric:tabular-nums">{{ a.seconds | fmt_secs }}</span>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--bd);margin-top:6px;overflow:hidden">
+          <div style="height:100%;width:{{ a.pct }}%;background:var(--ac);border-radius:3px"></div>
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="card-body text-secondary small">{{ t('apps.empty') }}</div>
+  {% endif %}
+</div>
+
+<p class="text-secondary small">{{ t('apps.footnote') }}</p>
+
+{% endblock %}

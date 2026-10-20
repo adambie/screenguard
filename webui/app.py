@@ -95,6 +95,18 @@ def time_ago(ts):
         return str(ts)
 
 
+@app.template_filter('fmt_secs')
+def fmt_secs(s):
+    """Format seconds like fmt_mins; under a minute shows '<1m'."""
+    try:
+        s = int(s or 0)
+    except (ValueError, TypeError):
+        return str(s)
+    if 0 < s < 60:
+        return '<1m'
+    return fmt_mins(s // 60)
+
+
 @app.template_filter('fmt_mins')
 def fmt_mins(m):
     """Format minutes as '1h 30m', '45m', '0m', or '—' for None."""
@@ -481,6 +493,62 @@ def profile_detail(profile_id):
                            week_offset=week_offset,
                            week_start=week_start,
                            week_end=week_end,
+                           today=str(today_date))
+
+
+@app.route("/profiles/<profile_id>/apps")
+@require_login
+def profile_apps(profile_id):
+    r = api("GET", f"/profiles/{profile_id}")
+    if not r or not r.ok:
+        flash(t("flash.profile_not_found"), "danger")
+        return redirect(url_for("dashboard"))
+    profile = r.json()["profile"]
+
+    rng = request.args.get("range", "day")
+    if rng not in ("day", "week", "total"):
+        rng = "day"
+    today_date = date.today()
+    try:
+        day = date.fromisoformat(request.args.get("date", ""))
+    except ValueError:
+        day = today_date
+    day = min(day, today_date)
+
+    r2 = api("GET", f"/profiles/{profile_id}/app-usage", params={"range": rng, "date": str(day)})
+    data = r2.json() if r2 and r2.ok else {}
+    apps = data.get("apps", [])
+    top = max((a["seconds"] for a in apps), default=0)
+    for a in apps:
+        a["pct"] = max(int(a["seconds"] / top * 100), 1) if top else 0
+
+    week = []
+    if rng == "week":
+        day_list = data.get("days", [])
+        week_top = max((d["seconds"] for d in day_list), default=0)
+        names = days()
+        for i, d in enumerate(day_list):
+            week.append({
+                "name": names[i] if i < len(names) else d["date"],
+                "date": d["date"],
+                "seconds": d["seconds"],
+                "pct": int(d["seconds"] / week_top * 100) if week_top else 0,
+                "is_today": d["date"] == str(today_date),
+            })
+
+    step = {"day": timedelta(days=1), "week": timedelta(days=7)}.get(rng)
+    return render_template("profile_apps.html",
+                           profile=profile,
+                           range=rng,
+                           day=day,
+                           period_from=data.get("from"),
+                           period_to=data.get("to"),
+                           apps=apps,
+                           total_seconds=data.get("total_seconds", 0),
+                           week=week,
+                           available=data.get("app_usage_available", True),
+                           prev_date=str(day - step) if step else None,
+                           next_date=str(day + step) if step and day + step <= today_date else None,
                            today=str(today_date))
 
 
