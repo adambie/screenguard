@@ -43,13 +43,18 @@ progress — not chat history.
 
 > Update this block at the end of every session.
 
-- **Phase:** 1 — Per-app usage reports (Phase 0 done)
-- **Last completed step:** 1.19 (real-machine e2e passed); 1.18 skipped, 1.20 mostly done
-- **Next step:** 2.15 combined real-machine run (+ GNOME/other desktops as available), then 2.17 docs (README) and release with the maintainer's go-ahead. Phase 1 leftovers: rest of 1.20 (real 0.10.17 agent vs this server).
-  No release until Phase 2 is done (decision log).
-- **In progress / half-done:** —
-- **Blockers / open questions:** none blocking; Q5 open, see
-  [Open questions](#open-questions)
+- **Phase:** 2 done on KDE (Phases 1 + 2 incl. 2E ship together)
+- **Last completed step:** 2.22 + review follow-ups; 2.15 passed on KDE; README done
+- **Next step:** 2.17 release, *only with the maintainer's go-ahead*: a version bump
+  commit, then a tag. The release notes must say that screen time was
+  undercounted by ~10 % before (fixed in `f0375db`), so limits now run out on
+  time, which parents may see as "sooner".
+- **Open:** 2.15 on other desktops (GNOME, Cinnamon, XFCE, Hyprland) needs a
+  machine with root for the agent; 1.18 (dashboard teaser) skipped.
+- **Test setup still in place (maintainer decides):** passwordless sudo for
+  `adam` on screenguardTest (`/etc/sudoers.d/99-adam-nopasswd`); its agent is
+  the dev build, paired to the dev server on the maintainer's PC
+  (192.168.8.194:18080, mDNS off); a `ufw` rule for port 18080 on the PC.
 
 ---
 
@@ -1077,3 +1082,4 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-20 | 1.19 passed on screenguardTest against a local server: per-app seconds exact, lock = 0 s, server matches agent, UI OK; noted possible screen-time undercount (separate issue) | 1.20 real old agent, 1.22 release |
 | 2026-10-20 | Found and fixed a screen-time undercount (~10 %, heartbeat dropped the remainder) — verified on the test machine. Plan revised: release after Phase 2, predefined Games/Web browsers groups via categories, 2E new-app approval | Phase 2.0 |
 | 2026-10-20 | 2.0 done: categories agent → server (v11), verified on the test machine | 2.1 matcher, 2.2 v12 groups |
+| 2026-10-20 | Phase 2 built and tested on KDE: categories, groups (predefined Games/Web browsers), Apps page, group limits + extra time, agent-side group accounting, warnings, closing, new-app approval with offline requests, admin-rights warning; upgrade 0.10.17 → v15 on SQLite + Postgres; review follow-ups fixed | 2.17 release (go-ahead), other desktops |
