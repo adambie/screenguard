@@ -359,5 +359,21 @@
   "apps_admin.move_to": "Move to group",
   "apps_admin.limit_separately": "Limit separately",
   "apps_admin.limit_separately_hint": "Give this app its own group, so it can get its own daily time",
-  "flash.group_for_app": "Group \"{name}\" created for this app — set its daily time on a child's profile under App limits."
+  "flash.group_for_app": "Group \"{name}\" created for this app — set its daily time on a child's profile under App limits.",
+
+  "board.hint": "Drag apps into groups — or drop one app onto another to group them. Tap an app for more options.",
+  "board.ungrouped": "Not in a group",
+  "board.drag_here": "Drag apps here",
+  "board.new_group_hint": "Drop an app here, or drop one app onto another",
+  "board.new_group_name": "New group",
+  "board.search": "Search apps",
+  "board.move_to": "Move to",
+  "board.moved": "{app} → {group}",
+  "board.undo": "Undo",
+  "board.error": "Couldn't save — try again.",
+  "board.count": "{n} apps",
+  "board.no_match": "No app matches",
+  "board.menu": "Options",
+
+  "board.count_one": "1 app"
 }

@@ -339,5 +339,21 @@
   "apps_admin.move_to": "Mover al grupo",
   "apps_admin.limit_separately": "Limitar por separado",
   "apps_admin.limit_separately_hint": "Un grupo propio para esta app, con su propio tiempo diario",
-  "flash.group_for_app": "Grupo «{name}» creado para esta app: fija su tiempo diario en el perfil de un menor, en Límites de apps."
+  "flash.group_for_app": "Grupo «{name}» creado para esta app: fija su tiempo diario en el perfil de un menor, en Límites de apps.",
+
+  "board.hint": "Arrastra apps a grupos, o suelta una app sobre otra para agruparlas. Toca una app para más opciones.",
+  "board.ungrouped": "Sin grupo",
+  "board.drag_here": "Arrastra apps aquí",
+  "board.new_group_hint": "Suelta una app aquí, o una app sobre otra",
+  "board.new_group_name": "Grupo nuevo",
+  "board.search": "Buscar apps",
+  "board.move_to": "Mover a",
+  "board.moved": "{app} → {group}",
+  "board.undo": "Deshacer",
+  "board.error": "No se pudo guardar: inténtalo de nuevo.",
+  "board.count": "{n} apps",
+  "board.no_match": "Ninguna app coincide",
+  "board.menu": "Opciones",
+
+  "board.count_one": "1 app"
 }

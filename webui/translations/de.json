@@ -339,5 +339,21 @@
   "apps_admin.move_to": "In Gruppe verschieben",
   "apps_admin.limit_separately": "Einzeln begrenzen",
   "apps_admin.limit_separately_hint": "Eine eigene Gruppe für diese App, damit sie eine eigene Tageszeit bekommt",
-  "flash.group_for_app": "Gruppe „{name}“ für diese App erstellt — lege die tägliche Zeit im Profil eines Kindes unter App-Limits fest."
+  "flash.group_for_app": "Gruppe „{name}“ für diese App erstellt — lege die tägliche Zeit im Profil eines Kindes unter App-Limits fest.",
+
+  "board.hint": "Ziehe Apps in Gruppen — oder lege eine App auf eine andere, um sie zu gruppieren. Tippe auf eine App für weitere Optionen.",
+  "board.ungrouped": "Ohne Gruppe",
+  "board.drag_here": "Apps hierher ziehen",
+  "board.new_group_hint": "App hier ablegen oder eine App auf eine andere ziehen",
+  "board.new_group_name": "Neue Gruppe",
+  "board.search": "Apps suchen",
+  "board.move_to": "Verschieben nach",
+  "board.moved": "{app} → {group}",
+  "board.undo": "Rückgängig",
+  "board.error": "Speichern fehlgeschlagen — bitte erneut versuchen.",
+  "board.count": "{n} Apps",
+  "board.no_match": "Keine passende App",
+  "board.menu": "Optionen",
+
+  "board.count_one": "1 App"
 }

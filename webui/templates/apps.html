@@ -1,170 +1,409 @@
 {% extends "base.html" %}
 {% block title %}{{ t('apps_admin.heading') }} – ScreenGuard{% endblock %}
 
-
 {% block content %}
 <h1 class="h2 fw-bold mb-1">{{ t('apps_admin.heading') }}</h1>
-<p class="text-secondary mb-4">{{ t('apps_admin.subtitle') }}</p>
+<p class="text-secondary mb-4">{{ t('board.hint') }}</p>
 
-<!-- ── groups ───────────────────────────────────────────────────────── -->
-<h2 class="h5 fw-semibold mb-3">{{ t('groups.heading') }}</h2>
-<div class="row row-cols-1 row-cols-md-2 g-3 mb-4">
-  {% for g in groups %}
-  <div class="col">
-    <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center gap-2">
-        <span class="text-truncate">{{ g.display_name }}</span>
-        <span class="text-secondary small text-nowrap">{{ t('groups.app_count', n=g.app_count) }}</span>
-      </div>
-      <div class="card-body small">
-        {# the apps actually in this group (one group per app) #}
-        {% if g.members %}
-        <div class="d-flex flex-wrap gap-1 mb-2">
-          {% for a in g.members %}
-          <form method="post" action="{{ url_for('app_group_membership') }}" class="d-inline">
-            <input type="hidden" name="group" value="{{ g.id }}">
-            <input type="hidden" name="app_id" value="{{ a.app_id }}">
-            <input type="hidden" name="member" value="0">
-            <span class="sg-chip">{{ a.name }}
-              <button class="sg-chip-x" aria-label="{{ t('apps_admin.remove_from', group=g.display_name) }}"
-                      title="{{ t('apps_admin.remove_from', group=g.display_name) }}">×</button></span>
-          </form>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="text-secondary mb-2">{{ t('groups.empty') }}</div>
-        {% endif %}
-        {% if g.auto %}
-        <div class="text-secondary mb-1">{{ t('groups.auto', rules=(g.auto | map(attribute='label') | join(', '))) }}</div>
-        {% endif %}
-        <a class="small text-decoration-none" data-bs-toggle="collapse" href="#rules-{{ g.id }}">{{ t('groups.edit_rules') }} ›</a>
-        <div class="collapse mt-2" id="rules-{{ g.id }}">
-          {% for r in g.auto %}
-          <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
-            <span class="sg-chip">{{ r.label }}
-              <button class="sg-chip-x" aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
-          </form>
-          {% endfor %}
-          {% if g.excludes %}
-          <div class="mt-2">
-            <span class="text-secondary">{{ t('groups.except') }}</span>
-            {% for r in g.excludes %}
-            <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
-              <span class="sg-chip sg-chip-out">{{ r.label }}
-                <button class="sg-chip-x" aria-label="{{ t('groups.remove_rule') }}" title="{{ t('groups.remove_rule') }}">×</button></span>
-            </form>
-            {% endfor %}
-          </div>
-          {% endif %}
-          {% if categories %}
-          <form method="post" action="{{ url_for('add_app_group_rule', group_id=g.id) }}" class="d-flex gap-2 mt-2" style="max-width:320px">
-            <select name="category" class="form-select form-select-sm" aria-label="{{ t('groups.add_category') }}">
-              {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-            </select>
-            <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('groups.add_category') }}</button>
-          </form>
-          {% endif %}
-        </div>
-      </div>
-      <div class="card-footer bg-transparent d-flex gap-2 flex-wrap">
-        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#rename-{{ g.id }}">{{ t('profile.btn_rename') }}</button>
-        <form method="post" action="{{ url_for('delete_app_group', group_id=g.id) }}"
-              onsubmit='return confirm({{ t("groups.confirm_delete", name=g.display_name) | tojson }})'>
-          <button class="btn btn-sm btn-outline-danger">{{ t('profile.btn_delete') }}</button>
-        </form>
-        <div class="collapse w-100" id="rename-{{ g.id }}">
-          <form method="post" action="{{ url_for('rename_app_group', group_id=g.id) }}" class="d-flex gap-2 mt-1" style="max-width:320px">
-            <input name="name" class="form-control form-control-sm" value="{{ g.display_name }}" maxlength="60" required>
-            <button class="btn btn-sm btn-primary text-nowrap">{{ t('profile.btn_save_name') }}</button>
-          </form>
-        </div>
-      </div>
+<div id="board" aria-live="polite"></div>
+<div id="toast" class="sg-toast" role="status" hidden></div>
+
+{# rule editing per group: plain forms, moved into a card when its rules are opened #}
+<div id="rules-store" hidden>
+  {% for g in state.groups %}
+  <div id="rules-{{ g.id }}" class="sg-rules small">
+    {% if g.auto %}
+    <div class="mb-2">
+      {% for r in g.auto %}
+      <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
+        <span class="sg-chip">{{ r.label }}<button class="sg-chip-x" title="{{ t('groups.remove_rule') }}" aria-label="{{ t('groups.remove_rule') }}">×</button></span>
+      </form>
+      {% endfor %}
     </div>
+    {% endif %}
+    {% if g.excludes %}
+    <div class="mb-2"><span class="text-secondary">{{ t('groups.except') }}</span>
+      {% for r in g.excludes %}
+      <form method="post" action="{{ url_for('delete_app_group_rule', group_id=g.id, rule_id=r.id) }}" class="d-inline">
+        <span class="sg-chip sg-chip-out">{{ r.label }}<button class="sg-chip-x" title="{{ t('groups.remove_rule') }}" aria-label="{{ t('groups.remove_rule') }}">×</button></span>
+      </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if state.categories %}
+    <form method="post" action="{{ url_for('add_app_group_rule', group_id=g.id) }}" class="d-flex gap-2" style="max-width:340px">
+      <select name="category" class="form-select form-select-sm" aria-label="{{ t('groups.add_category') }}">
+        {% for c in state.categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('groups.add_category') }}</button>
+    </form>
+    {% endif %}
   </div>
   {% endfor %}
-  <div class="col">
-    <div class="card h-100">
-      <div class="card-header">{{ t('groups.new') }}</div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('create_app_group') }}" class="d-flex gap-2">
-          <input name="name" class="form-control form-control-sm" placeholder="{{ t('groups.new_placeholder') }}" maxlength="60" required>
-          <button class="btn btn-sm btn-primary text-nowrap">{{ t('groups.create') }}</button>
-        </form>
-        <p class="text-secondary small mt-2 mb-0">{{ t('groups.new_hint') }}</p>
-      </div>
-    </div>
-  </div>
 </div>
 
-<!-- ── apps ─────────────────────────────────────────────────────────── -->
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h2 class="h5 fw-semibold mb-0">{{ t('apps_admin.all_apps', n=total) }}</h2>
-  <div class="btn-group" role="group">
-    <a href="{{ url_for('apps') }}" class="btn btn-sm {% if show != 'ungrouped' %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ t('apps_admin.show_all') }}</a>
-    <a href="{{ url_for('apps', show='ungrouped') }}" class="btn btn-sm {% if show == 'ungrouped' %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ t('apps_admin.show_ungrouped') }}</a>
-  </div>
-</div>
-
-<div class="card mb-4">
-  {% if apps %}
-  <ul class="list-group list-group-flush">
-    {% for a in apps %}
-    <li class="list-group-item d-flex flex-wrap align-items-center gap-3" style="padding:10px 16px">
-      <div aria-hidden="true"
-           style="width:32px;height:32px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-                  background:var(--bd);color:var(--t1);font-weight:600;font-size:14px">{{ a.name[:1] | upper }}</div>
-      <div style="flex:1;min-width:160px">
-        <div class="text-truncate" title="{{ a.app_id }}">{{ a.name }}</div>
-        <div class="text-secondary small">{% if a.kind_label %}{{ a.kind_label }} · {% endif %}{{ t('apps_admin.last_seen', when=(a.last_seen | ts_date)) }}</div>
-      </div>
-      <div class="d-flex flex-wrap gap-1 align-items-center">
-        {% for g in a.group_objs %}
-        <form method="post" action="{{ url_for('app_group_membership') }}" class="d-inline">
-          <input type="hidden" name="group" value="{{ g.id }}">
-          <input type="hidden" name="app_id" value="{{ a.app_id }}">
-          <input type="hidden" name="member" value="0">
-          <input type="hidden" name="next" value="{{ request.full_path }}">
-          <span class="sg-chip sg-chip-on">{{ g.display_name }}
-            <button class="sg-chip-x"
-                    aria-label="{{ t('apps_admin.remove_from', group=g.display_name) }}" title="{{ t('apps_admin.remove_from', group=g.display_name) }}">×</button></span>
-        </form>
-        {% endfor %}
-        {% if a.other_groups %}
-        <form method="post" action="{{ url_for('app_group_membership') }}" class="d-flex gap-1">
-          <input type="hidden" name="app_id" value="{{ a.app_id }}">
-          <input type="hidden" name="member" value="1">
-          <input type="hidden" name="next" value="{{ request.full_path }}">
-          <select name="group" class="form-select form-select-sm" style="width:auto" aria-label="{{ t('apps_admin.move_to') if a.group_objs else t('apps_admin.add_to') }}">
-            {% for g in a.other_groups %}<option value="{{ g.id }}">{{ g.display_name }}</option>{% endfor %}
-          </select>
-          <button class="btn btn-sm btn-outline-secondary text-nowrap">{{ t('apps_admin.move_to') if a.group_objs else t('apps_admin.add_to') }}</button>
-        </form>
-        {% endif %}
-        {% if not a.own_group %}
-        <form method="post" action="{{ url_for('limit_app_separately') }}" class="d-inline">
-          <input type="hidden" name="app_id" value="{{ a.app_id }}">
-          <input type="hidden" name="name" value="{{ a.name }}">
-          <input type="hidden" name="next" value="{{ request.full_path }}">
-          <button class="btn btn-sm btn-link text-decoration-none text-nowrap px-1" title="{{ t('apps_admin.limit_separately_hint') }}">{{ t('apps_admin.limit_separately') }}</button>
-        </form>
-        {% endif %}
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <div class="card-body text-secondary small">{{ t('apps_admin.empty') }}</div>
-  {% endif %}
-</div>
+<script id="board-state" type="application/json">{{ state | tojson }}</script>
+<script id="board-i18n" type="application/json">{{ {
+  'groups': t('groups.heading'),
+  'ungrouped': t('board.ungrouped'),
+  'drag_here': t('board.drag_here'),
+  'new_group': t('groups.new'),
+  'new_group_hint': t('board.new_group_hint'),
+  'search': t('board.search'),
+  'move_to': t('board.move_to'),
+  'rename': t('profile.btn_rename'),
+  'rules': t('groups.edit_rules'),
+  'delete': t('profile.btn_delete'),
+  'confirm_delete': t('groups.confirm_delete', name='{name}'),
+  'moved': t('board.moved', app='{app}', group='{group}'),
+  'undo': t('board.undo'),
+  'error': t('board.error'),
+  'auto': t('groups.auto', rules='{rules}'),
+  'count': t('board.count', n='{n}'),
+  'count_one': t('board.count_one'),
+  'empty': t('apps_admin.empty'),
+  'no_match': t('board.no_match'),
+  'menu': t('board.menu'),
+  'save': t('app_limits.save'),
+} | tojson }}</script>
 {% endblock %}
+
 {% block scripts %}
 <style>
-.sg-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 10px; border-radius:999px;
-           font-size:12px; line-height:18px; background:var(--bd); color:var(--t1); white-space:nowrap; }
-.sg-chip-on { background:var(--ac); color:#fff; }
+.sg-section-title { font-size: 1rem; font-weight: 600; margin: 0 0 .75rem; }
+.sg-groups { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.sg-gcard { background: var(--c1); border: 1px solid var(--bd); border-radius: 14px; padding: 12px 14px 14px;
+            transition: border-color .15s, box-shadow .15s; min-height: 150px; display:flex; flex-direction:column; }
+.sg-gcard.sg-new { border-style: dashed; background: transparent; align-items:center; justify-content:center; text-align:center; color: var(--t2); }
+.sg-over { border-color: var(--ac) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac) 25%, transparent); }
+.sg-ghead { display:flex; align-items:center; gap:8px; margin-bottom: 10px; min-height: 31px; }
+.sg-gname { font-weight: 600; flex: 1; min-width: 0; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; border-radius: 6px; padding: 2px 4px; margin-left:-4px; }
+.sg-gname:hover { background: var(--c2); }
+.sg-count { color: var(--t2); font-size: 12px; white-space: nowrap; }
+.sg-menu-btn { border:0; background:none; color: var(--t2); width:30px; height:30px; border-radius:8px; font-size:18px; line-height:1; }
+.sg-menu-btn:hover, .sg-menu-btn:focus-visible { background: var(--c2); color: var(--t1); }
+.sg-auto { color: var(--t2); font-size: 12px; margin-top: auto; padding-top: 10px; }
+.sg-tiles { display:grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.sg-empty { border: 1px dashed var(--bd); border-radius: 10px; color: var(--t2); font-size: 12px; display:flex; align-items:center; justify-content:center; min-height: 72px; grid-column: 1 / -1; padding: 8px; text-align:center; }
+.sg-tile { position: relative; background: var(--c2); border: 1px solid transparent; border-radius: 12px; padding: 10px 6px 8px;
+           display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; cursor: grab;
+           user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
+           transition: transform .12s, border-color .12s, opacity .12s; }
+.sg-tile:hover { border-color: var(--bd); }
+.sg-tile:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.sg-tile.sg-target { border-color: var(--ac); transform: scale(1.07); }
+.sg-tile.sg-dragging { opacity: .25; }
+.sg-avatar { width: 40px; height: 40px; border-radius: 11px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:17px; }
+.sg-tname { font-size: 12px; line-height: 1.25; color: var(--t1); max-width: 100%; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient: vertical; word-break: break-word; }
+.sg-tsub { font-size: 10px; color: var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sg-ghost { position: fixed; left:0; top:0; z-index: 1000; pointer-events:none; width: 96px; box-shadow: 0 10px 30px rgba(0,0,0,.35); border-color: var(--ac); }
+.sg-loose { background: var(--c1); border: 1px solid var(--bd); border-radius: 14px; padding: 14px; transition: border-color .15s, box-shadow .15s; }
+.sg-search { max-width: 260px; }
+.sg-pop { position: absolute; z-index: 1001; background: var(--c1); border: 1px solid var(--bd); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.3); padding: 6px; min-width: 200px; }
+.sg-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--t2); padding: 6px 10px 4px; }
+.sg-pop button { display:block; width:100%; text-align:left; border:0; background:none; color: var(--t1); padding: 7px 10px; border-radius: 8px; font-size: 14px; }
+.sg-pop button:hover, .sg-pop button:focus-visible { background: var(--c2); }
+.sg-pop .sg-danger { color: var(--er); }
+.sg-pop hr { margin: 4px 0; border-color: var(--bd); }
+.sg-rules { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bd); }
+.sg-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 10px; border-radius:999px; font-size:12px; line-height:18px; background:var(--bd); color:var(--t1); white-space:nowrap; margin: 0 2px 4px 0; }
 .sg-chip-out { background:transparent; border:1px solid var(--bd); color:var(--t2); }
 .sg-chip-x { border:0; background:none; padding:0 0 0 2px; color:inherit; opacity:.7; font-size:14px; line-height:1; cursor:pointer; }
-.sg-chip-x:hover, .sg-chip-x:focus-visible { opacity:1; }
-form.collapse.show { display:flex; }
+.sg-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1100; background: var(--t1); color: var(--c1);
+            padding: 10px 16px; border-radius: 12px; font-size: 14px; display:flex; gap: 14px; align-items:center; box-shadow: 0 8px 24px rgba(0,0,0,.3); max-width: calc(100vw - 32px); }
+.sg-toast[hidden] { display: none; }
+.sg-toast button { border:0; background:none; color: inherit; font-weight: 700; text-decoration: underline; padding: 0; }
+body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
+@media (max-width: 575px) { .sg-groups { grid-template-columns: 1fr; } .sg-tiles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); } }
 </style>
+<script>
+(() => {
+  const T = JSON.parse(document.getElementById('board-i18n').textContent);
+  let S = JSON.parse(document.getElementById('board-state').textContent);
+  const board = document.getElementById('board');
+  const store = document.getElementById('rules-store');
+  const toastEl = document.getElementById('toast');
+  let filter = '';
+  let renameGroup = null;   // group whose name is being edited
+  let openRules = null;     // group with its rules panel open
+  const fmt = (s, o) => s.replace(/\{(\w+)\}/g, (_, k) => o[k] ?? '');
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const hue = s => { let h = 0; for (const c of s) h = (h * 31 + c.codePointAt(0)) >>> 0; return h % 360; };
+
+  // ── rendering ──────────────────────────────────────────────────────────
+  function tile(appId, groupId) {
+    const a = S.apps[appId];
+    const t = el('div', 'sg-tile');
+    t.dataset.app = appId; t.dataset.group = groupId || '';
+    t.tabIndex = 0; t.setAttribute('role', 'button');
+    t.setAttribute('aria-label', `${a.name}, ${T.menu}`);
+    t.title = a.name;
+    const av = el('div', 'sg-avatar', (a.name.trim()[0] || '?').toUpperCase());
+    av.style.background = `hsl(${hue(a.name)} 55% 45%)`;
+    t.append(av, el('div', 'sg-tname', a.name));
+    if (a.sub) t.append(el('div', 'sg-tsub', a.sub));
+    return t;
+  }
+
+  function groupCard(g) {
+    const card = el('div', 'sg-gcard');
+    card.dataset.drop = g.id;
+    const head = el('div', 'sg-ghead');
+    if (renameGroup === g.id) {
+      const form = el('form', 'd-flex gap-2 flex-grow-1');
+      const inp = el('input', 'form-control form-control-sm fw-semibold');
+      inp.value = g.name; inp.maxLength = 60; inp.required = true; inp.setAttribute('aria-label', T.rename);
+      const ok = el('button', 'btn btn-sm btn-primary', T.save);
+      form.append(inp, ok);
+      let done = false;
+      const commit = () => {
+        if (done) return; done = true; renameGroup = null;
+        const v = inp.value.trim();
+        if (v && v !== g.name) act(`/apps/api/group/${g.id}/rename`, { name: v }); else render();
+      };
+      form.onsubmit = e => { e.preventDefault(); commit(); };
+      inp.onblur = () => setTimeout(commit, 120);   // clicking elsewhere saves too
+      inp.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); done = true; renameGroup = null; render(); } };
+      head.append(form);
+      requestAnimationFrame(() => { inp.focus(); inp.select(); });
+    } else {
+      const name = el('div', 'sg-gname', g.name);
+      name.title = T.rename;
+      name.onclick = () => { renameGroup = g.id; render(); };
+      const menu = el('button', 'sg-menu-btn', '⋯');
+      menu.type = 'button'; menu.setAttribute('aria-label', `${g.name}: ${T.menu}`);
+      menu.onclick = e => { e.stopPropagation(); groupMenu(g, menu); };
+      const count = g.members.length === 1 ? T.count_one : fmt(T.count, { n: g.members.length });
+      head.append(name, el('span', 'sg-count', count), menu);
+    }
+    const tiles = el('div', 'sg-tiles');
+    if (g.members.length) g.members.forEach(id => tiles.append(tile(id, g.id)));
+    else tiles.append(el('div', 'sg-empty', T.drag_here));
+    card.append(head, tiles);
+    if (g.auto.length) card.append(el('div', 'sg-auto', fmt(T.auto, { rules: g.auto.map(r => r.label).join(', ') })));
+    if (openRules === g.id) { const p = document.getElementById('rules-' + g.id); if (p) card.append(p); }
+    return card;
+  }
+
+  function render() {
+    document.querySelectorAll('#board .sg-rules').forEach(p => store.append(p));  // keep the forms
+    board.replaceChildren();
+    if (!Object.keys(S.apps).length) { board.append(el('div', 'sg-loose text-secondary', T.empty)); return; }
+
+    board.append(el('h2', 'sg-section-title', T.groups));
+    const groups = el('div', 'sg-groups');
+    S.groups.forEach(g => groups.append(groupCard(g)));
+    const nc = el('div', 'sg-gcard sg-new');
+    nc.dataset.drop = 'new';
+    nc.append(el('div', 'fw-semibold mb-1', '+ ' + T.new_group), el('div', 'small', T.new_group_hint));
+    groups.append(nc);
+    board.append(groups);
+
+    const head = el('div', 'd-flex flex-wrap justify-content-between align-items-center gap-2 mb-2');
+    head.append(el('h2', 'sg-section-title mb-0', `${T.ungrouped} (${S.ungrouped.length})`));
+    const search = el('input', 'form-control form-control-sm sg-search');
+    search.type = 'search'; search.placeholder = T.search; search.value = filter; search.setAttribute('aria-label', T.search);
+    search.oninput = () => { filter = search.value; renderLoose(); };
+    head.append(search);
+    const loose = el('div', 'sg-loose');
+    loose.dataset.drop = 'none'; loose.id = 'sg-loose';
+    board.append(head, loose);
+    renderLoose();
+  }
+
+  function renderLoose() {
+    const q = filter.trim().toLowerCase();
+    const ids = S.ungrouped.filter(id => !q || S.apps[id].name.toLowerCase().includes(q));
+    const tiles = el('div', 'sg-tiles');
+    if (ids.length) ids.forEach(id => tiles.append(tile(id, null)));
+    else tiles.append(el('div', 'sg-empty', q ? T.no_match : T.drag_here));
+    document.getElementById('sg-loose').replaceChildren(tiles);
+  }
+
+  // ── server calls: every action returns the fresh state ─────────────────
+  async function act(url, body, opts = {}) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), credentials: 'same-origin' });
+      if (r.redirected || !(r.headers.get('content-type') || '').includes('json')) { location.reload(); return; }
+      const j = await r.json();
+      S = j.state;
+      if (j.new_group) renameGroup = j.new_group;   // name the new group right away
+      render();
+      if (!j.ok) toast(T.error);
+      else if (opts.toast) toast(opts.toast, opts.undo);
+    } catch (e) { toast(T.error); }
+  }
+
+  let toastTimer;
+  function toast(msg, undo) {
+    toastEl.replaceChildren(el('span', null, msg));
+    if (undo) { const b = el('button', null, T.undo); b.type = 'button'; b.onclick = () => { toastEl.hidden = true; undo(); }; toastEl.append(b); }
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 6000);
+  }
+
+  const groupName = id => id ? (S.groups.find(g => g.id === id) || {}).name : T.ungrouped;
+  function moveApp(appId, from, to, isUndo) {
+    if ((from || null) === (to || null)) return;
+    act('/apps/api/move', { app_id: appId, group_id: to || null, from_group: from || null },
+        isUndo ? {} : { toast: fmt(T.moved, { app: S.apps[appId].name, group: groupName(to) }), undo: () => moveApp(appId, to, from, true) });
+  }
+  const newGroup = ids => act('/apps/api/new-group', { app_ids: ids });
+
+  // ── menus: the click / tap / keyboard way to do the same ───────────────
+  let pop = null;
+  const closePop = () => { pop?.remove(); pop = null; };
+  function openPop(anchor, build) {
+    closePop();
+    pop = el('div', 'sg-pop'); pop.setAttribute('role', 'menu');
+    build(pop);
+    document.body.append(pop);
+    const r = anchor.getBoundingClientRect();
+    const maxLeft = window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8;
+    pop.style.left = Math.max(8, Math.min(window.scrollX + r.left, maxLeft)) + 'px';
+    // below the anchor, or above it when it wouldn't fit on screen
+    const below = r.bottom + 6 + pop.offsetHeight <= window.innerHeight;
+    pop.style.top = (window.scrollY + (below ? r.bottom + 6 : Math.max(8, r.top - 6 - pop.offsetHeight))) + 'px';
+    pop.querySelector('button')?.focus();
+  }
+  const item = (label, fn, cls) => { const b = el('button', cls || '', label); b.type = 'button'; b.setAttribute('role', 'menuitem'); b.onclick = () => { closePop(); fn(); }; return b; };
+
+  function appMenu(t) {
+    const appId = t.dataset.app, from = t.dataset.group || null;
+    openPop(t, p => {
+      p.append(el('div', 'sg-pop-title', `${S.apps[appId].name} — ${T.move_to}`));
+      S.groups.filter(g => g.id !== from).forEach(g => p.append(item(g.name, () => moveApp(appId, from, g.id))));
+      p.append(item('+ ' + T.new_group, () => newGroup([appId])));
+      if (from) { p.append(el('hr')); p.append(item(T.ungrouped, () => moveApp(appId, from, null))); }
+    });
+  }
+
+  function groupMenu(g, anchor) {
+    openPop(anchor, p => {
+      p.append(item(T.rename, () => { renameGroup = g.id; render(); }));
+      p.append(item(T.rules, () => { openRules = openRules === g.id ? null : g.id; render(); }));
+      p.append(el('hr'));
+      p.append(item(T.delete, () => { if (confirm(fmt(T.confirm_delete, { name: g.name }))) act(`/apps/api/group/${g.id}/delete`); }, 'sg-danger'));
+    });
+  }
+
+  document.addEventListener('pointerdown', e => { if (pop && !pop.contains(e.target) && !e.target.closest('.sg-tile')) closePop(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closePop(); cleanupDrag(); return; }
+    const t = e.target.closest?.('.sg-tile');
+    if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); appMenu(t); }
+  });
+
+  // ── dragging: pointer events for mouse/pen; touch events for fingers (a
+  // pointer would be cancelled as soon as the browser starts to scroll) ────
+  let drag = null;   // {tile, appId, from, ghost, target, x, y}
+  let press = null;  // a press that may become a drag or a click / tap
+
+  board.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'touch') return;
+    const t = e.target.closest('.sg-tile');
+    if (!t || e.button > 0) return;
+    press = { t, x: e.clientX, y: e.clientY, id: e.pointerId, touch: false };
+  });
+  window.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    if (drag) { e.preventDefault(); moveDrag(e.clientX, e.clientY); return; }
+    if (press && !press.touch && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5) {
+      startDrag(e.clientX, e.clientY);
+    }
+  }, { passive: false });
+  window.addEventListener('pointerup', e => {
+    if (e.pointerType === 'touch') return;
+    if (drag) { endDrag(); return; }
+    if (press && !press.touch && e.pointerId === press.id) { const t = press.t; press = null; appMenu(t); }
+  });
+
+  // touch: a long press picks the app up; moving before that is a scroll
+  board.addEventListener('touchstart', e => {
+    const t = e.target.closest('.sg-tile');
+    if (!t || e.touches.length > 1) return;
+    const p = e.touches[0];
+    press = { t, x: p.clientX, y: p.clientY, touch: true, timer: setTimeout(() => press && startDrag(press.x, press.y), 350) };
+  }, { passive: true });
+  window.addEventListener('touchmove', e => {
+    const p = e.touches[0];
+    if (drag) { e.preventDefault(); moveDrag(p.clientX, p.clientY); return; }
+    if (press?.touch && Math.hypot(p.clientX - press.x, p.clientY - press.y) > 8) { clearTimeout(press.timer); press = null; }
+  }, { passive: false });
+  window.addEventListener('touchend', e => {
+    if (drag) { e.preventDefault(); endDrag(); return; }
+    if (press?.touch) { clearTimeout(press.timer); const t = press.t; press = null; e.preventDefault(); appMenu(t); }
+  }, { passive: false });
+  window.addEventListener('touchcancel', () => { if (press?.timer) clearTimeout(press.timer); press = null; cleanupDrag(); });
+  board.addEventListener('contextmenu', e => { if (e.target.closest('.sg-tile')) e.preventDefault(); });
+
+  function startDrag(x, y) {
+    const t = press.t;
+    if (press.timer) clearTimeout(press.timer);
+    press = null;
+    closePop();
+    const ghost = t.cloneNode(true);
+    ghost.classList.add('sg-ghost');
+    document.body.append(ghost);
+    t.classList.add('sg-dragging');
+    document.body.classList.add('sg-is-dragging');
+    drag = { tile: t, appId: t.dataset.app, from: t.dataset.group || null, ghost, target: null, x, y };
+    if (navigator.vibrate) navigator.vibrate(10);
+    moveDrag(x, y);
+    requestAnimationFrame(autoScroll);
+  }
+
+  function dropTarget(x, y) {
+    const under = document.elementFromPoint(x, y);
+    if (!under) return null;
+    // onto an app that isn't in a group → a new group with both
+    const other = under.closest('.sg-tile');
+    if (other && other !== drag.tile && !other.dataset.group) return { kind: 'tile', el: other };
+    const zone = under.closest('[data-drop]');
+    return zone ? { kind: 'zone', el: zone } : null;
+  }
+
+  function moveDrag(x, y) {
+    drag.x = x; drag.y = y;
+    drag.ghost.style.transform = `translate(${x - 48}px, ${y - 44}px) rotate(-3deg)`;
+    const tgt = dropTarget(x, y);
+    if (tgt?.el !== drag.target?.el) {
+      drag.target?.el.classList.remove('sg-over', 'sg-target');
+      tgt?.el.classList.add(tgt.kind === 'tile' ? 'sg-target' : 'sg-over');
+      drag.target = tgt;
+    }
+  }
+
+  function autoScroll() {   // near the window edge while dragging: scroll (groups are above, loose apps below)
+    if (!drag) return;
+    const edge = 70, h = window.innerHeight;
+    if (drag.y < edge) window.scrollBy(0, -Math.ceil((edge - drag.y) / 4));
+    else if (drag.y > h - edge) window.scrollBy(0, Math.ceil((drag.y - (h - edge)) / 4));
+    moveDrag(drag.x, drag.y);
+    requestAnimationFrame(autoScroll);
+  }
+
+  function cleanupDrag() {
+    if (!drag) return null;
+    const d = drag; drag = null;
+    d.ghost.remove();
+    d.tile.classList.remove('sg-dragging');
+    d.target?.el.classList.remove('sg-over', 'sg-target');
+    document.body.classList.remove('sg-is-dragging');
+    return d;
+  }
+
+  function endDrag() {
+    const d = cleanupDrag();
+    if (!d?.target) return;
+    if (d.target.kind === 'tile') return newGroup([d.target.el.dataset.app, d.appId]);
+    const zone = d.target.el.dataset.drop;
+    if (zone === 'new') return newGroup([d.appId]);
+    moveApp(d.appId, d.from, zone === 'none' ? null : zone);
+  }
+
+  render();
+})();
+</script>
 {% endblock %}

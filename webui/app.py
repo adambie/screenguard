@@ -616,94 +616,113 @@ def rule_label(rule, names):
 app.jinja_env.globals['group_name'] = group_name
 
 
-@app.route("/apps")
-@require_login
-def apps():
+def build_apps_state():
+    """Everything the Apps board needs, as plain JSON."""
     r = api("GET", "/apps")
     data = r.json() if r and r.ok else {"apps": [], "groups": []}
     apps_list, groups = data.get("apps", []), data.get("groups", [])
     names = {a["app_id"]: a["name"] for a in apps_list}
-    by_id = {g["id"]: g for g in groups}
-    for g in groups:
-        g["display_name"] = group_name(g)
-        # automatic rules (category / prefix); explicit app entries show as members
-        g["auto"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", [])
-                     if not r.get("exclude") and r.get("kind") != "app_id"]
-        g["excludes"] = [dict(r, label=rule_label(r, names)) for r in g.get("rules", []) if r.get("exclude")]
-        g["members"] = [a for a in apps_list if g["id"] in a.get("groups", [])]
-        g["app_count"] = len(g["members"])
+    apps = {}
     for a in apps_list:
-        a["group_objs"] = [by_id[i] for i in a.get("groups", []) if i in by_id]
-        a["other_groups"] = [g for g in groups if g["id"] not in a.get("groups", [])]
-        # already in a group that holds only this app: nothing to separate
-        a["own_group"] = any(not g.get("builtin") and len([m for m in apps_list if g["id"] in m.get("groups", [])]) == 1
-                             for g in a["group_objs"])
         source = {"flatpak": "Flatpak", "snap": "Snap", "steam": "Steam", "wine": "Windows (Wine)"}.get(a["app_id"].split(":")[0])
-        a["kind_label"] = source or next((c for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES), "")
-    show = request.args.get("show", "all")
-    if show == "ungrouped":
-        apps_list = [a for a in apps_list if not a.get("groups")]
-    categories = sorted({c for a in data.get("apps", []) for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES})
-    return render_template("apps.html", apps=apps_list, groups=groups, show=show, categories=categories,
-                           total=len(data.get("apps", [])))
+        apps[a["app_id"]] = {
+            "name": a["name"],
+            "sub": source or next((c for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES), ""),
+            "group": (a.get("groups") or [None])[0],
+        }
+    out_groups = []
+    for g in groups:
+        out_groups.append({
+            "id": g["id"],
+            "name": group_name(g),
+            "builtin": g.get("builtin"),
+            "auto": [{"id": r["id"], "label": rule_label(r, names)} for r in g.get("rules", [])
+                     if not r.get("exclude") and r.get("kind") != "app_id"],
+            "excludes": [{"id": r["id"], "label": rule_label(r, names)} for r in g.get("rules", []) if r.get("exclude")],
+            "members": sorted((aid for aid, a in apps.items() if a["group"] == g["id"]), key=lambda i: apps[i]["name"].lower()),
+        })
+    ungrouped = sorted((aid for aid, a in apps.items() if not a["group"]), key=lambda i: apps[i]["name"].lower())
+    categories = sorted({c for a in apps_list for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES})
+    return {"apps": apps, "groups": out_groups, "ungrouped": ungrouped, "categories": categories}
+
+
+@app.route("/apps")
+@require_login
+def apps():
+    return render_template("apps.html", state=build_apps_state())
+
+
+def _json_result(ok, **extra):
+    body = {"ok": bool(ok), "state": build_apps_state()}
+    body.update(extra)
+    return jsonify(body), (200 if ok else 400)
+
+
+def _new_group_name(base):
+    taken = {g["name"] for g in build_apps_state()["groups"]}
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base} {n}" in taken:
+        n += 1
+    return f"{base} {n}"
+
+
+@app.route("/apps/api/move", methods=["POST"])
+@require_login
+def apps_api_move():
+    """Drag an app into a group (moves it there) or out of its group (group_id empty)."""
+    body = request.get_json(silent=True) or {}
+    app_id, group_id, from_group = body.get("app_id", ""), body.get("group_id"), body.get("from_group")
+    if group_id:
+        r = api("POST", f"/app-groups/{group_id}/membership", json={"app_id": app_id, "member": True})
+        return _json_result(r and r.ok)
+    # "Not in a group" means no group at all: taking it out of one group can let
+    # another pick it up automatically (category, Steam…), so exclude it there too
+    r, group = None, from_group
+    for _ in range(5):
+        if not group:
+            break
+        r = api("POST", f"/app-groups/{group}/membership", json={"app_id": app_id, "member": False})
+        if not r or not r.ok:
+            break
+        group = build_apps_state()["apps"].get(app_id, {}).get("group")
+    return _json_result(r is None or r.ok)
+
+
+@app.route("/apps/api/new-group", methods=["POST"])
+@require_login
+def apps_api_new_group():
+    """Start a group from one app (dropped on "New group") or two (one dropped on the other)."""
+    body = request.get_json(silent=True) or {}
+    app_ids = [a for a in body.get("app_ids", []) if a][:2]
+    r = api("POST", "/app-groups", json={"name": _new_group_name(t("board.new_group_name"))})
+    if not r or not r.ok:
+        return _json_result(False)
+    gid = r.json()["id"]
+    for a in app_ids:
+        r = api("POST", f"/app-groups/{gid}/membership", json={"app_id": a, "member": True})
+        if not r or not r.ok:
+            return _json_result(False, new_group=gid)
+    return _json_result(True, new_group=gid)
+
+
+@app.route("/apps/api/group/<group_id>/rename", methods=["POST"])
+@require_login
+def apps_api_rename(group_id):
+    r = api("PATCH", f"/app-groups/{group_id}", json={"name": (request.get_json(silent=True) or {}).get("name", "")})
+    return _json_result(r and r.ok)
+
+
+@app.route("/apps/api/group/<group_id>/delete", methods=["POST"])
+@require_login
+def apps_api_delete(group_id):
+    r = api("DELETE", f"/app-groups/{group_id}")
+    return _json_result(r and r.ok)
 
 
 def _back():
     return redirect(request.form.get("next") or url_for("apps"))
-
-
-@app.route("/apps/limit-separately", methods=["POST"])
-@require_login
-def limit_app_separately():
-    """A group for just this app, so it can get its own daily time."""
-    app_id, name = request.form.get("app_id", ""), request.form.get("name", "")[:60] or "App"
-    r = api("POST", "/app-groups", json={"name": name})
-    if r and r.ok:
-        gid = r.json()["id"]
-        r = api("POST", f"/app-groups/{gid}/membership", json={"app_id": app_id, "member": True})
-    if r and r.ok:
-        flash(t("flash.group_for_app", name=name), "success")
-    else:
-        flash(t("flash.group_failed"), "danger")
-    return _back()
-
-
-@app.route("/apps/groups/create", methods=["POST"])
-@require_login
-def create_app_group():
-    r = api("POST", "/app-groups", json={"name": request.form.get("name", "")})
-    if not r or not r.ok:
-        flash(t("flash.group_failed"), "danger")
-    return _back()
-
-
-@app.route("/apps/groups/<group_id>/rename", methods=["POST"])
-@require_login
-def rename_app_group(group_id):
-    r = api("PATCH", f"/app-groups/{group_id}", json={"name": request.form.get("name", "")})
-    if not r or not r.ok:
-        flash(t("flash.group_failed"), "danger")
-    return _back()
-
-
-@app.route("/apps/groups/<group_id>/delete", methods=["POST"])
-@require_login
-def delete_app_group(group_id):
-    r = api("DELETE", f"/app-groups/{group_id}")
-    if not r or not r.ok:
-        flash(t("flash.group_failed"), "danger")
-    return _back()
-
-
-@app.route("/apps/membership", methods=["POST"])
-@require_login
-def app_group_membership():
-    group_id = request.form.get("group", "")
-    r = api("POST", f"/app-groups/{group_id}/membership",
-            json={"app_id": request.form.get("app_id", ""), "member": request.form.get("member") == "1"})
-    if not r or not r.ok:
-        flash(t("flash.group_failed"), "danger")
-    return _back()
 
 
 @app.route("/apps/groups/<group_id>/rules/add", methods=["POST"])
