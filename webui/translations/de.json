@@ -341,8 +341,8 @@
   "apps_admin.limit_separately_hint": "Eine eigene Gruppe für diese App, damit sie eine eigene Tageszeit bekommt",
   "flash.group_for_app": "Gruppe „{name}“ für diese App erstellt — lege die tägliche Zeit im Profil eines Kindes unter App-Limits fest.",
 
-  "board.hint": "Ziehe Apps in Gruppen — oder lege eine App auf eine andere, um sie zu gruppieren. Tippe auf eine App für weitere Optionen.",
-  "board.ungrouped": "Ohne Gruppe",
+  "board.hint": "Ziehe eine App aus „Nicht verwaltete Apps“ in eine Gruppe, um sie zu verwalten — oder lege eine App auf eine andere, um sie zu gruppieren.",
+  "board.ungrouped": "Nicht verwaltete Apps",
   "board.drag_here": "Apps hierher ziehen",
   "board.new_group_hint": "App hier ablegen oder eine App auf eine andere ziehen",
   "board.new_group_name": "Neue Gruppe",
@@ -355,5 +355,9 @@
   "board.no_match": "Keine passende App",
   "board.menu": "Optionen",
 
-  "board.count_one": "1 App"
+  "board.count_one": "1 App",
+
+  "board.managed": "Verwaltete Apps",
+  "board.remove_managed": "Aus verwalteten Apps entfernen",
+  "board.add_to": "Hinzufügen zu"
 }

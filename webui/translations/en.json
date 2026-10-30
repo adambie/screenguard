@@ -361,8 +361,8 @@
   "apps_admin.limit_separately_hint": "Give this app its own group, so it can get its own daily time",
   "flash.group_for_app": "Group \"{name}\" created for this app — set its daily time on a child's profile under App limits.",
 
-  "board.hint": "Drag apps into groups — or drop one app onto another to group them. Tap an app for more options.",
-  "board.ungrouped": "Not in a group",
+  "board.hint": "Drag an app from Unmanaged apps into a group to manage it — or drop one app onto another to group them.",
+  "board.ungrouped": "Unmanaged apps",
   "board.drag_here": "Drag apps here",
   "board.new_group_hint": "Drop an app here, or drop one app onto another",
   "board.new_group_name": "New group",
@@ -375,5 +375,9 @@
   "board.no_match": "No app matches",
   "board.menu": "Options",
 
-  "board.count_one": "1 app"
+  "board.count_one": "1 app",
+
+  "board.managed": "Managed apps",
+  "board.remove_managed": "Remove from managed apps",
+  "board.add_to": "Add to"
 }

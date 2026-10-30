@@ -341,8 +341,8 @@
   "apps_admin.limit_separately_hint": "Un groupe rien que pour cette app, avec son propre temps quotidien",
   "flash.group_for_app": "Groupe « {name} » créé pour cette app — réglez son temps quotidien dans le profil d'un enfant, sous Limites des apps.",
 
-  "board.hint": "Glissez les apps dans des groupes — ou déposez une app sur une autre pour les regrouper. Touchez une app pour plus d'options.",
-  "board.ungrouped": "Sans groupe",
+  "board.hint": "Glissez une app des « Apps non gérées » dans un groupe pour la gérer — ou déposez une app sur une autre pour les regrouper.",
+  "board.ungrouped": "Apps non gérées",
   "board.drag_here": "Glissez des apps ici",
   "board.new_group_hint": "Déposez une app ici, ou une app sur une autre",
   "board.new_group_name": "Nouveau groupe",
@@ -355,5 +355,9 @@
   "board.no_match": "Aucune app ne correspond",
   "board.menu": "Options",
 
-  "board.count_one": "1 app"
+  "board.count_one": "1 app",
+
+  "board.managed": "Apps gérées",
+  "board.remove_managed": "Retirer des apps gérées",
+  "board.add_to": "Ajouter à"
 }

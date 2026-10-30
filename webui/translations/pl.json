@@ -341,8 +341,8 @@
   "apps_admin.limit_separately_hint": "Osobna grupa tylko dla tej aplikacji, z własnym dziennym czasem",
   "flash.group_for_app": "Utworzono grupę „{name}” dla tej aplikacji — ustaw jej dzienny czas w profilu dziecka, w sekcji Limity aplikacji.",
 
-  "board.hint": "Przeciągaj aplikacje do grup — albo upuść jedną na drugą, żeby je zgrupować. Dotknij aplikacji, aby zobaczyć więcej opcji.",
-  "board.ungrouped": "Bez grupy",
+  "board.hint": "Przeciągnij aplikację z sekcji „Aplikacje niezarządzane” do grupy, aby nią zarządzać — albo upuść jedną aplikację na drugą, żeby je zgrupować.",
+  "board.ungrouped": "Aplikacje niezarządzane",
   "board.drag_here": "Przeciągnij aplikacje tutaj",
   "board.new_group_hint": "Upuść tu aplikację albo jedną aplikację na drugą",
   "board.new_group_name": "Nowa grupa",
@@ -355,5 +355,9 @@
   "board.no_match": "Brak pasujących aplikacji",
   "board.menu": "Opcje",
 
-  "board.count_one": "Aplikacje: 1"
+  "board.count_one": "Aplikacje: 1",
+
+  "board.managed": "Aplikacje zarządzane",
+  "board.remove_managed": "Usuń z zarządzanych aplikacji",
+  "board.add_to": "Dodaj do"
 }

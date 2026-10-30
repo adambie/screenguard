@@ -44,7 +44,9 @@
 
 <script id="board-state" type="application/json">{{ state | tojson }}</script>
 <script id="board-i18n" type="application/json">{{ {
-  'groups': t('groups.heading'),
+  'groups': t('board.managed'),
+  'remove_managed': t('board.remove_managed'),
+  'add_to': t('board.add_to'),
   'ungrouped': t('board.ungrouped'),
   'drag_here': t('board.drag_here'),
   'new_group': t('groups.new'),
@@ -272,10 +274,16 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
   function appMenu(t) {
     const appId = t.dataset.app, from = t.dataset.group || null;
     openPop(t, p => {
-      p.append(el('div', 'sg-pop-title', `${S.apps[appId].name} — ${T.move_to}`));
-      S.groups.filter(g => g.id !== from).forEach(g => p.append(item(g.name, () => moveApp(appId, from, g.id))));
-      p.append(item('+ ' + T.new_group, () => newGroup([appId])));
-      if (from) { p.append(el('hr')); p.append(item(T.ungrouped, () => moveApp(appId, from, null))); }
+      p.append(el('div', 'sg-pop-title', S.apps[appId].name));
+      if (from) {
+        // managed: moving between groups is done by dragging
+        p.append(item(T.remove_managed, () => moveApp(appId, from, null), 'sg-danger'));
+      } else {
+        // unmanaged: the non-drag way to add (keyboard, touch)
+        p.append(el('div', 'sg-pop-title', T.add_to));
+        S.groups.forEach(g => p.append(item(g.name, () => moveApp(appId, null, g.id))));
+        p.append(item('+ ' + T.new_group, () => newGroup([appId])));
+      }
     });
   }
 
