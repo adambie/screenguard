@@ -124,7 +124,7 @@ pub async fn get_app_usage(
 
     // per group: the agents' group time (counted once while any member ran);
     // for days before agents reported groups, the sum of the member apps
-    let groups = crate::app_groups::list_groups(&state.db).await.map_err(internal)?;
+    let groups = crate::app_groups::list_groups(&state.db, id).await.map_err(internal)?;
     let reported = app_usage::group_totals(&state.db, id, from, to).await.map_err(internal)?;
     let limits = crate::app_groups::limits(&state.db, &id.to_string()).await.map_err(internal)?;
     let adjustments = crate::app_groups::adjustments(&state.db, &id.to_string(), &date.to_string()).await.map_err(internal)?;

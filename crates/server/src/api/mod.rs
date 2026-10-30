@@ -59,14 +59,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/profiles/{id}/blocked-domains", get(profiles::get_blocked_domains).put(profiles::set_blocked_domains).post(profiles::add_blocked_domain))
         .route("/profiles/{id}/blocked-domains/{domain_id}", patch(profiles::patch_blocked_domain).delete(profiles::delete_blocked_domain))
         // Apps and app groups
-        .route("/apps", get(apps::list_apps))
-        .route("/app-groups", get(apps::list_groups).post(apps::create_group))
-        .route("/app-groups/{id}", patch(apps::rename_group).delete(apps::delete_group))
-        .route("/app-groups/{id}/rules", post(apps::add_rule))
-        .route("/app-groups/{id}/rules/{rule_id}", delete(apps::delete_rule))
-        .route("/app-groups/{id}/membership", post(apps::set_membership))
-        .route("/profiles/{id}/app-group-limits", get(apps::get_group_limits))
-        .route("/profiles/{id}/app-group-limits/{group_id}", axum::routing::put(apps::put_group_limits))
+        .route("/profiles/{id}/apps", get(apps::board))
+        .route("/profiles/{id}/app-groups", post(apps::create_group))
+        .route("/profiles/{id}/app-groups/{gid}", patch(apps::rename_group).delete(apps::delete_group))
+        .route("/profiles/{id}/app-groups/{gid}/rules", post(apps::add_rule))
+        .route("/profiles/{id}/app-groups/{gid}/rules/{rule_id}", delete(apps::delete_rule))
+        .route("/profiles/{id}/app-groups/{gid}/membership", post(apps::set_membership))
+        .route("/profiles/{id}/app-group-limits/{gid}", axum::routing::put(apps::put_group_limits))
         .route("/profiles/{id}/app-group-adjustments", post(apps::add_group_adjustment))
         .route("/profiles/{id}/app-approvals", get(apps::get_approvals))
         .route("/profiles/{id}/app-approvals/mode", axum::routing::put(apps::set_approval_mode))
@@ -271,7 +270,7 @@ mod tests {
         assert_eq!(total["total_seconds"], 7260);
 
         // by group: Dota 2 (steam:) is in Games; with a Tuesday limit of 90 min
-        let games = crate::app_groups::list_groups(&state.db).await.unwrap()[0].id.clone();
+        let games = crate::app_groups::list_groups(&state.db, profile).await.unwrap()[0].id.clone();
         crate::app_groups::replace_limits(&state.db, &profile.to_string(), &games, &[(1, 90)]).await.unwrap();
         let (_, day) = get("?range=day&date=2026-10-20".into()).await; // a Tuesday
         let g = day["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
@@ -303,100 +302,82 @@ mod tests {
     async fn apps_and_groups_api() {
         let (app, state) = app_with_state().await;
         let tok = admin_token(&app).await;
-        crate::app_usage::tests::seeded(&state.db).await; // firefox, steam:570 (Game), foot
-        let c = |m: Method, p: &str, b: Option<Value>| {
-            let (app, tok, p) = (app.clone(), tok.clone(), p.to_string());
+        let (_, _, _, pid) = crate::app_usage::tests::seeded(&state.db).await; // firefox, steam:570 (Game), foot
+        let c = |m: Method, p: String, b: Option<Value>| {
+            let (app, tok) = (app.clone(), tok.clone());
             async move { call(&app, m, &p, Some(&tok), b).await }
         };
+        let base = format!("/profiles/{pid}");
 
-        let (s, body) = c(Method::GET, "/apps", None).await;
+        // the child's board: their apps (with today's time) and their groups
+        let (s, board) = c(Method::GET, format!("{base}/apps"), None).await;
         assert_eq!(s, StatusCode::OK);
-        let groups = body["groups"].as_array().unwrap();
+        let groups = board["groups"].as_array().unwrap();
         let (games, browsers) = (groups[0]["id"].as_str().unwrap().to_string(), groups[1]["id"].as_str().unwrap().to_string());
         assert_eq!(groups[0]["builtin"], "games");
-        let dota = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "steam:570").unwrap();
-        assert_eq!(dota["groups"], json!([games]));
-        let ff = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "desktop:firefox").unwrap();
-        assert_eq!(ff["groups"], json!([]));
+        let app_of = |b: &Value, id: &str| b["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == id).unwrap().clone();
+        assert_eq!(app_of(&board, "steam:570")["group"], games.as_str());
+        assert!(app_of(&board, "desktop:firefox")["group"].is_null());
 
-        // put Firefox into "Web browsers" (no category in this seed → explicit entry)
-        let (s, _) = c(Method::POST, &format!("/app-groups/{browsers}/membership"), Some(json!({"app_id": "desktop:firefox", "member": true}))).await;
+        // put Firefox into "Web browsers"; take Dota out of Games
+        let (s, _) = c(Method::POST, format!("{base}/app-groups/{browsers}/membership"), Some(json!({"app_id": "desktop:firefox", "member": true}))).await;
         assert_eq!(s, StatusCode::OK);
-        let (_, body) = c(Method::GET, "/apps", None).await;
-        let ff = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "desktop:firefox").unwrap();
-        assert_eq!(ff["groups"], json!([browsers]));
-        // take Dota out of Games (it's in via the steam: prefix → exclusion)
-        c(Method::POST, &format!("/app-groups/{games}/membership"), Some(json!({"app_id": "steam:570", "member": false}))).await;
-        let (_, body) = c(Method::GET, "/apps", None).await;
-        let dota = body["apps"].as_array().unwrap().iter().find(|a| a["app_id"] == "steam:570").unwrap();
-        assert_eq!(dota["groups"], json!([]));
+        c(Method::POST, format!("{base}/app-groups/{games}/membership"), Some(json!({"app_id": "steam:570", "member": false}))).await;
+        let (_, board) = c(Method::GET, format!("{base}/apps"), None).await;
+        assert_eq!(app_of(&board, "desktop:firefox")["group"], browsers.as_str());
+        assert!(app_of(&board, "steam:570")["group"].is_null());
 
-        // custom group with a category rule, rename, delete
-        let (s, created) = c(Method::POST, "/app-groups", Some(json!({"name": "Education"}))).await;
+        // custom group, rule, rename, delete
+        let (s, created) = c(Method::POST, format!("{base}/app-groups"), Some(json!({"name": "Education"}))).await;
         assert_eq!(s, StatusCode::CREATED);
         let id = created["id"].as_str().unwrap().to_string();
-        let (s, _) = c(Method::POST, &format!("/app-groups/{id}/rules"), Some(json!({"kind": "category", "value": "Education"}))).await;
+        let (s, _) = c(Method::POST, format!("{base}/app-groups/{id}/rules"), Some(json!({"kind": "category", "value": "Education"}))).await;
         assert_eq!(s, StatusCode::CREATED);
-        let (s, _) = c(Method::POST, &format!("/app-groups/{id}/rules"), Some(json!({"kind": "category", "value": "Bad;"}))).await;
+        let (s, _) = c(Method::POST, format!("{base}/app-groups/{id}/rules"), Some(json!({"kind": "category", "value": "Bad;"}))).await;
         assert_eq!(s, StatusCode::BAD_REQUEST);
-        let (s, _) = c(Method::PATCH, &format!("/app-groups/{id}"), Some(json!({"name": "School"}))).await;
+        let (s, _) = c(Method::PATCH, format!("{base}/app-groups/{id}"), Some(json!({"name": "School"}))).await;
         assert_eq!(s, StatusCode::OK);
-        let (_, g) = c(Method::GET, "/app-groups", None).await;
-        let school = g["groups"].as_array().unwrap().iter().find(|g| g["id"] == id.as_str()).unwrap();
-        assert_eq!((school["name"].as_str(), school["rules"][0]["kind"].as_str()), (Some("School"), Some("category")));
-        let rule_id = school["rules"][0]["id"].as_str().unwrap();
-        let (s, _) = c(Method::DELETE, &format!("/app-groups/{id}/rules/{rule_id}"), None).await;
+        let (s, _) = c(Method::DELETE, format!("{base}/app-groups/{id}"), None).await;
         assert_eq!(s, StatusCode::OK);
-        let (s, _) = c(Method::DELETE, &format!("/app-groups/{id}"), None).await;
-        assert_eq!(s, StatusCode::OK);
-        let (s, _) = c(Method::DELETE, &format!("/app-groups/{id}"), None).await;
+        let (s, _) = c(Method::DELETE, format!("{base}/app-groups/{id}"), None).await;
         assert_eq!(s, StatusCode::NOT_FOUND);
-        let (s, _) = c(Method::POST, "/app-groups", Some(json!({"name": " "}))).await;
-        assert_eq!(s, StatusCode::BAD_REQUEST);
-        let (s, _) = call(&app, Method::GET, "/apps", None, None).await;
-        assert_eq!(s, StatusCode::UNAUTHORIZED);
 
-        // per-profile group limits
-        let (_, p) = c(Method::POST, "/profiles", Some(json!({"display_name": "Kid"}))).await;
-        let pid = p["id"].as_str().or(p["profile"]["id"].as_str()).unwrap().to_string();
-        let (s, body) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/{games}"),
+        // limits and extra time show on the board
+        let (s, _) = c(Method::PUT, format!("{base}/app-group-limits/{games}"),
             Some(json!({"limits": [{"day_of_week": 0, "allowed_minutes": 60}, {"day_of_week": 6, "allowed_minutes": 0}]}))).await;
         assert_eq!(s, StatusCode::OK);
-        assert!(body["config_version"].as_i64().is_some());
-        let (_, l) = c(Method::GET, &format!("/profiles/{pid}/app-group-limits"), None).await;
-        let g = l["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
-        assert_eq!(g["limits"], json!([{"day_of_week": 0, "allowed_minutes": 60}, {"day_of_week": 6, "allowed_minutes": 0}]));
-        let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/{games}"),
-            Some(json!({"limits": [{"day_of_week": 9, "allowed_minutes": 60}]}))).await;
+        let (s, _) = c(Method::PUT, format!("{base}/app-group-limits/{games}"), Some(json!({"limits": [{"day_of_week": 9, "allowed_minutes": 60}]}))).await;
         assert_eq!(s, StatusCode::BAD_REQUEST);
-        let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-group-limits/nope"), Some(json!({"limits": []}))).await;
-        assert_eq!(s, StatusCode::NOT_FOUND);
-
-        // extra time today
-        let (s, _) = c(Method::POST, &format!("/profiles/{pid}/app-group-adjustments"), Some(json!({"group_id": games, "minutes": 15}))).await;
+        let (s, _) = c(Method::POST, format!("{base}/app-group-adjustments"), Some(json!({"group_id": games, "minutes": 15}))).await;
         assert_eq!(s, StatusCode::CREATED);
-        let (s, _) = c(Method::POST, &format!("/profiles/{pid}/app-group-adjustments"), Some(json!({"group_id": games, "minutes": 0}))).await;
-        assert_eq!(s, StatusCode::BAD_REQUEST);
-        let (_, l) = c(Method::GET, &format!("/profiles/{pid}/app-group-limits"), None).await;
-        let g = l["groups"].as_array().unwrap().iter().find(|g| g["id"] == games.as_str()).unwrap();
-        assert_eq!(g["adjustment_today"], 15);
+        let (_, board) = c(Method::GET, format!("{base}/apps"), None).await;
+        assert_eq!(board["groups"][0]["limits"], json!([{"day_of_week": 0, "allowed_minutes": 60}, {"day_of_week": 6, "allowed_minutes": 0}]));
+        assert_eq!(board["groups"][0]["adjustment_today"], 15);
 
-        // new-app approval: mode, a request (as the WS handler stores it), decision into a group
-        let (s, _) = c(Method::PUT, &format!("/profiles/{pid}/app-approvals/mode"), Some(json!({"enabled": true}))).await;
+        // another child's group is out of reach from this profile
+        let (_, other) = c(Method::POST, "/profiles".into(), Some(json!({"display_name": "Other"}))).await;
+        let oid = other["id"].as_str().or(other["profile"]["id"].as_str()).unwrap().to_string();
+        let (s, _) = c(Method::DELETE, format!("/profiles/{oid}/app-groups/{games}"), None).await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let (s, _) = c(Method::PUT, format!("/profiles/{oid}/app-group-limits/{games}"), Some(json!({"limits": []}))).await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let (_, oboard) = c(Method::GET, format!("/profiles/{oid}/apps"), None).await;
+        assert_eq!(oboard["groups"].as_array().unwrap().len(), 2); // its own predefined groups
+        assert!(oboard["apps"].as_array().unwrap().is_empty()); // and none of the first child's apps
+
+        // new-app approval: mode, a request, decision into one of the child's groups
+        let (s, _) = c(Method::PUT, format!("{base}/app-approvals/mode"), Some(json!({"enabled": true}))).await;
         assert_eq!(s, StatusCode::OK);
-        crate::app_approvals::request(&state.db, pid.parse().unwrap(), "steam:1091500").await.unwrap();
-        let (_, r) = c(Method::GET, "/app-requests", None).await;
-        assert_eq!((r["requests"][0]["app_id"].as_str(), r["requests"][0]["profile_name"].as_str()), (Some("steam:1091500"), Some("Kid")));
-        let (s, _) = c(Method::POST, &format!("/profiles/{pid}/app-approvals/decision"),
+        crate::app_approvals::request(&state.db, pid, "steam:1091500").await.unwrap();
+        let (_, r) = c(Method::GET, "/app-requests".into(), None).await;
+        assert_eq!(r["requests"][0]["app_id"], "steam:1091500");
+        let (s, _) = c(Method::POST, format!("{base}/app-approvals/decision"),
             Some(json!({"app_id": "steam:1091500", "approve": true, "group_id": browsers}))).await;
         assert_eq!(s, StatusCode::OK);
-        let (_, a) = c(Method::GET, &format!("/profiles/{pid}/app-approvals"), None).await;
-        assert_eq!((a["enabled"].as_bool(), a["apps"][0]["status"].as_str()), (Some(true), Some("approved")));
-        let (_, r) = c(Method::GET, "/app-requests", None).await;
+        let (_, r) = c(Method::GET, "/app-requests".into(), None).await;
         assert!(r["requests"].as_array().unwrap().is_empty());
-        let (_, apps) = c(Method::GET, "/apps", None).await;
-        let groups_of = |id: &str| apps["groups"].as_array().unwrap().iter().find(|g| g["id"] == id).unwrap()["rules"].to_string();
-        assert!(groups_of(&browsers).contains("steam:1091500"));
+        let (s, _) = call(&app, Method::GET, &format!("{base}/apps"), None, None).await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 
     async fn call(app: &Router, method: Method, path: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {

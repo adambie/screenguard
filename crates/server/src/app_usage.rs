@@ -94,16 +94,13 @@ pub async fn ingest(pool: &DbPool, agent_id: Uuid, sync: &AppUsageSync, today: N
         out.stored += 1;
     }
     for g in &sync.groups {
-        let known_group = crate::app_groups::group_exists(pool, &g.group_id).await?;
-        let agent_user = match users.get(&g.local_uid) {
-            Some(u) => *u,
-            None => {
-                let u = db::get_agent_user(pool, agent_id, g.local_uid).await?.map(|u| u.id);
-                users.insert(g.local_uid, u);
-                u
-            }
+        let user = db::get_agent_user(pool, agent_id, g.local_uid).await?;
+        // the group must belong to the child's profile
+        let known_group = match user.as_ref().and_then(|u| u.profile_id) {
+            Some(p) => crate::app_groups::group_exists(pool, p, &g.group_id).await?,
+            None => false,
         };
-        let (Some(agent_user), true, true) = (agent_user, known_group, g.date <= today.succ_opt().unwrap_or(today)) else {
+        let (Some(agent_user), true, true) = (user.map(|u| u.id), known_group, g.date <= today.succ_opt().unwrap_or(today)) else {
             out.rejected += 1; // deleted group, unknown user or future date
             continue;
         };
@@ -276,6 +273,20 @@ pub async fn catalog(pool: &DbPool) -> Result<Vec<CatalogApp>> {
     Ok(out)
 }
 
+/// The apps of one child: everything used on any of the profile's computers,
+/// plus apps waiting for (or decided by) new-app approval; by name.
+pub async fn profile_catalog(pool: &DbPool, profile_id: Uuid) -> Result<Vec<CatalogApp>> {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT u.app_id FROM app_usage u JOIN agent_users au ON au.id = u.agent_user_id WHERE au.profile_id = $1
+         UNION SELECT app_id FROM app_approvals WHERE profile_id = $1",
+    )
+    .bind(profile_id.to_string())
+    .fetch_all(pool)
+    .await?;
+    let ids: std::collections::HashSet<String> = ids.into_iter().collect();
+    Ok(catalog(pool).await?.into_iter().filter(|a| ids.contains(&a.app_id)).collect())
+}
+
 /// Categories of one catalogue app (empty if unknown).
 pub async fn app_categories(pool: &DbPool, app_id: &str) -> Result<Vec<String>> {
     let c: Option<String> = sqlx::query_scalar("SELECT categories FROM app_catalog WHERE app_id = $1").bind(app_id).fetch_optional(pool).await?;
@@ -399,13 +410,13 @@ pub(crate) mod tests {
         assert!(profile_has_capability(&pool, profile).await.unwrap());
 
         // app groups on Postgres (`exclude` column, seeding, rules)
-        let groups = crate::app_groups::list_groups(&pool).await.unwrap();
+        let groups = crate::app_groups::list_groups(&pool, profile).await.unwrap();
         assert_eq!(groups.len(), 2);
-        let id = crate::app_groups::create_group(&pool, "School").await.unwrap();
+        let id = crate::app_groups::create_group(&pool, profile, "School").await.unwrap();
         let rule = common::apps::GroupRule { kind: common::apps::RuleKind::AppId, value: "desktop:firefox".into(), exclude: true };
         crate::app_groups::add_rule(&pool, &groups[1].id, &rule).await.unwrap();
-        assert!(crate::app_groups::list_groups(&pool).await.unwrap()[1].rules.iter().any(|r| r.rule.exclude));
-        assert!(crate::app_groups::delete_group(&pool, &id).await.unwrap());
+        assert!(crate::app_groups::list_groups(&pool, profile).await.unwrap()[1].rules.iter().any(|r| r.rule.exclude));
+        assert!(crate::app_groups::delete_group(&pool, profile, &id).await.unwrap());
 
         // group usage, adjustments and approvals on Postgres
         crate::app_groups::add_adjustment(&pool, &profile.to_string(), &groups[0].id, "2026-10-20", 15).await.unwrap();
@@ -474,7 +485,7 @@ pub(crate) mod tests {
     async fn group_usage_max_upsert_elsewhere_and_totals() {
         let pool = db::open_in_memory().await;
         let (a1, a2, _, profile) = seeded(&pool).await;
-        let games = crate::app_groups::list_groups(&pool).await.unwrap()[0].id.clone();
+        let games = crate::app_groups::list_groups(&pool, profile).await.unwrap()[0].id.clone();
         let g = |uid, secs| AppUsageSync {
             entries: vec![],
             groups: vec![GroupUsageEntry { local_uid: uid, date: day("2026-10-20"), group_id: games.clone(), seconds_total: secs }],

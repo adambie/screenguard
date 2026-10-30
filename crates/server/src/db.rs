@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 15;
+const CURRENT_VERSION: i32 = 16;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -180,6 +180,7 @@ const APP_USAGE_DDL: [&str; 10] = [
     // app groups (v12): global groups with rules; limits per profile
     "CREATE TABLE IF NOT EXISTS app_groups (
         id         TEXT NOT NULL PRIMARY KEY,
+        profile_id TEXT REFERENCES user_profiles(id) ON DELETE CASCADE,
         name       TEXT NOT NULL,
         builtin    TEXT,
         created_at INTEGER NOT NULL
@@ -246,7 +247,6 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
             if admin_count == 0 {
                 v = CURRENT_VERSION;
                 set_schema_version(pool, v).await?;
-                crate::app_groups::seed_builtin(pool).await?;
             }
         }
         if v < 1 { apply_v1(pool).await?; v = 1; set_schema_version(pool, v).await?; }
@@ -260,7 +260,6 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
         // so mark as current and skip the portable migrations below.
         v = CURRENT_VERSION;
         set_schema_version(pool, v).await?;
-        crate::app_groups::seed_builtin(pool).await?;
     } else if v < 6 {
         // Existing Postgres database: the SQLite-only migrations don't apply, but
         // the portable ones below must still run (bumping straight to
@@ -284,6 +283,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 13 { apply_v13(pool).await?; v = 13; set_schema_version(pool, v).await?; }
     if v < 14 { apply_v14(pool).await?; v = 14; set_schema_version(pool, v).await?; }
     if v < 15 { apply_v15(pool).await?; v = 15; set_schema_version(pool, v).await?; }
+    if v < 16 { apply_v16(pool).await?; v = 16; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -535,7 +535,6 @@ pub(crate) async fn apply_v12(pool: &DbPool) -> Result<()> {
     for stmt in &APP_USAGE_DDL[3..6] {
         sqlx::query(stmt).execute(pool).await?;
     }
-    crate::app_groups::seed_builtin(pool).await?;
     tracing::info!("DB migration v12 applied (app groups)");
     Ok(())
 }
@@ -564,6 +563,19 @@ pub(crate) async fn apply_v15(pool: &DbPool) -> Result<()> {
         sqlx::query("ALTER TABLE agent_users ADD COLUMN can_admin INTEGER").execute(pool).await?;
     }
     tracing::info!("DB migration v15 applied (app approval, admin rights)");
+    Ok(())
+}
+
+// Migration 16: app groups belong to a profile (each child has its own); the
+// shared groups are copied to every profile with their limits and history.
+pub(crate) async fn apply_v16(pool: &DbPool) -> Result<()> {
+    if sqlx::query("SELECT profile_id FROM app_groups LIMIT 1").fetch_optional(pool).await.is_err() {
+        sqlx::query("ALTER TABLE app_groups ADD COLUMN profile_id TEXT REFERENCES user_profiles(id) ON DELETE CASCADE")
+            .execute(pool)
+            .await?;
+    }
+    crate::app_groups::split_shared_groups(pool).await?;
+    tracing::info!("DB migration v16 applied (app groups per profile)");
     Ok(())
 }
 
@@ -1277,6 +1289,7 @@ pub async fn create_profile(pool: &DbPool, display_name: &str) -> Result<UserPro
         .bind(id.to_string())
         .execute(pool)
         .await?;
+    crate::app_groups::seed_builtin(pool, id).await?;
     sqlx::query(
         "INSERT INTO config_versions (profile_id, version, updated_at) VALUES ($1, 1, $2)",
     )
@@ -1348,6 +1361,7 @@ pub async fn update_profile(pool: &DbPool, id: Uuid, display_name: &str) -> Resu
 }
 
 pub async fn delete_profile(pool: &DbPool, id: Uuid) -> Result<()> {
+    crate::app_groups::delete_profile_groups(pool, id).await?;
     sqlx::query("DELETE FROM user_profiles WHERE id=$1")
         .bind(id.to_string())
         .execute(pool)
@@ -2472,8 +2486,8 @@ mod tests {
         set_schema_version(&pool, 9).await.unwrap();
         run_migrations(&pool, true).await.unwrap();
         sqlx::query("SELECT categories FROM app_catalog").fetch_all(&pool).await.unwrap();
-        // v12 seeded the predefined groups on the upgraded database
-        assert_eq!(crate::app_groups::list_groups(&pool).await.unwrap().len(), 2);
+        // groups belong to profiles after v16
+        sqlx::query("SELECT profile_id FROM app_groups").fetch_all(&pool).await.unwrap();
 
         let a = get_agent_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!((a.status.as_str(), a.auth_token_hash.as_deref(), a.app_usage_available), ("paired", Some("h"), None));
@@ -2482,7 +2496,7 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 15);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 16);
     }
 
     #[tokio::test]
