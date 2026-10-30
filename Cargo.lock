@@ -10,6 +10,7 @@ dependencies = [
  "chrono",
  "common",
  "futures-util",
+ "libc",
  "libsystemd",
  "mdns-sd",
  "rand 0.8.6",
