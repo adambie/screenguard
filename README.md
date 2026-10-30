@@ -12,7 +12,8 @@ Parental-control screen-time manager for Linux. A lightweight server+agent syste
 - Time adjustments (add or remove minutes) with optional reason shown to the user
 - App usage reports — which apps each child used and for how long (day / week / total)
 - App groups with daily limits — e.g. 1 hour of games on school days; ready-made "Games" and "Web browsers" groups fill themselves
-- New-app approval — a new app is closed on start until a parent allows it
+- Block new apps — an app the child starts for the first time goes into a ready-made "Blocked" group until a parent allows it
+- Web pages — restricted and allowed sites per child, blocked on the machine by a local DNS proxy
 - mDNS auto-discovery — agents find the server on the local network without manual configuration
 - Hosted cloud accounts — manage your machines without running a server yourself
 - Web UI for administration
@@ -66,7 +67,7 @@ The agent behaves identically whether it reports to a server on your own LAN or 
 - `heartbeat` — per UID: seconds of active time since the last beat, an idle flag, the number of open sessions
 - `usage_sync` — per UID and date: total seconds used
 - `app_usage_sync` — per UID, date and app: the app's identifier, its menu name, icon name and menu categories, and total seconds; per app group: total seconds (see [App usage reports](#app-usage-reports); off with `app_tracking = false`)
-- `app_request` — per UID: the identifier, name and icon of an app waiting for a parent's approval (only with new-app approval on)
+- `app_request` — per UID: the identifier, name and icon of an app the child started for the first time (only with "Block new apps" on)
 
 That is all of it. App usage only names apps the child could start from the desktop menu (by their `.desktop` entry, Flatpak/Snap ID or Steam game ID) — never command lines, window titles, file names or URLs, which stay on the machine. No keystrokes, no screenshots, no file contents. Optional domain blocking runs entirely on the machine: a local DNS proxy answers blocked lookups with NXDOMAIN. The blocklist is pushed down from the server; the queries the proxy sees are never reported back up.
 
@@ -257,17 +258,21 @@ The agent keeps 35 days of app usage locally and sends day totals to the server 
 
 ### App groups and limits
 
-On a child's profile, **Apps & limits** shows every app the child has used as tiles. Drag an app into a group to manage it, or drop one app onto another to start a group; each child has their own groups. Two are ready-made: **Games** (every app whose menu entry says it's a game, all Steam games, Minecraft) and **Web browsers** (every browser). They pick up newly installed games and browsers by themselves; drag an app out to **Unmanaged apps** to leave it alone, or create your own groups (e.g. "School").
+On a child's profile, **Apps & limits** shows every app the child has used as tiles. Drag an app into a group to manage it, or drop one app onto another to start a group; each child has their own groups. Ready-made: **Games** (every app whose menu entry says it's a game, all Steam games, Minecraft), **Web browsers** (every browser) and **Blocked** (never allowed; empty until you drop an app in). They pick up newly installed games and browsers by themselves; drag an app out to **Unmanaged apps** to leave it alone, or create your own groups (e.g. "School").
 
 Each group box shows today's time and sets its daily limit, the same every day or per weekday (`1:30`, `90`, empty = no limit, `0` = blocked that day), with **+15 / +30 / +60** extra time for today. Group time is counted once while any app of the group is open, across all the child's computers, and also counts toward the daily screen-time limit.
 
 When a group's time runs out the child gets warnings at the profile's thresholds, then "*Dota 2 will close in 10 seconds*" and the app is closed: it is asked to quit (SIGTERM to its main process, as at logout — browsers may offer to restore the session next time), and forced after 10 more seconds if it doesn't. Starting it again closes it right away. On a blocked day the app is closed at once. Only the app's own processes are closed — never other apps, the desktop, or other users' programs.
 
-### New-app approval
+### Blocking new apps
 
-Turn on **New apps → Ask before new apps** on a profile and every app the child hasn't used before is closed on start (apps started automatically at login are left alone); the child sees "*Your parents were asked to allow …*" and a request appears on the dashboard and the profile. **Allow** (optionally straight into a group) or **Deny** — the child is told either way. Apps already used when you turn it on stay allowed; the card lists them before you switch it on, so let a new profile run for a while first. Requests made while the computer is offline are delivered when it reconnects.
+Switch on **Block new apps** at the top of **Apps & limits** and every app the child starts for the first time from then on is closed and put into **Blocked** (apps started automatically at login are left alone). The child sees "*Your parents were asked to allow …*", and the dashboard shows "*… tried to open …*" with **Allow** (takes it out of Blocked) and **Keep blocked**; the tile has a *new* badge until you decide or move it. To allow an app later, drag it out of Blocked. Apps already used when you switch it on stay as they are — if nothing has been used yet, every app would be blocked, so let a new profile run for a while first. New apps started while the computer is offline are reported when it reconnects.
 
-System-wide installs already need an administrator password, so make sure a child's account is not an administrator: the profile page warns if it is (member of `wheel`/`sudo` or a sudo rule) and shows how to fix it. What a child can still add without admin rights — Flatpak user installs, Steam games, downloaded programs — is caught by new-app approval at first start. A program started from a terminal counts as the terminal; give terminals a group with 0 minutes if that matters.
+System-wide installs already need an administrator password, so make sure a child's account is not an administrator: the profile page warns if it is (member of `wheel`/`sudo` or a sudo rule) and shows how to fix it. What a child can still add without admin rights — Flatpak user installs, Steam games, downloaded programs — is caught by "Block new apps" at first start. A program started from a terminal counts as the terminal; give terminals a group with 0 minutes if that matters.
+
+### Web pages
+
+**Web pages** on a child's profile has two boxes: **Restricted** sites are blocked on the child's computers, **Allowed** ones stay on the list without being blocked. Drag a site between them, or type or paste one into either box (`https://www.tiktok.com/@x` becomes `tiktok.com`; blocking a site blocks its subdomains too). Blocking works by DNS on the machine, see above.
 
 ## Configuration
 

@@ -1,13 +1,25 @@
 {# Apps & limits board of one child: groups with their daily limits on top, unmanaged apps below #}
 <div class="card mb-4" id="apps">
-  <div class="card-header">{{ t('board.card') }}</div>
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span>{{ t('board.card') }}</span>
+    {# block new apps (the server's approval mode): new apps land in the Blocked group #}
+    <form method="post" action="{{ url_for('app_approval_mode', profile_id=profile.id) }}" class="mb-0"
+          {% if not approvals.enabled and not approvals.will_allow %}onsubmit='if (!confirm({{ t("blocked.confirm_empty") | tojson }})) { this.querySelector("input[type=checkbox]").checked = false; return false; }'{% endif %}>
+      <input type="hidden" name="enabled" value="{{ '0' if approvals.enabled else '1' }}">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" role="switch" id="blockNew" {% if approvals.enabled %}checked{% endif %}
+               onchange="this.form.requestSubmit()">
+        <label class="form-check-label" for="blockNew" style="text-transform:none;letter-spacing:0;font-size:13px;font-weight:500">{{ t('blocked.toggle') }}</label>
+      </div>
+    </form>
+  </div>
   <div class="card-body">
-    <p class="text-secondary small mb-3">{{ t('board.hint') }}</p>
+    <p class="text-secondary small mb-1">{{ t('board.hint') }}</p>
+    <p class="text-secondary small mb-3">{{ t('blocked.hint_on') if approvals.enabled else t('blocked.hint_off') }}</p>
     {% if no_app_limits %}
     <div class="alert alert-warning small py-2">{{ t('app_limits.needs_update', computers=no_app_limits | join(', ')) }}</div>
     {% endif %}
     <div id="board" aria-live="polite"></div>
-    <div id="toast" class="sg-toast" role="status" hidden></div>
     
     {# rule editing per group: plain forms, moved into a card when its rules are opened #}
     <div id="rules-store" hidden>
@@ -75,7 +87,13 @@
       'used_today': t('limit.used_today', used='{used}'),
       'left': t('limit.left', left='{left}'),
       'blocked': t('limit.blocked'),
-  'blocked_always': t('limit.blocked_always'),
+      'blocked_always': t('limit.blocked_always'),
+      'blocked_empty': t('blocked.empty'),
+      'blocked_new_here': t('blocked.new_here'),
+      'new_badge': t('blocked.new_badge'),
+      'new_title': t('blocked.new_title'),
+      'unblock': t('blocked.unblock'),
+      'block': t('blocked.block'),
       'every_day': t('limit.every_day'),
       'per_day': t('limit.per_day'),
       'per_day_short': t('limit.per_day_short', limit='{limit}'),
@@ -88,95 +106,19 @@
     } | tojson }}</script>
   </div>
 </div>
-<style>
-.sg-section-title { font-size: 1rem; font-weight: 600; margin: 0 0 .75rem; }
-.sg-groups { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 32px; }
-.sg-gcard { background: var(--c1); border: 1px solid var(--bd); border-radius: 14px; padding: 12px 14px 14px;
-            transition: border-color .15s, box-shadow .15s; min-height: 150px; display:flex; flex-direction:column; }
-.sg-gcard.sg-new { border-style: dashed; background: transparent; align-items:center; justify-content:center; text-align:center; color: var(--t2); }
-.sg-over { border-color: var(--ac) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac) 25%, transparent); }
-.sg-ghead { display:flex; align-items:center; gap:8px; margin-bottom: 10px; min-height: 31px; }
-.sg-gname { font-weight: 600; flex: 1; min-width: 0; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; border-radius: 6px; padding: 2px 4px; margin-left:-4px; }
-.sg-gname:hover { background: var(--c2); }
-.sg-count { color: var(--t2); font-size: 12px; white-space: nowrap; }
-.sg-menu-btn { border:0; background:none; color: var(--t2); width:30px; height:30px; border-radius:8px; font-size:18px; line-height:1; }
-.sg-menu-btn:hover, .sg-menu-btn:focus-visible { background: var(--c2); color: var(--t1); }
-.sg-auto { color: var(--t2); font-size: 12px; margin-top: auto; padding-top: 10px; }
-.sg-tiles { display:grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
-.sg-limit { margin-top: auto; padding-top: 12px; font-size: 13px; }
-.sg-auto + .sg-limit { margin-top: 0; }
-.sg-limit-in { border-top: 1px solid var(--bd); padding-top: 10px; }
-.sg-bar { height: 6px; border-radius: 3px; background: var(--c2); overflow: hidden; margin-bottom: 7px; }
-.sg-bar > i { display: block; height: 100%; background: var(--ac); border-radius: 3px; }
-.sg-bar.sg-warn > i { background: var(--wa); }
-.sg-bar.sg-full > i { background: var(--er); }
-.sg-lrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sg-lstatus { color: var(--t2); min-width: 0; }
-.sg-lstatus b { color: var(--t1); font-weight: 600; }
-.sg-lstatus.sg-blocked, .sg-lstatus.sg-blocked b { color: var(--er); }
-.sg-lbtn { margin-left: auto; border: 1px solid var(--bd); background: none; color: var(--t1); border-radius: 999px; padding: 2px 10px; font-size: 12px; white-space: nowrap; }
-.sg-lbtn:hover, .sg-lbtn:focus-visible { border-color: var(--ac); color: var(--ac); }
-.sg-lbtn.sg-lset { color: var(--ac); border-style: dashed; }
-.sg-seg { display: inline-flex; border: 1px solid var(--bd); border-radius: 8px; padding: 2px; margin-bottom: 8px; }
-.sg-seg button { border: 0; background: none; color: var(--t2); padding: 3px 10px; border-radius: 6px; font-size: 12px; }
-.sg-seg button.on { background: var(--c2); color: var(--t1); font-weight: 600; }
-.sg-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.sg-days span, .sg-every span { display: block; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--t2); text-align: center; margin-bottom: 2px; }
-.sg-every span { text-align: left; }
-.sg-days input, .sg-every input { text-align: center; padding: 4px 2px; font-variant-numeric: tabular-nums; }
-.sg-every input { width: 90px; }
-.sg-days input.sg-zero { border-color: var(--er); color: var(--er); }
-.sg-lhint { color: var(--t2); font-size: 11px; margin: 6px 0 8px; }
-.sg-extra { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; color: var(--t2); font-size: 12px; }
-.sg-extra button { border: 1px solid var(--bd); background: none; color: var(--t1); border-radius: 999px; padding: 0 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
-.sg-extra button:hover { border-color: var(--ac); color: var(--ac); }
-.sg-empty { border: 1px dashed var(--bd); border-radius: 10px; color: var(--t2); font-size: 12px; display:flex; align-items:center; justify-content:center; min-height: 72px; grid-column: 1 / -1; padding: 8px; text-align:center; }
-.sg-tile { position: relative; background: var(--c2); border: 1px solid transparent; border-radius: 12px; padding: 10px 6px 8px;
-           display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; cursor: grab;
-           user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
-           transition: transform .12s, border-color .12s, opacity .12s; }
-.sg-tile:hover { border-color: var(--bd); }
-.sg-tile:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
-.sg-tile.sg-target { border-color: var(--ac); transform: scale(1.07); }
-.sg-tile.sg-dragging { opacity: .25; }
-.sg-avatar { width: 40px; height: 40px; border-radius: 11px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:17px; }
-.sg-tname { font-size: 12px; line-height: 1.25; color: var(--t1); max-width: 100%; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient: vertical; word-break: break-word; }
-.sg-tsub { font-size: 10px; color: var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sg-ghost { position: fixed; left:0; top:0; z-index: 1000; pointer-events:none; width: 96px; box-shadow: 0 10px 30px rgba(0,0,0,.35); border-color: var(--ac); }
-.sg-loose { background: var(--c1); border: 1px solid var(--bd); border-radius: 14px; padding: 14px; transition: border-color .15s, box-shadow .15s; }
-.sg-search { max-width: 260px; }
-.sg-pop { position: absolute; z-index: 1001; background: var(--c1); border: 1px solid var(--bd); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.3); padding: 6px; min-width: 200px; }
-.sg-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--t2); padding: 6px 10px 4px; }
-.sg-pop button { display:block; width:100%; text-align:left; border:0; background:none; color: var(--t1); padding: 7px 10px; border-radius: 8px; font-size: 14px; }
-.sg-pop button:hover, .sg-pop button:focus-visible { background: var(--c2); }
-.sg-pop .sg-danger { color: var(--er); }
-.sg-pop hr { margin: 4px 0; border-color: var(--bd); }
-.sg-rules { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bd); }
-.sg-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 10px; border-radius:999px; font-size:12px; line-height:18px; background:var(--bd); color:var(--t1); white-space:nowrap; margin: 0 2px 4px 0; }
-.sg-chip-out { background:transparent; border:1px solid var(--bd); color:var(--t2); }
-.sg-chip-x { border:0; background:none; padding:0 0 0 2px; color:inherit; opacity:.7; font-size:14px; line-height:1; cursor:pointer; }
-.sg-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1100; background: var(--t1); color: var(--c1);
-            padding: 10px 16px; border-radius: 12px; font-size: 14px; display:flex; gap: 14px; align-items:center; box-shadow: 0 8px 24px rgba(0,0,0,.3); max-width: calc(100vw - 32px); }
-.sg-toast[hidden] { display: none; }
-.sg-toast button { border:0; background:none; color: inherit; font-weight: 700; text-decoration: underline; padding: 0; }
-body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
-@media (max-width: 575px) { .sg-groups { grid-template-columns: 1fr; } .sg-tiles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); } }
-</style>
 <script>
 (() => {
   const T = JSON.parse(document.getElementById('board-i18n').textContent);
   let S = JSON.parse(document.getElementById('board-state').textContent);
   const board = document.getElementById('board');
   const store = document.getElementById('rules-store');
-  const toastEl = document.getElementById('toast');
   let filter = '';
   let renameGroup = null;   // group whose name is being edited
   let openRules = null;     // group with its rules panel open
   let openLimit = null;     // group with its limit editor open
   let draft = null;         // {mode: 'every' | 'per', days: [7 × 'h:mm' or '']} while editing
-  const fmt = (s, o) => s.replace(/\{(\w+)\}/g, (_, k) => o[k] ?? '');
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const hue = s => { let h = 0; for (const c of s) h = (h * 31 + c.codePointAt(0)) >>> 0; return h % 360; };
+  const { fmt, el, hue, openPop, item } = SGBoard;
+  const toast = (msg, undo) => SGBoard.toast(msg, undo, T.undo);
 
   // ── rendering ──────────────────────────────────────────────────────────
   function tile(appId, groupId) {
@@ -190,14 +132,21 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
     av.style.background = `hsl(${hue(a.name)} 55% 45%)`;
     t.append(av, el('div', 'sg-tname', a.name));
     if (a.sub) t.append(el('div', 'sg-tsub', a.sub));
+    if (a.new) { t.append(el('span', 'sg-new-badge', T.new_badge)); t.title = `${a.name} — ${T.new_title}`; }
     return t;
   }
 
+  const isBlocked = g => g.builtin === 'blocked';
+
   function groupCard(g) {
-    const card = el('div', 'sg-gcard');
+    const card = el('div', 'sg-gcard' + (isBlocked(g) ? ' sg-blocked' : ''));
     card.dataset.drop = g.id;
     const head = el('div', 'sg-ghead');
-    if (renameGroup === g.id) {
+    if (isBlocked(g)) {
+      // always blocked: no renaming, limits, rules or deleting
+      const count = g.members.length === 1 ? T.count_one : fmt(T.count, { n: g.members.length });
+      head.append(el('div', 'sg-gname', '🚫 ' + g.name), el('span', 'sg-count', count));
+    } else if (renameGroup === g.id) {
       const form = el('form', 'd-flex gap-2 flex-grow-1');
       const inp = el('input', 'form-control form-control-sm fw-semibold');
       inp.value = g.name; inp.maxLength = 60; inp.required = true; inp.setAttribute('aria-label', T.rename);
@@ -226,8 +175,17 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
     }
     const tiles = el('div', 'sg-tiles');
     if (g.members.length) g.members.forEach(id => tiles.append(tile(id, g.id)));
-    else tiles.append(el('div', 'sg-empty', T.drag_here));
+    else tiles.append(el('div', 'sg-empty', isBlocked(g) ? T.blocked_empty : T.drag_here));
     card.append(head, tiles);
+    if (isBlocked(g)) {
+      const box = el('div', 'sg-limit'), inner = el('div', 'sg-limit-in');
+      const status = el('div', 'sg-lstatus sg-blocked', T.blocked_always);
+      inner.append(status);
+      if (S.block_new) inner.append(el('div', 'sg-lhint mb-0', T.blocked_new_here));
+      box.append(inner);
+      card.append(box);
+      return card;
+    }
     if (g.auto.length) card.append(el('div', 'sg-auto', fmt(T.auto, { rules: g.auto.map(r => r.label).join(', ') })));
     card.append(limitBox(g));
     if (openRules === g.id) { const p = document.getElementById('rules-' + g.id); if (p) card.append(p); }
@@ -241,11 +199,12 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
 
     board.append(el('h2', 'sg-section-title', T.groups));
     const groups = el('div', 'sg-groups');
-    S.groups.forEach(g => groups.append(groupCard(g)));
+    S.groups.filter(g => !isBlocked(g)).forEach(g => groups.append(groupCard(g)));
     const nc = el('div', 'sg-gcard sg-new');
     nc.dataset.drop = 'new';
     nc.append(el('div', 'fw-semibold mb-1', '+ ' + T.new_group), el('div', 'small', T.new_group_hint));
     groups.append(nc);
+    S.groups.filter(isBlocked).forEach(g => groups.append(groupCard(g)));
     board.append(groups);
 
     const head = el('div', 'd-flex flex-wrap justify-content-between align-items-center gap-2 mb-2');
@@ -405,15 +364,6 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
     } catch (e) { toast(T.error); }
   }
 
-  let toastTimer;
-  function toast(msg, undo) {
-    toastEl.replaceChildren(el('span', null, msg));
-    if (undo) { const b = el('button', null, T.undo); b.type = 'button'; b.onclick = () => { toastEl.hidden = true; undo(); }; toastEl.append(b); }
-    toastEl.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 6000);
-  }
-
   const groupName = id => id ? (S.groups.find(g => g.id === id) || {}).name : T.ungrouped;
   function moveApp(appId, from, to, isUndo) {
     if ((from || null) === (to || null)) return;
@@ -422,36 +372,21 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
   }
   const newGroup = ids => act(T.base + '/new-group', { app_ids: ids });
 
-  // ── menus: the click / tap / keyboard way to do the same ───────────────
-  let pop = null;
-  const closePop = () => { pop?.remove(); pop = null; };
-  function openPop(anchor, build) {
-    closePop();
-    pop = el('div', 'sg-pop'); pop.setAttribute('role', 'menu');
-    build(pop);
-    document.body.append(pop);
-    const r = anchor.getBoundingClientRect();
-    const maxLeft = window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8;
-    pop.style.left = Math.max(8, Math.min(window.scrollX + r.left, maxLeft)) + 'px';
-    // below the anchor, or above it when it wouldn't fit on screen
-    const below = r.bottom + 6 + pop.offsetHeight <= window.innerHeight;
-    pop.style.top = (window.scrollY + (below ? r.bottom + 6 : Math.max(8, r.top - 6 - pop.offsetHeight))) + 'px';
-    pop.querySelector('button')?.focus();
-  }
-  const item = (label, fn, cls) => { const b = el('button', cls || '', label); b.type = 'button'; b.setAttribute('role', 'menuitem'); b.onclick = () => { closePop(); fn(); }; return b; };
-
+  // ── menus: the click / tap / keyboard way to do what dragging does ───
   function appMenu(t) {
     const appId = t.dataset.app, from = t.dataset.group || null;
     openPop(t, p => {
       p.append(el('div', 'sg-pop-title', S.apps[appId].name));
       if (from) {
         // managed: moving between groups is done by dragging
-        p.append(item(T.remove_managed, () => moveApp(appId, from, null), 'sg-danger'));
+        const blocked = isBlocked(S.groups.find(g => g.id === from) || {});
+        p.append(item(blocked ? T.unblock : T.remove_managed, () => moveApp(appId, from, null), blocked ? '' : 'sg-danger'));
       } else {
         // unmanaged: the non-drag way to add (keyboard, touch)
         p.append(el('div', 'sg-pop-title', T.add_to));
-        S.groups.forEach(g => p.append(item(g.name, () => moveApp(appId, null, g.id))));
+        S.groups.filter(g => !isBlocked(g)).forEach(g => p.append(item(g.name, () => moveApp(appId, null, g.id))));
         p.append(item('+ ' + T.new_group, () => newGroup([appId])));
+        S.groups.filter(isBlocked).forEach(g => { p.append(el('hr')); p.append(item('🚫 ' + T.block, () => moveApp(appId, null, g.id), 'sg-danger')); });
       }
     });
   }
@@ -465,121 +400,24 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
     });
   }
 
-  document.addEventListener('pointerdown', e => { if (pop && !pop.contains(e.target) && !e.target.closest('.sg-tile')) closePop(); });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closePop(); cleanupDrag(); return; }
-    const t = e.target.closest?.('.sg-tile');
-    if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); appMenu(t); }
+  // ── dragging (static/board.js) ──────────────────────────────────────────
+  SGBoard.draggable(board, {
+    onTap: appMenu,
+    dropTarget(under, d) {
+      // onto an app that isn't in a group → a new group with both
+      const other = under.closest('.sg-tile');
+      if (other && other !== d.tile && !other.dataset.group) return { kind: 'tile', el: other };
+      const zone = under.closest('[data-drop]');
+      return zone && board.contains(zone) ? { kind: 'zone', el: zone } : null;
+    },
+    onDrop(d) {
+      const appId = d.tile.dataset.app, from = d.tile.dataset.group || null;
+      if (d.target.kind === 'tile') return newGroup([d.target.el.dataset.app, appId]);
+      const zone = d.target.el.dataset.drop;
+      if (zone === 'new') return newGroup([appId]);
+      moveApp(appId, from, zone === 'none' ? null : zone);
+    },
   });
-
-  // ── dragging: pointer events for mouse/pen; touch events for fingers (a
-  // pointer would be cancelled as soon as the browser starts to scroll) ────
-  let drag = null;   // {tile, appId, from, ghost, target, x, y}
-  let press = null;  // a press that may become a drag or a click / tap
-
-  board.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'touch') return;
-    const t = e.target.closest('.sg-tile');
-    if (!t || e.button > 0) return;
-    press = { t, x: e.clientX, y: e.clientY, id: e.pointerId, touch: false };
-  });
-  window.addEventListener('pointermove', e => {
-    if (e.pointerType === 'touch') return;
-    if (drag) { e.preventDefault(); moveDrag(e.clientX, e.clientY); return; }
-    if (press && !press.touch && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5) {
-      startDrag(e.clientX, e.clientY);
-    }
-  }, { passive: false });
-  window.addEventListener('pointerup', e => {
-    if (e.pointerType === 'touch') return;
-    if (drag) { endDrag(); return; }
-    if (press && !press.touch && e.pointerId === press.id) { const t = press.t; press = null; appMenu(t); }
-  });
-
-  // touch: a long press picks the app up; moving before that is a scroll
-  board.addEventListener('touchstart', e => {
-    const t = e.target.closest('.sg-tile');
-    if (!t || e.touches.length > 1) return;
-    const p = e.touches[0];
-    press = { t, x: p.clientX, y: p.clientY, touch: true, timer: setTimeout(() => press && startDrag(press.x, press.y), 350) };
-  }, { passive: true });
-  window.addEventListener('touchmove', e => {
-    const p = e.touches[0];
-    if (drag) { e.preventDefault(); moveDrag(p.clientX, p.clientY); return; }
-    if (press?.touch && Math.hypot(p.clientX - press.x, p.clientY - press.y) > 8) { clearTimeout(press.timer); press = null; }
-  }, { passive: false });
-  window.addEventListener('touchend', e => {
-    if (drag) { e.preventDefault(); endDrag(); return; }
-    if (press?.touch) { clearTimeout(press.timer); const t = press.t; press = null; e.preventDefault(); appMenu(t); }
-  }, { passive: false });
-  window.addEventListener('touchcancel', () => { if (press?.timer) clearTimeout(press.timer); press = null; cleanupDrag(); });
-  board.addEventListener('contextmenu', e => { if (e.target.closest('.sg-tile')) e.preventDefault(); });
-
-  function startDrag(x, y) {
-    const t = press.t;
-    if (press.timer) clearTimeout(press.timer);
-    press = null;
-    closePop();
-    const ghost = t.cloneNode(true);
-    ghost.classList.add('sg-ghost');
-    document.body.append(ghost);
-    t.classList.add('sg-dragging');
-    document.body.classList.add('sg-is-dragging');
-    drag = { tile: t, appId: t.dataset.app, from: t.dataset.group || null, ghost, target: null, x, y };
-    if (navigator.vibrate) navigator.vibrate(10);
-    moveDrag(x, y);
-    requestAnimationFrame(autoScroll);
-  }
-
-  function dropTarget(x, y) {
-    const under = document.elementFromPoint(x, y);
-    if (!under) return null;
-    // onto an app that isn't in a group → a new group with both
-    const other = under.closest('.sg-tile');
-    if (other && other !== drag.tile && !other.dataset.group) return { kind: 'tile', el: other };
-    const zone = under.closest('[data-drop]');
-    return zone ? { kind: 'zone', el: zone } : null;
-  }
-
-  function moveDrag(x, y) {
-    drag.x = x; drag.y = y;
-    drag.ghost.style.transform = `translate(${x - 48}px, ${y - 44}px) rotate(-3deg)`;
-    const tgt = dropTarget(x, y);
-    if (tgt?.el !== drag.target?.el) {
-      drag.target?.el.classList.remove('sg-over', 'sg-target');
-      tgt?.el.classList.add(tgt.kind === 'tile' ? 'sg-target' : 'sg-over');
-      drag.target = tgt;
-    }
-  }
-
-  function autoScroll() {   // near the window edge while dragging: scroll (groups are above, loose apps below)
-    if (!drag) return;
-    // the sticky nav covers the top of the page, so the top edge starts below it
-    const edge = 70, h = window.innerHeight, top = (document.querySelector('.sticky-top')?.getBoundingClientRect().bottom || 0) + edge;
-    if (drag.y < top) window.scrollBy(0, -Math.ceil((top - drag.y) / 4));
-    else if (drag.y > h - edge) window.scrollBy(0, Math.ceil((drag.y - (h - edge)) / 4));
-    moveDrag(drag.x, drag.y);
-    requestAnimationFrame(autoScroll);
-  }
-
-  function cleanupDrag() {
-    if (!drag) return null;
-    const d = drag; drag = null;
-    d.ghost.remove();
-    d.tile.classList.remove('sg-dragging');
-    d.target?.el.classList.remove('sg-over', 'sg-target');
-    document.body.classList.remove('sg-is-dragging');
-    return d;
-  }
-
-  function endDrag() {
-    const d = cleanupDrag();
-    if (!d?.target) return;
-    if (d.target.kind === 'tile') return newGroup([d.target.el.dataset.app, d.appId]);
-    const zone = d.target.el.dataset.drop;
-    if (zone === 'new') return newGroup([d.appId]);
-    moveApp(d.appId, d.from, zone === 'none' ? null : zone);
-  }
 
   render();
 })();

@@ -1,0 +1,133 @@
+{# Web pages of one child: restricted (blocked) and allowed (listed, not blocked) sites; drag between them #}
+<div class="card mb-4" id="sites">
+  <div class="card-header">{{ t('sites.card') }}</div>
+  <div class="card-body">
+    <p class="text-secondary small mb-3">{{ t('sites.hint') }}</p>
+    <div id="site-board" class="sg-sites" aria-live="polite"></div>
+    <script id="site-state" type="application/json">{{ sites | tojson }}</script>
+    <script id="site-i18n" type="application/json">{{ {
+      'restricted': t('sites.restricted'),
+      'restricted_hint': t('sites.restricted_hint'),
+      'allowed': t('sites.allowed'),
+      'allowed_hint': t('sites.allowed_hint'),
+      'empty_restricted': t('sites.empty_restricted'),
+      'empty_allowed': t('sites.empty_allowed'),
+      'placeholder': t('profile.blocked_domain_placeholder'),
+      'add': t('profile.btn_add_domain'),
+      'restrict': t('sites.restrict'),
+      'allow': t('sites.allow'),
+      'remove': t('sites.remove'),
+      'moved': t('board.moved', app='{app}', group='{group}'),
+      'removed': t('sites.removed', site='{site}'),
+      'undo': t('board.undo'),
+      'error': t('board.error'),
+      'menu': t('board.menu'),
+      'count': t('sites.count', n='{n}'),
+      'count_one': t('sites.count_one'),
+      'base': url_for('profile_detail', profile_id=profile.id) ~ '/sites/api',
+    } | tojson }}</script>
+  </div>
+</div>
+<script>
+(() => {
+  const T = JSON.parse(document.getElementById('site-i18n').textContent);
+  let S = JSON.parse(document.getElementById('site-state').textContent);
+  const board = document.getElementById('site-board');
+  const { fmt, el, hue, openPop, item } = SGBoard;
+  const toast = (msg, undo) => SGBoard.toast(msg, undo, T.undo);
+  const drafts = { on: '', off: '' };   // what's typed in each box's add field
+
+  function tile(s) {
+    const t = el('div', 'sg-tile sg-site');
+    t.dataset.site = s.id; t.dataset.blocked = s.blocked ? 'on' : 'off';
+    t.tabIndex = 0; t.setAttribute('role', 'button');
+    t.setAttribute('aria-label', `${s.domain}, ${T.menu}`);
+    t.title = s.domain;
+    const av = el('div', 'sg-avatar', (s.domain[0] || '?').toUpperCase());
+    av.style.background = `hsl(${hue(s.domain)} 55% 45%)`;
+    t.append(av, el('div', 'sg-tname', s.domain));
+    return t;
+  }
+
+  function box(blocked) {
+    const key = blocked ? 'on' : 'off';
+    const list = S.sites.filter(s => s.blocked === blocked);
+    const card = el('div', 'sg-gcard ' + (blocked ? 'sg-blocked' : 'sg-allowed'));
+    card.dataset.drop = key;
+    const head = el('div', 'sg-ghead');
+    const dot = el('span', 'sg-gtag'); dot.style.background = blocked ? 'var(--er)' : 'var(--ok)';
+    const name = el('div', 'sg-gname', blocked ? T.restricted : T.allowed);
+    name.title = blocked ? T.restricted_hint : T.allowed_hint;
+    head.append(dot, name, el('span', 'sg-count', list.length === 1 ? T.count_one : fmt(T.count, { n: list.length })));
+    const tiles = el('div', 'sg-tiles');
+    if (list.length) list.forEach(s => tiles.append(tile(s)));
+    else tiles.append(el('div', 'sg-empty', blocked ? T.empty_restricted : T.empty_allowed));
+    // add a site straight into this box
+    const form = el('form', 'sg-add');
+    const inp = el('input', 'form-control form-control-sm');
+    inp.placeholder = T.placeholder; inp.value = drafts[key]; inp.maxLength = 253; inp.required = true;
+    inp.setAttribute('aria-label', `${blocked ? T.restricted : T.allowed}: ${T.add}`);
+    inp.autocapitalize = 'off'; inp.spellcheck = false; inp.inputMode = 'url';
+    inp.oninput = () => { drafts[key] = inp.value; };
+    form.append(inp, el('button', 'btn btn-sm btn-outline-secondary text-nowrap', T.add));
+    form.onsubmit = e => {
+      e.preventDefault();
+      act(T.base + '/add', { domain: inp.value, blocked }, { after: () => { drafts[key] = ''; }, focus: key });
+    };
+    card.append(head, el('div', 'text-secondary small mb-2', blocked ? T.restricted_hint : T.allowed_hint), tiles, form);
+    return card;
+  }
+
+  function render(focus) {
+    board.replaceChildren(box(true), box(false));
+    if (focus) board.querySelector(`[data-drop="${focus}"] input`)?.focus();
+  }
+
+  // every action returns the fresh list
+  async function act(url, body, opts = {}) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), credentials: 'same-origin' });
+      if (r.redirected || !(r.headers.get('content-type') || '').includes('json')) { location.reload(); return; }
+      const j = await r.json();
+      S = j.state;
+      if (j.ok && opts.after) opts.after();
+      render(opts.focus);
+      if (!j.ok) toast(j.error || T.error);
+      else if (opts.toast) toast(opts.toast, opts.undo);
+    } catch (e) { toast(T.error); }
+  }
+
+  const site = id => S.sites.find(s => s.id === id);
+  function setBlocked(id, blocked, isUndo) {
+    const s = site(id);
+    if (!s || s.blocked === blocked) return;
+    act(`${T.base}/${id}/set`, { blocked },
+        isUndo ? {} : { toast: fmt(T.moved, { app: s.domain, group: blocked ? T.restricted : T.allowed }), undo: () => setBlocked(id, !blocked, true) });
+  }
+  function remove(id) {
+    const s = site(id);
+    act(`${T.base}/${id}/delete`, {}, { toast: fmt(T.removed, { site: s.domain }), undo: () => act(T.base + '/add', { domain: s.domain, blocked: s.blocked }) });
+  }
+
+  function siteMenu(t) {
+    const s = site(t.dataset.site);
+    openPop(t, p => {
+      p.append(el('div', 'sg-pop-title', s.domain));
+      p.append(item(s.blocked ? T.allow : T.restrict, () => setBlocked(s.id, !s.blocked)));
+      p.append(el('hr'));
+      p.append(item(T.remove, () => remove(s.id), 'sg-danger'));
+    });
+  }
+
+  SGBoard.draggable(board, {
+    onTap: siteMenu,
+    dropTarget(under) {
+      const zone = under.closest('[data-drop]');
+      return zone && board.contains(zone) ? { kind: 'zone', el: zone } : null;
+    },
+    onDrop(d) { setBlocked(d.tile.dataset.site, d.target.el.dataset.drop === 'on'); },
+  });
+
+  render();
+})();
+</script>

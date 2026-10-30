@@ -44,8 +44,10 @@ progress — not chat history.
 > Update this block at the end of every session.
 
 - **Phase:** 2 done on KDE (Phases 1 + 2 incl. 2E ship together)
-- **Last completed step:** groups are per child (v16) and the board with group
-  limits lives on each profile page; 2.15 passed on KDE; README done
+- **Last completed step:** groups per child (v16); board with group limits on
+  each profile page; "Block new apps" toggle + predefined Blocked group (v17)
+  replace the New apps card; Web pages board (restricted / allowed); 2.15
+  passed on KDE; README done
 - **Next step:** 2.17 release, *only with the maintainer's go-ahead*: a version bump
   commit, then a tag. The release notes must say that screen time was
   undercounted by ~10 % before (fixed in `f0375db`), so limits now run out on
@@ -1052,6 +1054,8 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-30 | Apps page is a drag-and-drop board (maintainer): group boxes of app tiles + "New group" target on top, "Not in a group" tiles below; drop an app onto another to start a group; tap/click or keyboard opens a "Move to…" menu; Undo toast | The list-and-forms page was confusing and dated. Own pointer/touch code, no library: tile-on-tile drops and touch (long-press, edge auto-scroll) need it |
 | 2026-10-30 | Dropping an app on "Not in a group" means no group at all (excluded from any group that would take it automatically) | Otherwise a browser dropped there reappeared in "Web browsers" via its category |
 | 2026-10-30 | App groups belong to a child (profile), not to the whole install; the board moved from a global Apps page into the profile page as "Apps & limits", and a group's daily limit (every day / per weekday) and extra time are set in its box. v16 copies the shared groups to every profile | Apps are what one child uses; a global page mixed children and kept limits on a separate, list-style card the maintainer found hard to use |
+| 2026-10-30 | New-app approval becomes a "Block new apps" toggle on the Apps & limits card plus a predefined, undeletable **Blocked** group (0 min every day, no extra time, no automatic rules); a new app is put into Blocked and every known app counts as approved for the agent; the New apps card goes, the dashboard keeps a notice (Allow / Keep blocked); `denied` is retired (v17 moves those apps into Blocked) | Maintainer found the separate card redundant and unclear; one place (the board) now shows what's blocked, and the agent needed no change |
+| 2026-10-30 | Blocked sites become a "Web pages" board: Restricted (enabled) and Allowed (switched off) boxes, drag between them; input normalised to a bare domain. Not an allow-list mode (maintainer's choice; a real allow-list would need a new DNS-proxy mode) | Same look and handling as the apps board; no agent or server change |
 | 2026-10-20 | Phase 1 + 2 ship in one release | Maintainer wants a full working solution (see apps, group, limit, close) before release |
 | 2026-10-20 | Predefined "Games" and "Web browsers" groups from freedesktop categories (`Game`, `WebBrowser`) + `steam:`/`minecraft:` | Parents don't know game/browser names; categories are in every `.desktop` file and auto-include new apps |
 | 2026-10-20 | No regex match rules in Phase 2 | Keep it simple; ids, prefixes, categories and exclusions cover the known needs |
@@ -1092,3 +1096,4 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-20 | Phase 2 built and tested on KDE: categories, groups (predefined Games/Web browsers), Apps page, group limits + extra time, agent-side group accounting, warnings, closing, new-app approval with offline requests, admin-rights warning; upgrade 0.10.17 → v15 on SQLite + Postgres; review follow-ups fixed | 2.17 release (go-ahead), other desktops |
 | 2026-10-30 | Apps page rebuilt as a drag-and-drop board; tested with real mouse and touch events via Chrome DevTools (drag in/out/between, tile-on-tile, new group + naming, undo, long-press + auto-scroll, tap menu); unused form routes removed | release go-ahead |
 | 2026-10-30 | Groups per profile (v16, `split_shared_groups`); board moved into the profile page with limits in the group boxes; old App limits card, Apps page and nav item removed. Server tests incl. Postgres pass; upgrade 0.10.17 → v16 on SQLite + Postgres; live dev DB migrated, test agent got the groups; board + limits tested via Chrome DevTools (drag with auto-scroll under the sticky nav, every-day / per-day / blocked / extra time / remove, invalid input) | release go-ahead |
+| 2026-10-30 | Block new apps + Blocked group (v17), Web pages board, shared `static/board.js` / `board.css`; New apps card removed. Tested end to end on the KDE machine (new app closed in 3 s, put into Blocked, dashboard notice, Allow → runs); CDP tests of both boards; server tests incl. Postgres; upgrade 0.10.17 → v17 on SQLite + Postgres. Note: an app installed and started within ~30 s can run until the agent's catalogue refresh (`CHECK_EVERY`) | release go-ahead |

@@ -411,7 +411,7 @@ pub(crate) mod tests {
 
         // app groups on Postgres (`exclude` column, seeding, rules)
         let groups = crate::app_groups::list_groups(&pool, profile).await.unwrap();
-        assert_eq!(groups.len(), 2);
+        assert_eq!(groups.len(), 3);
         let id = crate::app_groups::create_group(&pool, profile, "School").await.unwrap();
         let rule = common::apps::GroupRule { kind: common::apps::RuleKind::AppId, value: "desktop:firefox".into(), exclude: true };
         crate::app_groups::add_rule(&pool, &groups[1].id, &rule).await.unwrap();

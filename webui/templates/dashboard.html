@@ -3,15 +3,16 @@
 
 {% block content %}
 {% if app_requests %}
-<div class="alert alert-info mb-4">
-  <div class="fw-semibold mb-2">{{ t('approval.dashboard_title', n=app_requests | length) }}</div>
+{# new apps the Blocked group closed and the parents haven't looked at yet #}
+<div class="alert alert-warning mb-4">
+  <div class="fw-semibold mb-2">{{ t('blocked.dashboard_title', n=app_requests | length) }}</div>
   {% for r in app_requests %}
   <form method="post" action="{{ url_for('app_approval_decide', profile_id=r.profile_id) }}" class="d-flex flex-wrap align-items-center gap-2 mb-1">
     <input type="hidden" name="app_id" value="{{ r.app_id }}">
     <input type="hidden" name="next" value="{{ url_for('dashboard') }}">
-    <span><strong>{{ r.profile_name }}</strong>: {{ r.name }}</span>
-    <button class="btn btn-sm btn-primary py-0" name="approve" value="1">{{ t('approval.approve') }}</button>
-    <button class="btn btn-sm btn-outline-secondary py-0" name="approve" value="0">{{ t('approval.deny') }}</button>
+    <span class="me-1">{{ t('blocked.tried', child=r.profile_name, app=r.name) }}</span>
+    <button class="btn btn-sm btn-primary py-0" name="approve" value="1">{{ t('blocked.allow') }}</button>
+    <button class="btn btn-sm btn-outline-secondary py-0" name="approve" value="0">{{ t('blocked.keep') }}</button>
   </form>
   {% endfor %}
 </div>

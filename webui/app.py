@@ -10,6 +10,7 @@ Usage:
 import json
 import math
 import os
+import re
 import requests
 from datetime import date, timedelta, datetime, timezone
 from functools import wraps
@@ -466,8 +467,7 @@ def profile_detail(profile_id):
         approvals["will_allow"] = [a["name"] for a in (r_used.json().get("apps", []) if r_used and r_used.ok else [])
                                    if a["app_id"] not in undecided_or_no]  # earlier decisions are kept
 
-    r4 = api("GET", f"/profiles/{profile_id}/blocked-domains")
-    blocked_domains = r4.json().get("blocked_domains", []) if r4 and r4.ok else []
+    sites = site_state(profile_id)
 
     usage_by_date = {u['date']: u for u in usage}
     max_used = max((u.get('used_minutes') or 0 for u in usage), default=0)
@@ -505,7 +505,7 @@ def profile_detail(profile_id):
                            status=status,
                            preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
                            lockout_grace_minutes=data.get("lockout_grace_minutes", 5),
-                           blocked_domains=blocked_domains,
+                           sites=sites,
                            board=board,
                            no_app_limits=no_app_limits,
                            approvals=approvals,
@@ -592,7 +592,7 @@ _GENERIC_CATEGORIES = {"GTK", "GNOME", "Qt", "KDE", "XFCE", "X-GNOME-Utilities",
 
 def group_name(g):
     """Translated name for a predefined group the parent hasn't renamed."""
-    defaults = {"games": "Games", "browsers": "Web browsers"}
+    defaults = {"games": "Games", "browsers": "Web browsers", "blocked": "Blocked"}
     if g.get("builtin") in defaults and g.get("name") == defaults[g["builtin"]]:
         return t(f"groups.builtin_{g['builtin']}")
     return g.get("name", "")
@@ -614,6 +614,9 @@ def build_board(profile_id):
     """Everything a child's Apps & limits board needs, as plain JSON."""
     r = api("GET", f"/profiles/{profile_id}/apps")
     data = r.json() if r and r.ok else {"apps": [], "groups": [], "weekday": 0}
+    r_ap = api("GET", f"/profiles/{profile_id}/app-approvals")
+    approvals = r_ap.json() if r_ap and r_ap.ok else {"enabled": False, "apps": []}
+    new_apps = {a["app_id"] for a in approvals.get("apps", []) if a.get("status") == "pending"}
     apps_list, groups = data.get("apps", []), data.get("groups", [])
     names = {a["app_id"]: a["name"] for a in apps_list}
     apps = {}
@@ -624,6 +627,7 @@ def build_board(profile_id):
             "sub": source or next((c for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES), ""),
             "group": a.get("group"),
             "today": a.get("today_seconds", 0),
+            "new": a["app_id"] in new_apps,   # blocked as new; the parents haven't looked yet
         }
     out_groups = []
     for g in groups:
@@ -642,7 +646,7 @@ def build_board(profile_id):
     ungrouped = sorted((aid for aid, a in apps.items() if not a["group"]), key=lambda i: apps[i]["name"].lower())
     categories = sorted({c for a in apps_list for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES})
     return {"apps": apps, "groups": out_groups, "ungrouped": ungrouped, "categories": categories,
-            "weekday": data.get("weekday", 0)}
+            "weekday": data.get("weekday", 0), "block_new": bool(approvals.get("enabled"))}
 
 
 @app.route("/apps")
@@ -807,7 +811,7 @@ def app_approval_mode(profile_id):
         flash(t("flash.approval_on") if enabled else t("flash.approval_off"), "success")
     else:
         flash(t("flash.approval_failed"), "danger")
-    return redirect(url_for("profile_detail", profile_id=profile_id) + "#newApps")
+    return redirect(url_for("profile_detail", profile_id=profile_id) + "#apps")
 
 
 @app.route("/profiles/<profile_id>/app-approval/decide", methods=["POST"])
@@ -818,7 +822,7 @@ def app_approval_decide(profile_id):
     r = api("POST", f"/profiles/{profile_id}/app-approvals/decision", json=body)
     if not r or not r.ok:
         flash(t("flash.approval_failed"), "danger")
-    return redirect(request.form.get("next") or (url_for("profile_detail", profile_id=profile_id) + "#newApps"))
+    return redirect(request.form.get("next") or (url_for("profile_detail", profile_id=profile_id) + "#apps"))
 
 
 @app.route("/profiles/<profile_id>/rename", methods=["POST"])
@@ -865,35 +869,66 @@ def set_lock_behavior(profile_id):
     return redirect(url_for("profile_detail", profile_id=profile_id))
 
 
-@app.route("/profiles/<profile_id>/blocked-domains/add", methods=["POST"])
+def site_state(profile_id):
+    """The child's web pages: restricted (blocked) and allowed (listed, not blocked)."""
+    r = api("GET", f"/profiles/{profile_id}/blocked-domains")
+    rows = r.json().get("blocked_domains", []) if r and r.ok else []
+    return {"sites": sorted(({"id": d["id"], "domain": d["domain"], "blocked": bool(d.get("enabled"))} for d in rows),
+                            key=lambda d: d["domain"])}
+
+
+_DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$")
+
+
+def clean_domain(text):
+    """What a parent types or pastes → a bare domain: 'https://www.TikTok.com/@x' → 'tiktok.com'.
+    Subdomains are blocked with it, so 'www.' adds nothing. None if it isn't one."""
+    d = (text or "").strip().lower()
+    d = re.sub(r"^[a-z][a-z0-9+.-]*://", "", d)
+    d = re.split(r"[/?#]", d, maxsplit=1)[0].rsplit("@", 1)[-1].split(":", 1)[0].strip(".")
+    if d.startswith("www."):
+        d = d[4:]
+    try:
+        d = d.encode("idna").decode("ascii")
+    except UnicodeError:
+        return None
+    return d if _DOMAIN_RE.match(d) else None
+
+
+def _sites_result(profile_id, ok, **extra):
+    body = {"ok": bool(ok), "state": site_state(profile_id)}
+    body.update(extra)
+    return jsonify(body), (200 if ok else 400)
+
+
+@app.route("/profiles/<profile_id>/sites/api/add", methods=["POST"])
 @require_login
-def add_blocked_domain(profile_id):
-    domain = request.form.get("domain", "").strip().lower()
-    if domain:
-        r = api("POST", f"/profiles/{profile_id}/blocked-domains", json={"domain": domain})
-        flash(t("flash.domain_added") if (r and r.ok) else t("flash.domain_add_failed"),
-              "success" if (r and r.ok) else "danger")
-    return redirect(url_for("profile_detail", profile_id=profile_id))
+def sites_add(profile_id):
+    body = request.get_json(silent=True) or {}
+    domain, blocked = clean_domain(body.get("domain")), bool(body.get("blocked"))
+    if not domain:
+        return _sites_result(profile_id, False, error=t("sites.invalid"))
+    existing = next((s for s in site_state(profile_id)["sites"] if s["domain"] == domain), None)
+    if existing:   # already listed: just put it in this box
+        r = api("PATCH", f"/profiles/{profile_id}/blocked-domains/{existing['id']}", json={"enabled": blocked})
+    else:
+        r = api("POST", f"/profiles/{profile_id}/blocked-domains", json={"domain": domain, "enabled": blocked})
+    return _sites_result(profile_id, r and r.ok)
 
 
-@app.route("/profiles/<profile_id>/blocked-domains/<domain_id>/toggle", methods=["POST"])
+@app.route("/profiles/<profile_id>/sites/api/<domain_id>/set", methods=["POST"])
 @require_login
-def toggle_blocked_domain(profile_id, domain_id):
-    enabled = request.form.get("enabled", "true").lower() == "true"
-    r = api("PATCH", f"/profiles/{profile_id}/blocked-domains/{domain_id}",
-            json={"enabled": enabled})
-    if not (r and r.ok):
-        flash(t("flash.domain_update_failed"), "danger")
-    return redirect(url_for("profile_detail", profile_id=profile_id))
+def sites_set(profile_id, domain_id):
+    blocked = bool((request.get_json(silent=True) or {}).get("blocked"))
+    r = api("PATCH", f"/profiles/{profile_id}/blocked-domains/{domain_id}", json={"enabled": blocked})
+    return _sites_result(profile_id, r and r.ok)
 
 
-@app.route("/profiles/<profile_id>/blocked-domains/<domain_id>/delete", methods=["POST"])
+@app.route("/profiles/<profile_id>/sites/api/<domain_id>/delete", methods=["POST"])
 @require_login
-def delete_blocked_domain(profile_id, domain_id):
+def sites_delete(profile_id, domain_id):
     r = api("DELETE", f"/profiles/{profile_id}/blocked-domains/{domain_id}")
-    flash(t("flash.domain_deleted") if (r and r.ok) else t("flash.domain_delete_failed"),
-          "success" if (r and r.ok) else "danger")
-    return redirect(url_for("profile_detail", profile_id=profile_id))
+    return _sites_result(profile_id, r and r.ok)
 
 
 @app.route("/profiles/<profile_id>/schedules", methods=["POST"])
