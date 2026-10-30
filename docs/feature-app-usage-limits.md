@@ -43,15 +43,11 @@ progress — not chat history.
 
 > Update this block at the end of every session.
 
-- **Phase:** 2 done on KDE (Phases 1 + 2 incl. 2E ship together)
-- **Last completed step:** groups per child (v16); board with group limits on
-  each profile page; "Block new apps" toggle + predefined Blocked group (v17)
-  replace the New apps card; Web pages board (restricted / allowed); 2.15
-  passed on KDE; README done
-- **Next step:** 2.17 release, *only with the maintainer's go-ahead*: a version bump
-  commit, then a tag. The release notes must say that screen time was
-  undercounted by ~10 % before (fixed in `f0375db`), so limits now run out on
-  time, which parents may see as "sooner".
+- **Phase:** 2 released — **v0.10.18** (2026-10-30), Phases 1 + 2 incl. 2E
+- **Last completed step:** 2.17 release: bump commit `f416c8a`, tag `v0.10.18`,
+  release notes with the ~10 % screen-time correction; the mobile app was
+  checked against the new API (only additions; works, new features web-only)
+- **Next step:** Phase 3 picks, or app/group management in the mobile app
 - **Open:** 2.15 on other desktops (GNOME, Cinnamon, XFCE, Hyprland) needs a
   machine with root for the agent; 1.18 (dashboard teaser) skipped.
 - **Test setup still in place (maintainer decides):** passwordless sudo for
@@ -1098,3 +1094,4 @@ started from a terminal counts as the terminal — block the terminal (a group w
 | 2026-10-30 | Groups per profile (v16, `split_shared_groups`); board moved into the profile page with limits in the group boxes; old App limits card, Apps page and nav item removed. Server tests incl. Postgres pass; upgrade 0.10.17 → v16 on SQLite + Postgres; live dev DB migrated, test agent got the groups; board + limits tested via Chrome DevTools (drag with auto-scroll under the sticky nav, every-day / per-day / blocked / extra time / remove, invalid input) | release go-ahead |
 | 2026-10-30 | Block new apps + Blocked group (v17), Web pages board, shared `static/board.js` / `board.css`; New apps card removed. Tested end to end on the KDE machine (new app closed in 3 s, put into Blocked, dashboard notice, Allow → runs); CDP tests of both boards; server tests incl. Postgres; upgrade 0.10.17 → v17 on SQLite + Postgres. Note: an app installed and started within ~30 s can run until the agent's catalogue refresh (`CHECK_EVERY`) | release go-ahead |
 | 2026-10-30 | Profile page: time windows moved under daily limits; both edited with one shared editor (`static/dayrules.js`): only what's set is listed, grouped by value; pick days (presets or any days) and type the time; one Save also saves the other card's changes. Bigger "Block new apps" switch. Found: window times follow the admin time zone (Settings), UTC on the dev install — the card now says so | release go-ahead |
+| 2026-10-30 | README rewritten (features with screenshots, getting started; reference moved to docs/install.md, how-it-works.md, cloud.md); mobile app API compatibility checked; **v0.10.18 released** (workflow green, binaries + GHCR images) | Phase 3 / mobile |
