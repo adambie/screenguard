@@ -84,7 +84,7 @@
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between">
     <span>{{ t('groups.heading') }}</span>
-    <a href="{{ url_for('apps') }}" class="small text-decoration-none">{{ t('app_limits.manage_groups') }} ›</a>
+    <a href="{{ url_for('profile_detail', profile_id=profile.id) ~ '#apps' }}" class="small text-decoration-none">{{ t('app_limits.manage_groups') }} ›</a>
   </div>
   <ul class="list-group list-group-flush">
     {% for g in groups %}

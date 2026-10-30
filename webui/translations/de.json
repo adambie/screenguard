@@ -264,23 +264,12 @@
   "apps.not_available": "Noch kein Computer dieses Profils meldet App-Nutzung. Aktualisiere dort den ScreenGuard-Agenten, um zu sehen, welche Apps genutzt werden.",
   "apps.footnote": "Gezählt wird, solange eine App geöffnet ist und das Kind am Computer aktiv ist; gleichzeitig geöffnete Apps zählen jeweils. Aus einem Terminal gestartete Programme zählen als das Terminal.",
 
-  "nav.apps": "Apps",
-  "apps_admin.heading": "Apps",
-  "apps_admin.subtitle": "Alle Apps, die auf den Computern deiner Kinder gesehen wurden. Ordne Apps Gruppen zu, um die Zeit pro Gruppe zu sehen und zu begrenzen.",
-  "apps_admin.all_apps": "Alle Apps ({n})",
-  "apps_admin.show_all": "Alle",
-  "apps_admin.show_ungrouped": "Ohne Gruppe",
-  "apps_admin.last_seen": "zuletzt gesehen {when}",
   "apps_admin.add_to": "Zur Gruppe hinzufügen",
-  "apps_admin.remove_from": "Aus {group} entfernen",
   "apps_admin.empty": "Noch keine Apps. Sie erscheinen hier, sobald ein Computer mit aktuellem Agenten sie meldet.",
   "groups.heading": "Gruppen",
   "groups.builtin_games": "Spiele",
   "groups.builtin_browsers": "Webbrowser",
-  "groups.app_count": "Apps: {n}",
-  "groups.includes": "Enthält:",
   "groups.except": "Außer:",
-  "groups.empty": "Noch keine Apps — füge welche aus der Liste unten hinzu.",
   "groups.rule_steam": "alle Steam-Spiele",
   "groups.rule_minecraft": "Minecraft",
   "groups.rule_category": "Kategorie {category}",
@@ -288,25 +277,14 @@
   "groups.add_category": "Kategorie hinzufügen",
   "groups.confirm_delete": "Gruppe „{name}“ löschen? Ihre Zeitlimits werden ebenfalls gelöscht.",
   "groups.new": "Neue Gruppe",
-  "groups.new_placeholder": "z. B. Schule, soziale Medien",
-  "groups.create": "Erstellen",
-  "groups.new_hint": "Füge ihr dann Apps aus der Liste unten hinzu.",
   "flash.group_failed": "Die Gruppe konnte nicht geändert werden.",
-  "groups.add": "Hinzufügen",
 
-  "app_limits.card": "App-Limits",
   "app_limits.manage_groups": "Gruppen verwalten",
-  "app_limits.hint": "Tägliche Zeit pro App-Gruppe, z. B. 1:30 oder 90 (Minuten). Leer = kein Limit, 0 = gesperrt. App-Zeit zählt auch zum täglichen Bildschirmzeit-Limit.",
   "app_limits.save": "Speichern",
-  "app_limits.no_groups": "Noch keine App-Gruppen.",
-  "flash.app_limits_saved": "App-Limits gespeichert.",
-  "flash.app_limits_failed": "App-Limits konnten nicht gespeichert werden.",
   "flash.app_limits_invalid": "Verwende h:mm (z. B. 1:30) oder Minuten, höchstens 24 Stunden.",
 
   "apps.of_limit": "von {limit}",
 
-  "app_limits.today": "Zusatzzeit heute:",
-  "flash.app_extra_saved": "Zusatzzeit gespeichert — das Kind wird benachrichtigt.",
 
   "app_limits.needs_update": "Diese Computer brauchen ein Agenten-Update, bevor dort App-Limits gelten: {computers}",
 
@@ -336,10 +314,6 @@
 
   "groups.auto": "Fügt automatisch hinzu: {rules}",
   "groups.edit_rules": "Regeln bearbeiten",
-  "apps_admin.move_to": "In Gruppe verschieben",
-  "apps_admin.limit_separately": "Einzeln begrenzen",
-  "apps_admin.limit_separately_hint": "Eine eigene Gruppe für diese App, damit sie eine eigene Tageszeit bekommt",
-  "flash.group_for_app": "Gruppe „{name}“ für diese App erstellt — lege die tägliche Zeit im Profil eines Kindes unter App-Limits fest.",
 
   "board.hint": "Ziehe eine App aus „Nicht verwaltete Apps“ in eine Gruppe, um sie zu verwalten — oder lege eine App auf eine andere, um sie zu gruppieren.",
   "board.ungrouped": "Nicht verwaltete Apps",
@@ -359,5 +333,21 @@
 
   "board.managed": "Verwaltete Apps",
   "board.remove_managed": "Aus verwalteten Apps entfernen",
-  "board.add_to": "Hinzufügen zu"
+  "board.add_to": "Hinzufügen zu",
+
+  "board.card": "Apps & Limits",
+  "limit.cancel": "Abbrechen",
+  "limit.set": "Limit festlegen",
+  "limit.none": "kein Limit",
+  "limit.used_of": "{used} von {limit} heute",
+  "limit.used_today": "{used} heute",
+  "limit.left": "noch {left}",
+  "limit.blocked": "Heute gesperrt",
+  "limit.every_day": "Jeden Tag",
+  "limit.per_day": "Pro Tag",
+  "limit.per_day_short": "{limit} pro Tag",
+  "limit.remove": "Limit entfernen",
+  "limit.hint": "z. B. 1:30 oder 90 (Minuten). Leer = kein Limit, 0 = gesperrt. Zählt auch zum Bildschirmzeit-Limit.",
+  "limit.extra": "Extrazeit heute",
+  "limit.blocked_always": "Jeden Tag gesperrt"
 }

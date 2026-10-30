@@ -454,13 +454,7 @@ def profile_detail(profile_id):
              params={"from": str(week_start), "to": str(week_end)})
     usage = r3.json().get("usage", []) if r3 and r3.ok else []
 
-    r_gl = api("GET", f"/profiles/{profile_id}/app-group-limits")
-    group_limits = r_gl.json().get("groups", []) if r_gl and r_gl.ok else []
-    for g in group_limits:
-        g["display_name"] = group_name(g)
-        by_day = {l["day_of_week"]: l["allowed_minutes"] for l in g.get("limits", [])}
-        g["days"] = [fmt_hm(by_day.get(d)) for d in range(7)]
-        g["has_limit"] = bool(by_day)
+    board = build_board(profile_id)
 
     r_ap = api("GET", f"/profiles/{profile_id}/app-approvals")
     approvals = r_ap.json() if r_ap and r_ap.ok else {"enabled": False, "apps": []}
@@ -512,7 +506,7 @@ def profile_detail(profile_id):
                            preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
                            lockout_grace_minutes=data.get("lockout_grace_minutes", 5),
                            blocked_domains=blocked_domains,
-                           group_limits=group_limits,
+                           board=board,
                            no_app_limits=no_app_limits,
                            approvals=approvals,
                            week_bars=week_bars,
@@ -616,10 +610,10 @@ def rule_label(rule, names):
 app.jinja_env.globals['group_name'] = group_name
 
 
-def build_apps_state():
-    """Everything the Apps board needs, as plain JSON."""
-    r = api("GET", "/apps")
-    data = r.json() if r and r.ok else {"apps": [], "groups": []}
+def build_board(profile_id):
+    """Everything a child's Apps & limits board needs, as plain JSON."""
+    r = api("GET", f"/profiles/{profile_id}/apps")
+    data = r.json() if r and r.ok else {"apps": [], "groups": [], "weekday": 0}
     apps_list, groups = data.get("apps", []), data.get("groups", [])
     names = {a["app_id"]: a["name"] for a in apps_list}
     apps = {}
@@ -628,7 +622,8 @@ def build_apps_state():
         apps[a["app_id"]] = {
             "name": a["name"],
             "sub": source or next((c for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES), ""),
-            "group": (a.get("groups") or [None])[0],
+            "group": a.get("group"),
+            "today": a.get("today_seconds", 0),
         }
     out_groups = []
     for g in groups:
@@ -640,26 +635,31 @@ def build_apps_state():
                      if not r.get("exclude") and r.get("kind") != "app_id"],
             "excludes": [{"id": r["id"], "label": rule_label(r, names)} for r in g.get("rules", []) if r.get("exclude")],
             "members": sorted((aid for aid, a in apps.items() if a["group"] == g["id"]), key=lambda i: apps[i]["name"].lower()),
+            "limits": {str(l["day_of_week"]): l["allowed_minutes"] for l in g.get("limits", [])},
+            "adjustment": g.get("adjustment_today", 0),
+            "today": g.get("today_seconds", 0),
         })
     ungrouped = sorted((aid for aid, a in apps.items() if not a["group"]), key=lambda i: apps[i]["name"].lower())
     categories = sorted({c for a in apps_list for c in a.get("categories", []) if c not in _GENERIC_CATEGORIES})
-    return {"apps": apps, "groups": out_groups, "ungrouped": ungrouped, "categories": categories}
+    return {"apps": apps, "groups": out_groups, "ungrouped": ungrouped, "categories": categories,
+            "weekday": data.get("weekday", 0)}
 
 
 @app.route("/apps")
 @require_login
 def apps():
-    return render_template("apps.html", state=build_apps_state())
+    # apps and groups are managed per child now, on each profile page
+    return redirect(url_for("dashboard"))
 
 
-def _json_result(ok, **extra):
-    body = {"ok": bool(ok), "state": build_apps_state()}
+def _board_result(profile_id, ok, **extra):
+    body = {"ok": bool(ok), "state": build_board(profile_id)}
     body.update(extra)
     return jsonify(body), (200 if ok else 400)
 
 
-def _new_group_name(base):
-    taken = {g["name"] for g in build_apps_state()["groups"]}
+def _new_group_name(profile_id, base):
+    taken = {g["name"] for g in build_board(profile_id)["groups"]}
     if base not in taken:
         return base
     n = 2
@@ -668,80 +668,109 @@ def _new_group_name(base):
     return f"{base} {n}"
 
 
-@app.route("/apps/api/move", methods=["POST"])
+@app.route("/profiles/<profile_id>/apps/api/move", methods=["POST"])
 @require_login
-def apps_api_move():
-    """Drag an app into a group (moves it there) or out of its group (group_id empty)."""
+def board_move(profile_id):
+    """Drag an app into a group (moves it there) or to Unmanaged (no group at all)."""
     body = request.get_json(silent=True) or {}
     app_id, group_id, from_group = body.get("app_id", ""), body.get("group_id"), body.get("from_group")
+    base = f"/profiles/{profile_id}/app-groups"
     if group_id:
-        r = api("POST", f"/app-groups/{group_id}/membership", json={"app_id": app_id, "member": True})
-        return _json_result(r and r.ok)
-    # "Not in a group" means no group at all: taking it out of one group can let
-    # another pick it up automatically (category, Steam…), so exclude it there too
+        r = api("POST", f"{base}/{group_id}/membership", json={"app_id": app_id, "member": True})
+        return _board_result(profile_id, r and r.ok)
+    # Unmanaged means no group at all: taking it out of one group can let another
+    # pick it up automatically (category, Steam…), so exclude it there too
     r, group = None, from_group
     for _ in range(5):
         if not group:
             break
-        r = api("POST", f"/app-groups/{group}/membership", json={"app_id": app_id, "member": False})
+        r = api("POST", f"{base}/{group}/membership", json={"app_id": app_id, "member": False})
         if not r or not r.ok:
             break
-        group = build_apps_state()["apps"].get(app_id, {}).get("group")
-    return _json_result(r is None or r.ok)
+        group = build_board(profile_id)["apps"].get(app_id, {}).get("group")
+    return _board_result(profile_id, r is None or r.ok)
 
 
-@app.route("/apps/api/new-group", methods=["POST"])
+@app.route("/profiles/<profile_id>/apps/api/new-group", methods=["POST"])
 @require_login
-def apps_api_new_group():
+def board_new_group(profile_id):
     """Start a group from one app (dropped on "New group") or two (one dropped on the other)."""
-    body = request.get_json(silent=True) or {}
-    app_ids = [a for a in body.get("app_ids", []) if a][:2]
-    r = api("POST", "/app-groups", json={"name": _new_group_name(t("board.new_group_name"))})
+    app_ids = [a for a in (request.get_json(silent=True) or {}).get("app_ids", []) if a][:2]
+    r = api("POST", f"/profiles/{profile_id}/app-groups", json={"name": _new_group_name(profile_id, t("board.new_group_name"))})
     if not r or not r.ok:
-        return _json_result(False)
+        return _board_result(profile_id, False)
     gid = r.json()["id"]
     for a in app_ids:
-        r = api("POST", f"/app-groups/{gid}/membership", json={"app_id": a, "member": True})
+        r = api("POST", f"/profiles/{profile_id}/app-groups/{gid}/membership", json={"app_id": a, "member": True})
         if not r or not r.ok:
-            return _json_result(False, new_group=gid)
-    return _json_result(True, new_group=gid)
+            return _board_result(profile_id, False, new_group=gid)
+    return _board_result(profile_id, True, new_group=gid)
 
 
-@app.route("/apps/api/group/<group_id>/rename", methods=["POST"])
+@app.route("/profiles/<profile_id>/apps/api/group/<group_id>/rename", methods=["POST"])
 @require_login
-def apps_api_rename(group_id):
-    r = api("PATCH", f"/app-groups/{group_id}", json={"name": (request.get_json(silent=True) or {}).get("name", "")})
-    return _json_result(r and r.ok)
+def board_rename(profile_id, group_id):
+    r = api("PATCH", f"/profiles/{profile_id}/app-groups/{group_id}",
+            json={"name": (request.get_json(silent=True) or {}).get("name", "")})
+    return _board_result(profile_id, r and r.ok)
 
 
-@app.route("/apps/api/group/<group_id>/delete", methods=["POST"])
+@app.route("/profiles/<profile_id>/apps/api/group/<group_id>/delete", methods=["POST"])
 @require_login
-def apps_api_delete(group_id):
-    r = api("DELETE", f"/app-groups/{group_id}")
-    return _json_result(r and r.ok)
+def board_delete(profile_id, group_id):
+    r = api("DELETE", f"/profiles/{profile_id}/app-groups/{group_id}")
+    return _board_result(profile_id, r and r.ok)
 
 
-def _back():
-    return redirect(request.form.get("next") or url_for("apps"))
-
-
-@app.route("/apps/groups/<group_id>/rules/add", methods=["POST"])
+@app.route("/profiles/<profile_id>/apps/api/group/<group_id>/limits", methods=["POST"])
 @require_login
-def add_app_group_rule(group_id):
-    r = api("POST", f"/app-groups/{group_id}/rules",
+def board_limits(profile_id, group_id):
+    """Daily limit per weekday: {"days": {"0": "1:30", ...}} — empty = no limit, 0 = blocked."""
+    days_in = (request.get_json(silent=True) or {}).get("days", {})
+    limits = []
+    try:
+        for dow in range(7):
+            mins = parse_hm(str(days_in.get(str(dow), "")))
+            if mins is not None:
+                limits.append({"day_of_week": dow, "allowed_minutes": mins})
+    except ValueError:
+        return _board_result(profile_id, False, error=t("flash.app_limits_invalid"))
+    r = api("PUT", f"/profiles/{profile_id}/app-group-limits/{group_id}", json={"limits": limits})
+    return _board_result(profile_id, r and r.ok)
+
+
+@app.route("/profiles/<profile_id>/apps/api/group/<group_id>/extra", methods=["POST"])
+@require_login
+def board_extra(profile_id, group_id):
+    try:
+        minutes = int((request.get_json(silent=True) or {}).get("minutes", 0))
+    except (TypeError, ValueError):
+        minutes = 0
+    r = api("POST", f"/profiles/{profile_id}/app-group-adjustments", json={"group_id": group_id, "minutes": minutes})
+    return _board_result(profile_id, r and r.ok)
+
+
+def _back_to_board(profile_id):
+    return redirect(url_for("profile_detail", profile_id=profile_id) + "#apps")
+
+
+@app.route("/profiles/<profile_id>/apps/groups/<group_id>/rules/add", methods=["POST"])
+@require_login
+def add_app_group_rule(profile_id, group_id):
+    r = api("POST", f"/profiles/{profile_id}/app-groups/{group_id}/rules",
             json={"kind": "category", "value": request.form.get("category", "")})
     if not r or not r.ok:
         flash(t("flash.group_failed"), "danger")
-    return _back()
+    return _back_to_board(profile_id)
 
 
-@app.route("/apps/groups/<group_id>/rules/<rule_id>/delete", methods=["POST"])
+@app.route("/profiles/<profile_id>/apps/groups/<group_id>/rules/<rule_id>/delete", methods=["POST"])
 @require_login
-def delete_app_group_rule(group_id, rule_id):
-    r = api("DELETE", f"/app-groups/{group_id}/rules/{rule_id}")
+def delete_app_group_rule(profile_id, group_id, rule_id):
+    r = api("DELETE", f"/profiles/{profile_id}/app-groups/{group_id}/rules/{rule_id}")
     if not r or not r.ok:
         flash(t("flash.group_failed"), "danger")
-    return _back()
+    return _back_to_board(profile_id)
 
 
 def fmt_hm(m):
@@ -767,37 +796,6 @@ def parse_hm(s):
     if not 0 <= mins <= 1440:
         raise ValueError(s)
     return mins
-
-
-@app.route("/profiles/<profile_id>/app-limits/<group_id>", methods=["POST"])
-@require_login
-def update_app_limits(profile_id, group_id):
-    limits = []
-    try:
-        for dow in range(7):
-            mins = parse_hm(request.form.get(f"d{dow}"))
-            if mins is not None:
-                limits.append({"day_of_week": dow, "allowed_minutes": mins})
-    except ValueError:
-        flash(t("flash.app_limits_invalid"), "danger")
-        return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
-    r = api("PUT", f"/profiles/{profile_id}/app-group-limits/{group_id}", json={"limits": limits})
-    flash(t("flash.app_limits_saved") if (r and r.ok) else t("flash.app_limits_failed"),
-          "success" if (r and r.ok) else "danger")
-    return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
-
-
-@app.route("/profiles/<profile_id>/app-limits/<group_id>/extra", methods=["POST"])
-@require_login
-def app_limits_extra(profile_id, group_id):
-    try:
-        minutes = int(request.form.get("minutes", "0"))
-    except ValueError:
-        minutes = 0
-    r = api("POST", f"/profiles/{profile_id}/app-group-adjustments", json={"group_id": group_id, "minutes": minutes})
-    flash(t("flash.app_extra_saved") if (r and r.ok) else t("flash.app_limits_failed"),
-          "success" if (r and r.ok) else "danger")
-    return redirect(url_for("profile_detail", profile_id=profile_id) + "#appLimits")
 
 
 @app.route("/profiles/<profile_id>/app-approval/mode", methods=["POST"])

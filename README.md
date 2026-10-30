@@ -257,9 +257,9 @@ The agent keeps 35 days of app usage locally and sends day totals to the server 
 
 ### App groups and limits
 
-The **Apps** page lists every app seen on the children's computers. Put apps into groups — two are ready-made: **Games** (every app whose menu entry says it's a game, all Steam games, Minecraft) and **Web browsers** (every browser). They pick up newly installed games and browsers by themselves; take a single app out of a group or add one in with one click, or create your own groups (e.g. "School").
+On a child's profile, **Apps & limits** shows every app the child has used as tiles. Drag an app into a group to manage it, or drop one app onto another to start a group; each child has their own groups. Two are ready-made: **Games** (every app whose menu entry says it's a game, all Steam games, Minecraft) and **Web browsers** (every browser). They pick up newly installed games and browsers by themselves; drag an app out to **Unmanaged apps** to leave it alone, or create your own groups (e.g. "School").
 
-On a child's profile, **App limits** sets daily time per group and weekday (`1:30`, `90`, empty = no limit, `0` = blocked that day), and **+15 / +30 / +60** gives extra time for today. Group time is counted once while any app of the group is open, across all the child's computers, and also counts toward the daily screen-time limit.
+Each group box shows today's time and sets its daily limit, the same every day or per weekday (`1:30`, `90`, empty = no limit, `0` = blocked that day), with **+15 / +30 / +60** extra time for today. Group time is counted once while any app of the group is open, across all the child's computers, and also counts toward the daily screen-time limit.
 
 When a group's time runs out the child gets warnings at the profile's thresholds, then "*Dota 2 will close in 10 seconds*" and the app is closed: it is asked to quit (SIGTERM to its main process, as at logout — browsers may offer to restore the session next time), and forced after 10 more seconds if it doesn't. Starting it again closes it right away. On a blocked day the app is closed at once. Only the app's own processes are closed — never other apps, the desktop, or other users' programs.
 

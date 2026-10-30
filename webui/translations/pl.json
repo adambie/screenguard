@@ -264,23 +264,12 @@
   "apps.not_available": "Żaden komputer tego profilu nie raportuje jeszcze użycia aplikacji. Zaktualizuj na nich agenta ScreenGuard, aby zobaczyć, które aplikacje są używane.",
   "apps.footnote": "Czas liczy się, gdy aplikacja jest otwarta, a dziecko jest aktywne przy komputerze; aplikacje otwarte jednocześnie liczą się każda osobno. Programy uruchomione z terminala liczą się jako terminal.",
 
-  "nav.apps": "Aplikacje",
-  "apps_admin.heading": "Aplikacje",
-  "apps_admin.subtitle": "Wszystkie aplikacje widziane na komputerach dzieci. Przypisz je do grup, aby widzieć i ograniczać czas dla każdej grupy.",
-  "apps_admin.all_apps": "Wszystkie aplikacje ({n})",
-  "apps_admin.show_all": "Wszystkie",
-  "apps_admin.show_ungrouped": "Bez grupy",
-  "apps_admin.last_seen": "ostatnio {when}",
   "apps_admin.add_to": "Dodaj do grupy",
-  "apps_admin.remove_from": "Usuń z grupy {group}",
   "apps_admin.empty": "Brak aplikacji. Pojawią się tu, gdy komputer z aktualnym agentem je zgłosi.",
   "groups.heading": "Grupy",
   "groups.builtin_games": "Gry",
   "groups.builtin_browsers": "Przeglądarki",
-  "groups.app_count": "Aplikacje: {n}",
-  "groups.includes": "Zawiera:",
   "groups.except": "Oprócz:",
-  "groups.empty": "Brak aplikacji — dodaj je z listy poniżej.",
   "groups.rule_steam": "wszystkie gry Steam",
   "groups.rule_minecraft": "Minecraft",
   "groups.rule_category": "kategoria {category}",
@@ -288,25 +277,14 @@
   "groups.add_category": "Dodaj kategorię",
   "groups.confirm_delete": "Usunąć grupę „{name}”? Jej limity czasu również zostaną usunięte.",
   "groups.new": "Nowa grupa",
-  "groups.new_placeholder": "np. Szkoła, Media społecznościowe",
-  "groups.create": "Utwórz",
-  "groups.new_hint": "Następnie dodaj do niej aplikacje z listy poniżej.",
   "flash.group_failed": "Nie udało się zmienić grupy.",
-  "groups.add": "Dodaj",
 
-  "app_limits.card": "Limity aplikacji",
   "app_limits.manage_groups": "Zarządzaj grupami",
-  "app_limits.hint": "Dzienny czas dla grupy aplikacji, np. 1:30 lub 90 (minut). Puste = bez limitu, 0 = zablokowane. Czas aplikacji liczy się też do dziennego limitu czasu ekranu.",
   "app_limits.save": "Zapisz",
-  "app_limits.no_groups": "Brak grup aplikacji.",
-  "flash.app_limits_saved": "Zapisano limity aplikacji.",
-  "flash.app_limits_failed": "Nie udało się zapisać limitów aplikacji.",
   "flash.app_limits_invalid": "Użyj g:mm (np. 1:30) lub minut, maksymalnie 24 godziny.",
 
   "apps.of_limit": "z {limit}",
 
-  "app_limits.today": "Dodatkowy czas dziś:",
-  "flash.app_extra_saved": "Zapisano dodatkowy czas — dziecko dostanie powiadomienie.",
 
   "app_limits.needs_update": "Te komputery wymagają aktualizacji agenta, zanim zadziałają na nich limity aplikacji: {computers}",
 
@@ -336,10 +314,6 @@
 
   "groups.auto": "Dodaje też automatycznie: {rules}",
   "groups.edit_rules": "Edytuj reguły",
-  "apps_admin.move_to": "Przenieś do grupy",
-  "apps_admin.limit_separately": "Ogranicz osobno",
-  "apps_admin.limit_separately_hint": "Osobna grupa tylko dla tej aplikacji, z własnym dziennym czasem",
-  "flash.group_for_app": "Utworzono grupę „{name}” dla tej aplikacji — ustaw jej dzienny czas w profilu dziecka, w sekcji Limity aplikacji.",
 
   "board.hint": "Przeciągnij aplikację z sekcji „Aplikacje niezarządzane” do grupy, aby nią zarządzać — albo upuść jedną aplikację na drugą, żeby je zgrupować.",
   "board.ungrouped": "Aplikacje niezarządzane",
@@ -359,5 +333,21 @@
 
   "board.managed": "Aplikacje zarządzane",
   "board.remove_managed": "Usuń z zarządzanych aplikacji",
-  "board.add_to": "Dodaj do"
+  "board.add_to": "Dodaj do",
+
+  "board.card": "Aplikacje i limity",
+  "limit.cancel": "Anuluj",
+  "limit.set": "Ustaw limit",
+  "limit.none": "bez limitu",
+  "limit.used_of": "{used} z {limit} dzisiaj",
+  "limit.used_today": "{used} dzisiaj",
+  "limit.left": "zostało {left}",
+  "limit.blocked": "Zablokowane dzisiaj",
+  "limit.every_day": "Codziennie",
+  "limit.per_day": "Dla każdego dnia",
+  "limit.per_day_short": "{limit} dziennie",
+  "limit.remove": "Usuń limit",
+  "limit.hint": "np. 1:30 lub 90 (minut). Puste = bez limitu, 0 = zablokowane. Liczy się też do limitu czasu przed ekranem.",
+  "limit.extra": "Dodatkowy czas dzisiaj",
+  "limit.blocked_always": "Zablokowane codziennie"
 }

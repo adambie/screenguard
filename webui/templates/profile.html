@@ -307,51 +307,8 @@
   </div>
 </div>
 
-<!-- ── app limits (per group) ───────────────────────────────────────── -->
-<div class="card mb-4" id="appLimits">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>{{ t('app_limits.card') }}</span>
-    <a href="{{ url_for('apps') }}" class="small text-decoration-none">{{ t('app_limits.manage_groups') }} ›</a>
-  </div>
-  <div class="card-body">
-    <p class="text-secondary small mb-3">{{ t('app_limits.hint') }}</p>
-    {% if no_app_limits %}
-    <div class="alert alert-warning small py-2">{{ t('app_limits.needs_update', computers=no_app_limits | join(', ')) }}</div>
-    {% endif %}
-    {% for g in group_limits %}
-    <form method="post" action="{{ url_for('update_app_limits', profile_id=profile.id, group_id=g.id) }}"
-          class="mb-3 pb-3{% if not loop.last %} border-bottom{% endif %}">
-      <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
-        <span class="fw-semibold">{{ g.display_name }}
-          {% if not g.has_limit %}<span class="text-secondary small fw-normal ms-1">{{ t('profile.badge_no_limit') }}</span>{% endif %}</span>
-        <button class="btn btn-sm btn-primary">{{ t('app_limits.save') }}</button>
-      </div>
-      {% if g.has_limit %}
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small">
-        <span class="text-secondary">{{ t('app_limits.today') }}{% if g.adjustment_today %} <strong style="color:var(--t1)">{{ '%+d' % g.adjustment_today }} min</strong>{% endif %}</span>
-        {% for m in [15, 30, 60, -15] %}
-        <button class="btn btn-sm btn-outline-secondary py-0" formaction="{{ url_for('app_limits_extra', profile_id=profile.id, group_id=g.id) }}"
-                name="minutes" value="{{ m }}" formnovalidate>{{ '%+d' % m }}</button>
-        {% endfor %}
-      </div>
-      {% endif %}
-      <div class="d-flex flex-wrap gap-2">
-        {% for d in days() %}
-        <label class="text-center" style="width:64px">
-          <span class="d-block mb-1" style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--bs-secondary-color)">{{ d }}</span>
-          <input name="d{{ loop.index0 }}" value="{{ g.days[loop.index0] }}" placeholder="—" inputmode="numeric"
-                 pattern="\d{1,2}(:[0-5]\d)?|\d{1,4}" class="form-control form-control-sm text-center px-1"
-                 {% if g.days[loop.index0] == '0:00' %}style="border-color:var(--er);color:var(--er)" title="{{ t('profile.badge_blocked') }}"{% endif %}
-                 aria-label="{{ g.display_name }} {{ d }}">
-        </label>
-        {% endfor %}
-      </div>
-    </form>
-    {% else %}
-    <p class="text-secondary small mb-0">{{ t('app_limits.no_groups') }}</p>
-    {% endfor %}
-  </div>
-</div>
+<!-- ── apps & limits (per group) ────────────────────────────────────── -->
+{% include "_app_board.html" %}
 
 <!-- ── new apps (approval) ──────────────────────────────────────────── -->
 <div class="card mb-4" id="newApps">
@@ -383,7 +340,7 @@
       <span class="fw-semibold me-auto">{{ a.name }} <span class="text-secondary fw-normal">{{ t('approval.asks') }}</span></span>
       <select name="group_id" class="form-select form-select-sm" style="width:auto" aria-label="{{ t('apps_admin.add_to') }}">
         <option value="">{{ t('approval.no_group') }}</option>
-        {% for g in group_limits %}<option value="{{ g.id }}">{{ g.display_name }}</option>{% endfor %}
+        {% for g in board.groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
       </select>
       <button class="btn btn-sm btn-primary" name="approve" value="1">{{ t('approval.approve') }}</button>
       <button class="btn btn-sm btn-outline-secondary" name="approve" value="0">{{ t('approval.deny') }}</button>
