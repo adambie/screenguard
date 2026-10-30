@@ -1,5 +1,10 @@
-//! New-app approval (#27 Phase 2E): with the mode on, an app a child hasn't
-//! been allowed yet is closed on start and a request goes to the parents.
+//! Blocking new apps (#27 Phase 2E): with the mode on, an app a child hasn't
+//! used before is closed on start and put into the child's Blocked group; the
+//! parents see a notice and allow it by taking it out of that group.
+//!
+//! Statuses: `approved` = known (its group decides), `pending` = blocked as new
+//! and the parents haven't looked yet (a dashboard notice). `denied` is from
+//! before the Blocked group (v17 moves those apps into it).
 
 use anyhow::{Result, bail};
 use chrono::Utc;
@@ -64,8 +69,9 @@ pub async fn set_mode(pool: &DbPool, profile_id: Uuid, on: bool) -> Result<()> {
     Ok(())
 }
 
-/// Records a request; an app that already has a decision (or a pending request)
-/// is left alone. Returns true if a new request was created.
+/// A new app was started: record it (a notice for the parents) and put it into
+/// the Blocked group. An app that is already known is left alone. Returns true
+/// if it was new.
 pub async fn request(pool: &DbPool, profile_id: Uuid, app_id: &str) -> Result<bool> {
     let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_approvals WHERE profile_id = $1 AND app_id = $2")
         .bind(profile_id.to_string())
@@ -81,15 +87,41 @@ pub async fn request(pool: &DbPool, profile_id: Uuid, app_id: &str) -> Result<bo
         .bind(Utc::now().timestamp())
         .execute(pool)
         .await?;
+    set_blocked(pool, profile_id, app_id, true).await?;
     Ok(true)
 }
 
-/// Approve or deny (also changes an earlier decision, or decides in advance).
+/// Puts an app into the profile's Blocked group or takes it out.
+async fn set_blocked(pool: &DbPool, profile_id: Uuid, app_id: &str, blocked: bool) -> Result<()> {
+    if let Some(gid) = crate::app_groups::blocked_group(pool, profile_id).await? {
+        let categories = crate::app_usage::app_categories(pool, app_id).await?;
+        crate::app_groups::set_membership(pool, profile_id, &gid, app_id, &categories, blocked).await?;
+    }
+    Ok(())
+}
+
+/// The parents decided about a new app: allow it (out of the Blocked group) or
+/// keep it blocked (in the group). Either way the notice is gone.
 pub async fn decide(pool: &DbPool, profile_id: Uuid, app_id: &str, approve: bool) -> Result<()> {
     if common::apps::AppId::parse(app_id).is_none() {
         bail!("invalid app id {app_id:?}");
     }
-    let status = if approve { "approved" } else { "denied" };
+    set_status(pool, profile_id, app_id, "approved").await?;
+    set_blocked(pool, profile_id, app_id, !approve).await
+}
+
+/// The parents moved the app themselves (on the board): the notice is gone.
+pub async fn seen(pool: &DbPool, profile_id: Uuid, app_id: &str) -> Result<()> {
+    sqlx::query("UPDATE app_approvals SET status = 'approved', decided_at = $1 WHERE profile_id = $2 AND app_id = $3 AND status <> 'approved'")
+        .bind(Utc::now().timestamp())
+        .bind(profile_id.to_string())
+        .bind(app_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn set_status(pool: &DbPool, profile_id: Uuid, app_id: &str, status: &str) -> Result<()> {
     let now = Utc::now().timestamp();
     let r = sqlx::query("UPDATE app_approvals SET status = $1, decided_at = $2 WHERE profile_id = $3 AND app_id = $4")
         .bind(status)
@@ -137,14 +169,12 @@ pub async fn list(pool: &DbPool, profile_id: Uuid) -> Result<Vec<Approval>> {
     Ok(out)
 }
 
-/// Pending requests of every profile: (profile id, profile name, approval).
+/// New apps blocked that the parents haven't looked at, of every profile:
+/// (profile id, profile name, approval). Shown even with the mode off: they
+/// stay blocked.
 pub async fn pending_all(pool: &DbPool) -> Result<Vec<(Uuid, String, Approval)>> {
     let mut out = Vec::new();
     for p in crate::db::list_profiles(pool).await? {
-        // with the mode off nothing is blocked, so old requests mean nothing
-        if !mode(pool, p.id).await? {
-            continue;
-        }
         for a in list(pool, p.id).await?.into_iter().filter(|a| a.status == "pending") {
             out.push((p.id, p.display_name.clone(), a));
         }
@@ -152,14 +182,34 @@ pub async fn pending_all(pool: &DbPool) -> Result<Vec<(Uuid, String, Approval)>>
     Ok(out)
 }
 
-/// What the agent needs: `None` when the mode is off.
+/// What the agent needs: `None` when the mode is off. Every known app counts as
+/// approved — a new one is kept closed by the Blocked group, not by this list.
 pub async fn config(pool: &DbPool, profile_id: Uuid) -> Result<Option<common::models::AppApprovalConfig>> {
     if !mode(pool, profile_id).await? {
         return Ok(None);
     }
     let all = list(pool, profile_id).await?;
-    let pick = |s: &str| all.iter().filter(|a| a.status == s).map(|a| a.app_id.clone()).collect::<Vec<_>>();
-    Ok(Some(common::models::AppApprovalConfig { approved: pick("approved"), denied: pick("denied") }))
+    let pick = |f: fn(&str) -> bool| all.iter().filter(|a| f(&a.status)).map(|a| a.app_id.clone()).collect::<Vec<_>>();
+    Ok(Some(common::models::AppApprovalConfig { approved: pick(|s| s != "denied"), denied: pick(|s| s == "denied") }))
+}
+
+/// Migration v17: every profile gets a Blocked group; apps denied before go
+/// into it (and count as known), apps waiting for a decision too (the notice stays).
+pub async fn move_into_blocked(pool: &DbPool) -> Result<()> {
+    for p in crate::db::list_profiles(pool).await? {
+        crate::app_groups::seed_blocked(pool, p.id).await?;
+        for a in list(pool, p.id).await? {
+            match a.status.as_str() {
+                "denied" => {
+                    set_status(pool, p.id, &a.app_id, "approved").await?;
+                    set_blocked(pool, p.id, &a.app_id, true).await?;
+                }
+                "pending" => set_blocked(pool, p.id, &a.app_id, true).await?,
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -180,24 +230,34 @@ mod tests {
         approved.sort();
         assert_eq!(approved, vec!["desktop:firefox", "desktop:foot", "steam:570"]);
 
-        // a new app: one pending request, repeated requests change nothing
+        // a new app: into Blocked with a notice; repeated requests change nothing
+        let blocked = crate::app_groups::blocked_group(&pool, profile).await.unwrap().unwrap();
+        let group = |app: &'static str| {
+            let pool = pool.clone();
+            async move { crate::app_groups::group_of(&crate::app_groups::list_groups(&pool, profile).await.unwrap(), app, &[]).map(str::to_string) }
+        };
         assert!(request(&pool, profile, "steam:1091500").await.unwrap());
         assert!(!request(&pool, profile, "steam:1091500").await.unwrap());
-        assert!(!request(&pool, profile, "desktop:firefox").await.unwrap()); // already approved
+        assert!(!request(&pool, profile, "desktop:firefox").await.unwrap()); // already known
         let l = list(&pool, profile).await.unwrap();
         assert_eq!((l[0].app_id.as_str(), l[0].status.as_str()), ("steam:1091500", "pending"));
+        assert_eq!(group("steam:1091500").await, Some(blocked.clone())); // not Games (steam:)
+        // known to the agent: the Blocked group keeps it closed, not the approval list
+        assert!(config(&pool, profile).await.unwrap().unwrap().approved.contains(&"steam:1091500".to_string()));
         assert_eq!(pending_all(&pool).await.unwrap().len(), 1);
-        set_mode(&pool, profile, false).await.unwrap(); // mode off: not shown
-        assert!(pending_all(&pool).await.unwrap().is_empty());
+        set_mode(&pool, profile, false).await.unwrap(); // still blocked with the mode off: still shown
+        assert_eq!(pending_all(&pool).await.unwrap().len(), 1);
         set_mode(&pool, profile, true).await.unwrap();
 
-        // deny, then change mind
+        // keep it blocked: the notice goes, the app stays in Blocked
         decide(&pool, profile, "steam:1091500", false).await.unwrap();
-        assert_eq!(config(&pool, profile).await.unwrap().unwrap().denied, vec!["steam:1091500"]);
-        decide(&pool, profile, "steam:1091500", true).await.unwrap();
-        let c = config(&pool, profile).await.unwrap().unwrap();
-        assert!(c.approved.contains(&"steam:1091500".to_string()) && c.denied.is_empty());
         assert!(pending_all(&pool).await.unwrap().is_empty());
+        assert_eq!(group("steam:1091500").await, Some(blocked.clone()));
+        // allow it after all: back to where its rules put it (Games)
+        decide(&pool, profile, "steam:1091500", true).await.unwrap();
+        let games = crate::app_groups::list_groups(&pool, profile).await.unwrap()[0].id.clone();
+        assert_eq!(group("steam:1091500").await, Some(games));
+        assert!(config(&pool, profile).await.unwrap().unwrap().denied.is_empty());
 
         // allow in advance; turning the mode off keeps the decisions for next time
         decide(&pool, profile, "flatpak:org.example.App", true).await.unwrap();
@@ -206,5 +266,30 @@ mod tests {
         assert!(config(&pool, profile).await.unwrap().is_none());
         set_mode(&pool, profile, true).await.unwrap();
         assert!(config(&pool, profile).await.unwrap().unwrap().approved.contains(&"flatpak:org.example.App".to_string()));
+    }
+
+    #[tokio::test]
+    async fn v17_moves_denied_and_waiting_apps_into_blocked() {
+        let pool = db::open_in_memory().await;
+        let (_, _, _, profile) = crate::app_usage::tests::seeded(&pool).await;
+        // as before v17: no Blocked group, a denied and a waiting app
+        let blocked = crate::app_groups::blocked_group(&pool, profile).await.unwrap().unwrap();
+        crate::app_groups::delete_group(&pool, profile, &blocked).await.unwrap();
+        let p = profile.to_string();
+        for (app, status) in [("desktop:denied", "denied"), ("desktop:waiting", "pending"), ("desktop:firefox", "approved")] {
+            sqlx::query("INSERT INTO app_approvals (profile_id, app_id, status) VALUES ($1, $2, $3)")
+                .bind(&p).bind(app).bind(status).execute(&pool).await.unwrap();
+        }
+        move_into_blocked(&pool).await.unwrap();
+        let groups = crate::app_groups::list_groups(&pool, profile).await.unwrap();
+        let blocked = crate::app_groups::blocked_group(&pool, profile).await.unwrap().unwrap();
+        let of = |a: &str| crate::app_groups::group_of(&groups, a, &[]).map(str::to_string);
+        assert_eq!((of("desktop:denied"), of("desktop:waiting")), (Some(blocked.clone()), Some(blocked)));
+        assert_eq!(of("desktop:firefox"), None);
+        let status: Vec<(String, String)> = list(&pool, profile).await.unwrap().into_iter().map(|a| (a.app_id, a.status)).collect();
+        assert!(status.contains(&("desktop:denied".into(), "approved".into())));
+        assert!(status.contains(&("desktop:waiting".into(), "pending".into()))); // the notice stays
+        move_into_blocked(&pool).await.unwrap(); // twice is harmless
+        assert_eq!(crate::app_groups::list_groups(&pool, profile).await.unwrap().len(), groups.len());
     }
 }

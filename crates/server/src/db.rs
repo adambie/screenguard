@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub type DbPool = sqlx::AnyPool;
 
-const CURRENT_VERSION: i32 = 16;
+const CURRENT_VERSION: i32 = 17;
 
 // ── open / schema ─────────────────────────────────────────────────────────────
 
@@ -284,6 +284,7 @@ async fn run_migrations(pool: &DbPool, is_sqlite: bool) -> Result<()> {
     if v < 14 { apply_v14(pool).await?; v = 14; set_schema_version(pool, v).await?; }
     if v < 15 { apply_v15(pool).await?; v = 15; set_schema_version(pool, v).await?; }
     if v < 16 { apply_v16(pool).await?; v = 16; set_schema_version(pool, v).await?; }
+    if v < 17 { apply_v17(pool).await?; v = 17; set_schema_version(pool, v).await?; }
 
     Ok(())
 }
@@ -576,6 +577,13 @@ pub(crate) async fn apply_v16(pool: &DbPool) -> Result<()> {
     }
     crate::app_groups::split_shared_groups(pool).await?;
     tracing::info!("DB migration v16 applied (app groups per profile)");
+    Ok(())
+}
+
+/// v17: a Blocked group per profile; denied / waiting new apps move into it.
+pub(crate) async fn apply_v17(pool: &DbPool) -> Result<()> {
+    crate::app_approvals::move_into_blocked(pool).await?;
+    tracing::info!("DB migration v17 applied (Blocked app group)");
     Ok(())
 }
 
@@ -2496,7 +2504,7 @@ mod tests {
         assert_eq!(get_agent_by_id(&pool, id).await.unwrap().unwrap().app_usage_available, Some(true));
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_usage").fetch_one(&pool).await.unwrap();
         assert_eq!(n, 0);
-        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 16);
+        assert_eq!(get_schema_version(&pool, true).await.unwrap(), 17);
     }
 
     #[tokio::test]

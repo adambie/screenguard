@@ -37,6 +37,15 @@ async fn group_of_profile(state: &AppState, id: Uuid, group_id: &str) -> Result<
     Ok(())
 }
 
+/// The Blocked group is always blocked: no deleting, other limits, extra time or
+/// automatic rules — apps get in only one by one.
+async fn not_blocked_group(state: &AppState, id: Uuid, group_id: &str) -> Result<(), ApiError> {
+    if app_groups::blocked_group(&state.db, id).await.map_err(internal)?.as_deref() == Some(group_id) {
+        return Err(bad("the Blocked group is always blocked"));
+    }
+    Ok(())
+}
+
 /// `GET /profiles/{id}/apps` — the child's apps board: every app the child used
 /// (with today's time and its group) and the child's groups (rules, limits,
 /// today's extra time and today's group time).
@@ -117,6 +126,7 @@ pub async fn rename_group(
 }
 
 pub async fn delete_group(State(state): State<Arc<AppState>>, Path((id, gid)): Path<(Uuid, String)>) -> ApiResult {
+    not_blocked_group(&state, id, &gid).await?;
     if !app_groups::delete_group(&state.db, id, &gid).await.map_err(internal)? {
         return Err(not_found());
     }
@@ -127,6 +137,9 @@ pub async fn delete_group(State(state): State<Arc<AppState>>, Path((id, gid)): P
 /// `POST /profiles/{id}/app-groups/{gid}/rules` — add a category / prefix / app rule.
 pub async fn add_rule(State(state): State<Arc<AppState>>, Path((id, gid)): Path<(Uuid, String)>, Json(rule): Json<GroupRule>) -> Created {
     group_of_profile(&state, id, &gid).await?;
+    if rule.kind != common::apps::RuleKind::AppId || rule.exclude {
+        not_blocked_group(&state, id, &gid).await?;
+    }
     let rule_id = app_groups::add_rule(&state.db, &gid, &rule).await.map_err(bad)?;
     bump_and_propagate(&state, id).await.map_err(internal)?;
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": rule_id }))))
@@ -159,6 +172,8 @@ pub async fn set_membership(
         .await
         .map_err(bad)?
         .ok_or_else(not_found)?;
+    // the parents placed it themselves: a "new app blocked" notice is answered
+    crate::app_approvals::seen(&state.db, id, &body.app_id).await.map_err(internal)?;
     bump_and_propagate(&state, id).await.map_err(internal)?;
     Ok(Json(serde_json::json!({ "message": "Membership updated" })))
 }
@@ -182,6 +197,7 @@ pub async fn put_group_limits(
 ) -> ApiResult {
     profile(&state, id).await?;
     group_of_profile(&state, id, &gid).await?;
+    not_blocked_group(&state, id, &gid).await?;
     let entries: Vec<(u8, i32)> = body.limits.iter().map(|l| (l.day_of_week, l.allowed_minutes)).collect();
     app_groups::replace_limits(&state.db, &id.to_string(), &gid, &entries).await.map_err(bad)?;
     let version = bump_and_propagate(&state, id).await.map_err(internal)?;
@@ -200,6 +216,7 @@ pub struct AdjustmentBody {
 pub async fn add_group_adjustment(State(state): State<Arc<AppState>>, Path(id): Path<Uuid>, Json(body): Json<AdjustmentBody>) -> Created {
     profile(&state, id).await?;
     group_of_profile(&state, id, &body.group_id).await?;
+    not_blocked_group(&state, id, &body.group_id).await?;
     let date = match body.date {
         Some(d) => d.parse::<chrono::NaiveDate>().map_err(|_| bad("date must be YYYY-MM-DD"))?.to_string(),
         None => chrono::Local::now().date_naive().to_string(),

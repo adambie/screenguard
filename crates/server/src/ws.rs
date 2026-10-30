@@ -344,9 +344,10 @@ async fn handle_agent_message(
 
         MSG_APP_REQUEST => {
             let req: AppRequest = envelope.parse_payload()?;
-            // shown to parents on the dashboard and the profile page
-            if crate::app_usage::app_request(&state.db, agent_id, &req).await?.is_some() {
-                tracing::info!("Agent {agent_id}: approval requested for '{}' ({})", req.display_name, req.app_id);
+            // a new app: into the child's Blocked group, with a notice on the dashboard
+            if let Some(profile) = crate::app_usage::app_request(&state.db, agent_id, &req).await? {
+                tracing::info!("Agent {agent_id}: new app '{}' ({}) blocked", req.display_name, req.app_id);
+                crate::api::profiles::bump_and_propagate(state, profile).await?;
             }
         }
 

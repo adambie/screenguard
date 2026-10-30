@@ -427,7 +427,8 @@ pub(crate) mod tests {
         crate::app_approvals::set_mode(&pool, profile, true).await.unwrap();
         assert!(crate::app_approvals::request(&pool, profile, "steam:42").await.unwrap());
         crate::app_approvals::decide(&pool, profile, "steam:42", false).await.unwrap();
-        assert_eq!(crate::app_approvals::config(&pool, profile).await.unwrap().unwrap().denied, vec!["steam:42"]);
+        let blocked = crate::app_groups::blocked_group(&pool, profile).await.unwrap();
+        assert_eq!(crate::app_groups::group_of(&crate::app_groups::list_groups(&pool, profile).await.unwrap(), "steam:42", &[]), blocked.as_deref());
     }
 
     /// Two agents in one profile, one in another; returns (agent1, agent2, other, profile).

@@ -1,6 +1,6 @@
 //! App groups (#27 Phase 2): each profile (child) has its own groups of apps,
-//! defined by rules, with daily limits. Predefined: "Games" and "Web browsers"
-//! (created with every profile).
+//! defined by rules, with daily limits. Predefined: "Games", "Web browsers" and
+//! "Blocked" (created with every profile).
 
 use anyhow::{Result, bail};
 use chrono::Utc;
@@ -17,7 +17,13 @@ type Builtin = (&'static str, &'static str, &'static [(RuleKind, &'static str)])
 const BUILTIN: &[Builtin] = &[
     ("games", "Games", &[(RuleKind::Category, "Game"), (RuleKind::Prefix, "steam:"), (RuleKind::Prefix, "minecraft:")]),
     ("browsers", "Web browsers", &[(RuleKind::Category, "WebBrowser")]),
+    (BLOCKED, "Blocked", &[]),
 ];
+
+/// The predefined group whose apps are never allowed (0 minutes every day, no
+/// extra time): apps the parent dropped there, and new apps while "block new
+/// apps" is on. It can't be deleted or given another limit.
+pub const BLOCKED: &str = "blocked";
 
 pub const MAX_GROUP_NAME: usize = 60;
 
@@ -72,7 +78,16 @@ fn kind_from(s: &str) -> Option<RuleKind> {
 /// profile is created (and by migration v16) — a group the parent deleted later
 /// stays gone.
 pub async fn seed_builtin(pool: &DbPool, profile_id: Uuid) -> Result<()> {
-    for (key, name, rules) in BUILTIN {
+    seed(pool, profile_id, None).await
+}
+
+/// Creates the profile's Blocked group if it has none (migration v17).
+pub async fn seed_blocked(pool: &DbPool, profile_id: Uuid) -> Result<()> {
+    seed(pool, profile_id, Some(BLOCKED)).await
+}
+
+async fn seed(pool: &DbPool, profile_id: Uuid, only: Option<&str>) -> Result<()> {
+    for (key, name, rules) in BUILTIN.iter().filter(|(k, _, _)| only.is_none_or(|o| o == *k)) {
         let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_groups WHERE builtin = $1 AND profile_id = $2")
             .bind(*key)
             .bind(profile_id.to_string())
@@ -85,8 +100,21 @@ pub async fn seed_builtin(pool: &DbPool, profile_id: Uuid) -> Result<()> {
         for (kind, value) in *rules {
             add_rule(pool, &id, &GroupRule { kind: *kind, value: value.to_string(), exclude: false }).await?;
         }
+        if *key == BLOCKED {
+            let zero: Vec<(u8, i32)> = (0..7).map(|d| (d, 0)).collect();
+            replace_limits(pool, &profile_id.to_string(), &id, &zero).await?;
+        }
     }
     Ok(())
+}
+
+/// The id of the profile's Blocked group, if it has one.
+pub async fn blocked_group(pool: &DbPool, profile_id: Uuid) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar("SELECT id FROM app_groups WHERE profile_id = $1 AND builtin = $2")
+        .bind(profile_id.to_string())
+        .bind(BLOCKED)
+        .fetch_optional(pool)
+        .await?)
 }
 
 async fn create_group_with(pool: &DbPool, profile_id: Uuid, name: &str, builtin: Option<&str>) -> Result<String> {
@@ -439,8 +467,12 @@ mod tests {
         let (a, b) = (kid(&pool, "A").await, kid(&pool, "B").await);
         let ga = list_groups(&pool, a).await.unwrap();
         assert_eq!(ga.iter().map(|g| (g.name.as_str(), g.builtin.as_deref())).collect::<Vec<_>>(),
-            vec![("Games", Some("games")), ("Web browsers", Some("browsers"))]);
+            vec![("Games", Some("games")), ("Web browsers", Some("browsers")), ("Blocked", Some("blocked"))]);
         assert!(common::apps::group_matches(&ga[0].rules(), "steam:570", &[]));
+        // Blocked: no automatic rules, 0 minutes every day
+        assert!(ga[2].rules.is_empty());
+        assert_eq!(blocked_group(&pool, a).await.unwrap().as_deref(), Some(ga[2].id.as_str()));
+        assert_eq!(limits(&pool, &a.to_string()).await.unwrap()[&ga[2].id], (0..7).map(|d| (d, 0)).collect::<Vec<_>>());
         assert!(common::apps::group_matches(&ga[0].rules(), "desktop:supertux", &["Game".into()]));
         assert!(common::apps::group_matches(&ga[1].rules(), "desktop:firefox", &["WebBrowser".into()]));
         let gb = list_groups(&pool, b).await.unwrap();
@@ -448,10 +480,11 @@ mod tests {
 
         // seeding again adds nothing; a deleted predefined group stays deleted
         seed_builtin(&pool, a).await.unwrap();
-        assert_eq!(list_groups(&pool, a).await.unwrap().len(), 2);
+        assert_eq!(list_groups(&pool, a).await.unwrap().len(), 3);
         assert!(delete_group(&pool, a, &ga[0].id).await.unwrap());
-        assert_eq!(list_groups(&pool, a).await.unwrap().len(), 1);
-        assert_eq!(list_groups(&pool, b).await.unwrap().len(), 2); // B untouched
+        seed_blocked(&pool, a).await.unwrap(); // only ever re-creates Blocked
+        assert_eq!(list_groups(&pool, a).await.unwrap().len(), 2);
+        assert_eq!(list_groups(&pool, b).await.unwrap().len(), 3); // B untouched
 
         // another profile's group can't be touched
         assert!(!delete_group(&pool, a, &gb[0].id).await.unwrap());
@@ -502,10 +535,10 @@ mod tests {
             assert!(replace_limits(&pool, &ps, &games, &bad).await.is_err(), "{bad:?}");
         }
         replace_limits(&pool, &ps, &games, &[]).await.unwrap();
-        assert!(limits(&pool, &ps).await.unwrap().is_empty());
+        assert!(!limits(&pool, &ps).await.unwrap().contains_key(&games));
         replace_limits(&pool, &ps, &games, &[(2, 45)]).await.unwrap();
         delete_group(&pool, p, &games).await.unwrap();
-        assert!(limits(&pool, &ps).await.unwrap().is_empty());
+        assert!(!limits(&pool, &ps).await.unwrap().contains_key(&games));
     }
 
     #[tokio::test]
@@ -537,7 +570,7 @@ mod tests {
         replace_limits(&pool, &p.to_string(), &games, &[(5, 120)]).await.unwrap();
         let push = crate::remaining::build_config_push(&pool, agent, 7).await.unwrap();
         let groups = &push.users[0].app_groups;
-        assert_eq!(groups.len(), 2);
+        assert_eq!(groups.len(), 3);
         let g = groups.iter().find(|g| g.id == games).unwrap();
         assert_eq!((g.builtin.as_deref(), g.daily_limits[0].allowed_minutes), (Some("games"), 120));
         let other_ids: Vec<String> = list_groups(&pool, other).await.unwrap().into_iter().map(|g| g.id).collect();

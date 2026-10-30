@@ -362,17 +362,40 @@ mod tests {
         let (s, _) = c(Method::PUT, format!("/profiles/{oid}/app-group-limits/{games}"), Some(json!({"limits": []}))).await;
         assert_eq!(s, StatusCode::NOT_FOUND);
         let (_, oboard) = c(Method::GET, format!("/profiles/{oid}/apps"), None).await;
-        assert_eq!(oboard["groups"].as_array().unwrap().len(), 2); // its own predefined groups
+        assert_eq!(oboard["groups"].as_array().unwrap().len(), 3); // its own predefined groups
         assert!(oboard["apps"].as_array().unwrap().is_empty()); // and none of the first child's apps
 
-        // new-app approval: mode, a request, decision into one of the child's groups
+        // the Blocked group is always blocked
+        let blocked = crate::app_groups::blocked_group(&state.db, pid).await.unwrap().unwrap();
+        for (m, path, body) in [
+            (Method::DELETE, format!("{base}/app-groups/{blocked}"), None),
+            (Method::PUT, format!("{base}/app-group-limits/{blocked}"), Some(json!({"limits": []}))),
+            (Method::POST, format!("{base}/app-group-adjustments"), Some(json!({"group_id": blocked, "minutes": 30}))),
+            (Method::POST, format!("{base}/app-groups/{blocked}/rules"), Some(json!({"kind": "category", "value": "Game"}))),
+        ] {
+            let (s, _) = c(m, path.clone(), body).await;
+            assert_eq!(s, StatusCode::BAD_REQUEST, "{path}");
+        }
+
+        // block new apps: a new app lands in Blocked with a notice; allowing it
+        // into one of the child's groups takes it out
         let (s, _) = c(Method::PUT, format!("{base}/app-approvals/mode"), Some(json!({"enabled": true}))).await;
         assert_eq!(s, StatusCode::OK);
         crate::app_approvals::request(&state.db, pid, "steam:1091500").await.unwrap();
         let (_, r) = c(Method::GET, "/app-requests".into(), None).await;
         assert_eq!(r["requests"][0]["app_id"], "steam:1091500");
+        let in_blocked = |groups: Vec<crate::app_groups::Group>| crate::app_groups::group_of(&groups, "steam:1091500", &[]).map(str::to_string);
+        assert_eq!(in_blocked(crate::app_groups::list_groups(&state.db, pid).await.unwrap()), Some(blocked.clone()));
         let (s, _) = c(Method::POST, format!("{base}/app-approvals/decision"),
             Some(json!({"app_id": "steam:1091500", "approve": true, "group_id": browsers}))).await;
+        assert_eq!(s, StatusCode::OK);
+        let (_, r) = c(Method::GET, "/app-requests".into(), None).await;
+        assert!(r["requests"].as_array().unwrap().is_empty());
+        assert_eq!(in_blocked(crate::app_groups::list_groups(&state.db, pid).await.unwrap()), Some(browsers.clone()));
+        // dragging a new app out of Blocked on the board answers its notice too
+        crate::app_approvals::request(&state.db, pid, "desktop:org.kde.kmines").await.unwrap();
+        let (s, _) = c(Method::POST, format!("{base}/app-groups/{blocked}/membership"),
+            Some(json!({"app_id": "desktop:org.kde.kmines", "member": false}))).await;
         assert_eq!(s, StatusCode::OK);
         let (_, r) = c(Method::GET, "/app-requests".into(), None).await;
         assert!(r["requests"].as_array().unwrap().is_empty());
