@@ -86,3 +86,46 @@ body.sg-is-dragging, body.sg-is-dragging * { cursor: grabbing !important; }
 .sg-add { display: flex; gap: 6px; margin-top: auto; padding-top: 12px; }
 .sg-gcard.sg-allowed { border-color: color-mix(in srgb, var(--ok) 40%, var(--bd)); }
 .sg-gtag { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+/* "Block new apps" switch in the Apps & limits header */
+.sg-blocknew { display: flex; align-items: center; gap: 12px; margin: 0; padding: 8px 18px 8px 12px; min-height: 0;
+               border: 1px solid var(--bd); border-radius: 999px; background: var(--c2); cursor: pointer; }
+.sg-blocknew .form-check-input { width: 3em; height: 1.6em; margin: 0; float: none; cursor: pointer; }
+/* off: a knob and border that show on dark and light cards alike */
+.sg-blocknew .form-check-input:not(:checked) { background-color: var(--c1); border: 1.5px solid var(--t2);
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%238490ac'/%3e%3c/svg%3e"); }
+.sg-blocknew .form-check-label { font-size: 15px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--t1); cursor: pointer; }
+.sg-blocknew.on { border-color: color-mix(in srgb, var(--er) 55%, var(--bd)); background: color-mix(in srgb, var(--er) 10%, var(--c1)); }
+.sg-blocknew.on .form-check-input { background-color: var(--er); border-color: var(--er); }
+
+/* daily limits / time windows: the rules that are set, and one editor */
+.sg-rlist { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.sg-rempty { color: var(--t2); font-size: 14px; padding: 4px 0; }
+.sg-rule { display: flex; align-items: center; gap: 14px; padding: 10px 8px 10px 14px; border: 1px solid var(--bd); border-radius: 12px;
+           background: var(--c2); cursor: pointer; transition: border-color .12s; }
+.sg-rule:hover, .sg-rule:focus-visible { border-color: var(--ac); outline: none; }
+.sg-rule.sg-editing { border-color: var(--ac); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac) 20%, transparent); }
+.sg-week { display: flex; gap: 3px; flex: none; }
+.sg-week span { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+                font-size: 10px; font-weight: 700; color: var(--t2); background: var(--c1); border: 1px solid var(--bd); }
+.sg-week span.on { background: var(--ac); border-color: var(--ac); color: #fff; }
+.sg-rdays { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
+.sg-rval { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sg-rval.sg-rblocked { color: var(--er); }
+.sg-rx { border: 0; background: none; color: var(--t2); width: 32px; height: 32px; border-radius: 8px; font-size: 18px; line-height: 1; flex: none; }
+.sg-rx:hover, .sg-rx:focus-visible { background: var(--c1); color: var(--er); }
+.sg-redit { border: 1px dashed var(--bd); border-radius: 12px; padding: 12px 14px; }
+.sg-rtitle { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--t2); margin-bottom: 10px; }
+.sg-presets, .sg-daybtns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sg-preset, .sg-day { border: 1px solid var(--bd); background: var(--c1); color: var(--t1); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.sg-day { min-width: 46px; border-radius: 8px; }
+.sg-preset:hover, .sg-day:hover { border-color: var(--ac); }
+.sg-preset.on, .sg-day.on { background: var(--ac); border-color: var(--ac); color: #fff; }
+.sg-preset.sg-blockday.on { background: var(--er); border-color: var(--er); }
+.sg-rrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.sg-rvalue { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sg-rvalue input { width: 120px; font-variant-numeric: tabular-nums; }
+.sg-rvalue .sg-rinput { width: 110px; text-align: center; font-size: 15px; }
+.sg-rhint { color: var(--t2); font-size: 12px; margin-top: 8px; }
+.sg-shake { animation: sg-shake .35s; }
+@keyframes sg-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (max-width: 575px) { .sg-week span { width: 18px; height: 18px; font-size: 9px; } .sg-rule { gap: 10px; flex-wrap: wrap; } .sg-rdays { flex-basis: 40%; } }

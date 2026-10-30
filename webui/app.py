@@ -468,6 +468,8 @@ def profile_detail(profile_id):
                                    if a["app_id"] not in undecided_or_no]  # earlier decisions are kept
 
     sites = site_state(profile_id)
+    r_me = api("GET", "/auth/me")
+    admin_tz = (r_me.json().get("timezone") if r_me and r_me.ok else None) or "UTC"
 
     usage_by_date = {u['date']: u for u in usage}
     max_used = max((u.get('used_minutes') or 0 for u in usage), default=0)
@@ -506,6 +508,7 @@ def profile_detail(profile_id):
                            preserve_tasks_on_lock=data.get("preserve_tasks_on_lock", False),
                            lockout_grace_minutes=data.get("lockout_grace_minutes", 5),
                            sites=sites,
+                           admin_tz=admin_tz,
                            board=board,
                            no_app_limits=no_app_limits,
                            approvals=approvals,

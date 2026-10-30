@@ -235,143 +235,78 @@
 </div>
 
 <!-- ── daily limits ──────────────────────────────────────────────────── -->
-<div class="card mb-4">
+<link rel="stylesheet" href="{{ url_for('static', filename='board.css') }}">
+<script src="{{ url_for('static', filename='dayrules.js') }}"></script>
+<div class="card mb-4" id="dailyLimits">
   <div class="card-header">{{ t('profile.card_limits') }}</div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('update_limits', profile_id=profile.id) }}">
-      <div class="d-flex gap-2 mb-4" style="flex-wrap:wrap">
-        {% for d in days() %}
-          {% set dow = loop.index0 %}
-          {% set ns = namespace(val='') %}
-          {% for l in limits %}{% if l.day_of_week == dow %}{% set ns.val = l.allowed_minutes %}{% endif %}{% endfor %}
-          {% set hval = (ns.val // 60) if ns.val != '' else '' %}
-          {% set mval = '%02d' % (ns.val % 60) if ns.val != '' else '' %}
-          <div class="flex-fill text-center" style="min-width:120px">
-
-            {# day label #}
-            <div class="mb-3" style="font-size:.75rem;font-weight:700;text-transform:uppercase;
-                                     letter-spacing:.08em;color:var(--bs-secondary-color)">{{ d }}</div>
-
-            {# h : m inputs #}
-            <div style="display:flex;align-items:center;justify-content:center;gap:3px;margin-bottom:8px">
-              <input type="number"
-                     class="limit-hours form-control text-center px-0"
-                     data-dow="{{ dow }}"
-                     style="width:46px;font-size:1.1rem;appearance:textfield;-moz-appearance:textfield"
-                     min="0" max="24" placeholder="—" value="{{ hval }}">
-              <span style="font-size:1.2rem;font-weight:300;color:var(--t2)">:</span>
-              <input type="number"
-                     class="limit-mins form-control text-center px-0"
-                     data-dow="{{ dow }}"
-                     style="width:44px;font-size:1.1rem;appearance:textfield;-moz-appearance:textfield"
-                     min="0" max="59" placeholder="—" value="{{ mval }}">
-            </div>
-
-            {# +/- 15m buttons #}
-            <div style="display:flex;gap:4px;justify-content:center;margin-bottom:10px">
-              <button type="button" class="limit-dec btn btn-outline-secondary" data-dow="{{ dow }}"
-                      style="font-size:13px;padding:7px 12px">−15</button>
-              <button type="button" class="limit-inc btn btn-outline-secondary" data-dow="{{ dow }}"
-                      style="font-size:13px;padding:7px 12px">+15</button>
-            </div>
-
-            {# state badge / actions #}
-            {% if ns.val == 0 %}
-              <div class="limit-state d-flex gap-1 justify-content-center flex-wrap" data-dow="{{ dow }}">
-                <span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">{{ t('profile.badge_blocked') }}</span>
-                <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                        style="font-size:12px;padding:5px 12px;border-radius:99px">{{ t('profile.btn_clear') }}</button>
-              </div>
-            {% else %}
-              <div class="limit-state d-flex gap-1 justify-content-center flex-wrap" data-dow="{{ dow }}">
-                {% if ns.val != '' %}
-                  <button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="{{ dow }}"
-                          style="font-size:12px;padding:5px 12px;border-radius:99px">{{ t('profile.btn_clear') }}</button>
-                {% else %}
-                  <span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">{{ t('profile.badge_no_limit') }}</span>
-                {% endif %}
-                <button type="button" class="limit-block btn btn-sm" data-dow="{{ dow }}"
-                        style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">{{ t('profile.btn_block') }}</button>
-              </div>
-            {% endif %}
-
-            <input type="hidden" name="limit_{{ dow }}" class="limit-hidden" data-dow="{{ dow }}"
-                   value="{{ ns.val }}">
-          </div>
-        {% endfor %}
-      </div>
-      <div class="d-flex justify-content-end">
-        <button class="btn btn-primary">{{ t('profile.btn_save_limits') }}</button>
-      </div>
+    <form method="post" action="{{ url_for('update_limits', profile_id=profile.id) }}" id="limitsForm">
+      <div id="limitsRules"></div>
     </form>
   </div>
 </div>
 
-<!-- ── apps & limits (per group) ────────────────────────────────────── -->
-<link rel="stylesheet" href="{{ url_for('static', filename='board.css') }}">
-<script src="{{ url_for('static', filename='board.js') }}"></script>
-{% include "_app_board.html" %}
-
-<!-- ── schedule ──────────────────────────────────────────────────────── -->
-<div class="card mb-4">
+<!-- ── allowed time windows ──────────────────────────────────────────── -->
+<div class="card mb-4" id="timeWindows">
   <div class="card-header">{{ t('profile.card_windows') }}</div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('update_schedules', profile_id=profile.id) }}">
-
-      {# quick-add bar #}
-      <div class="d-flex align-items-center gap-2 mb-3 pb-3" style="border-bottom:1px solid var(--bd);flex-wrap:wrap">
-        <select id="quickDow" class="form-select form-select-sm flex-shrink-0" style="width:120px">
-          <option value="week">{{ t('profile.schedule_all_week') }}</option>
-          <option value="weekday">{{ t('profile.schedule_mon_fri') }}</option>
-          <option value="weekend">{{ t('profile.schedule_sat_sun') }}</option>
-          <option disabled>──────</option>
-          {% for d in days() %}
-            <option value="{{ loop.index0 }}">{{ d }}</option>
-          {% endfor %}
-        </select>
-        <input type="time" id="quickStart" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px">
-        <span class="text-secondary px-1" style="flex-shrink:0">–</span>
-        <input type="time" id="quickEnd" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px">
-        <button type="button" id="quickAddBtn"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0">{{ t('profile.btn_add_window') }}</button>
-      </div>
-
-      {# existing rows #}
-      <div id="scheduleList">
-        {% for s in schedules %}
-        <div class="d-flex align-items-center gap-2 mb-2 schedule-row" style="flex-wrap:wrap">
-          <select name="dow_{{ loop.index0 }}"
-                  class="form-select form-select-sm flex-shrink-0" style="width:88px">
-            {% for d in days() %}
-              <option value="{{ loop.index0 }}"
-                      {% if s.day_of_week == loop.index0 %}selected{% endif %}>{{ d }}</option>
-            {% endfor %}
-          </select>
-          <input type="time" name="start_{{ loop.index0 }}"
-                 class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px"
-                 value="{{ s.start_time }}" required>
-          <span class="text-secondary px-1">–</span>
-          <input type="time" name="end_{{ loop.index0 }}"
-                 class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px"
-                 value="{{ s.end_time }}" required>
-          <button type="button"
-                  class="btn remove-row border-0 text-secondary ms-auto"
-                  style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center"
-                  title="{{ t('profile.btn_remove_window') }}">✕</button>
-        </div>
-        {% endfor %}
-        {% if not schedules %}
-          <p class="text-secondary small mb-0" id="emptySchedule">
-            {{ t('profile.schedule_no_windows') }}
-          </p>
-        {% endif %}
-      </div>
-      <div class="d-flex justify-content-end mt-3">
-        <button class="btn btn-primary">{{ t('profile.btn_save_schedule') }}</button>
-      </div>
+    <form method="post" action="{{ url_for('update_schedules', profile_id=profile.id) }}" id="windowsForm">
+      <div id="windowsRules"></div>
     </form>
   </div>
 </div>
+{% set dayrule_t = {
+  'days': days(),
+  'every_day': t('limit.every_day'),
+  'weekdays': t('dayrules.weekdays'),
+  'weekend': t('dayrules.weekend'),
+  'blocked': t('dayrules.blocked'),
+  'edit': t('dayrules.edit'),
+  'remove': t('dayrules.remove'),
+  'add': t('dayrules.add'),
+  'update': t('dayrules.update'),
+  'cancel': t('limit.cancel'),
+  'unsaved': t('dayrules.unsaved'),
+  'or': t('dayrules.or'),
+} %}
+<script>
+SGDayRules.mount(document.getElementById('limitsRules'), {
+  kind: 'limit',
+  entries: {{ limits | map(attribute='day_of_week') | list | tojson }}.map((dow, i) => ({ dow, minutes: {{ limits | map(attribute='allowed_minutes') | list | tojson }}[i] })),
+  form: document.getElementById('limitsForm'),
+  T: Object.assign({{ dayrule_t | tojson }}, {
+    empty: {{ t('profile.no_daily_limit') | tojson }},
+    save: {{ t('profile.btn_save_limits') | tojson }},
+    add_title: {{ t('dayrules.add_limit') | tojson }},
+    edit_title: {{ t('dayrules.edit_limit') | tojson }},
+    hint: {{ t('dayrules.limit_hint') | tojson }},
+    placeholder: {{ t('dayrules.limit_placeholder') | tojson }},
+    value: {{ t('dayrules.limit_value') | tojson }},
+    block: {{ t('dayrules.block') | tojson }},
+  }),
+  // a day without an entry has no limit
+  write: list => [0, 1, 2, 3, 4, 5, 6].map(d => [`limit_${d}`, (list.find(e => e.dow === d) || {}).minutes ?? '']),
+});
+SGDayRules.mount(document.getElementById('windowsRules'), {
+  kind: 'window',
+  entries: {{ schedules | tojson }}.map(s => ({ dow: s.day_of_week, start: s.start_time.slice(0, 5), end: s.end_time.slice(0, 5) })),
+  form: document.getElementById('windowsForm'),
+  T: Object.assign({{ dayrule_t | tojson }}, {
+    empty: {{ t('profile.schedule_no_windows') | tojson }},
+    save: {{ t('profile.btn_save_schedule') | tojson }},
+    add_title: {{ t('dayrules.add_window') | tojson }},
+    edit_title: {{ t('dayrules.edit_window') | tojson }},
+    hint: {{ (t('dayrules.window_hint') ~ ' ' ~ t('dayrules.tz_note', tz=admin_tz)) | tojson }},
+    from: {{ t('dayrules.from') | tojson }},
+    to: {{ t('dayrules.to') | tojson }},
+  }),
+  write: list => list.flatMap((e, i) => [[`dow_${i}`, e.dow], [`start_${i}`, e.start], [`end_${i}`, e.end]]),
+});
+</script>
+
+<!-- ── apps & limits (per group) ────────────────────────────────────── -->
+<script src="{{ url_for('static', filename='board.js') }}"></script>
+{% include "_app_board.html" %}
 
 <!-- ── notifications language ────────────────────────────────────────── -->
 <div class="card mb-4">
@@ -519,12 +454,6 @@
 {% endblock %}
 
 {% block scripts %}
-<style>
-.limit-hours::-webkit-outer-spin-button,
-.limit-hours::-webkit-inner-spin-button,
-.limit-mins::-webkit-outer-spin-button,
-.limit-mins::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
-</style>
 <script>
 // ── adjustment widget ──────────────────────────────────────────────────────
 (function() {
@@ -547,154 +476,5 @@
   document.getElementById('adjReset').addEventListener('click', function() { val = 0; update(); });
 })();
 
-// ── schedule rows ──────────────────────────────────────────────────────────
-let rowCount = {{ schedules | length }};
-const DAYS = {{ days() | tojson }};
-
-function addScheduleRow(dayIndex, start, end) {
-  const list = document.getElementById('scheduleList');
-  const empty = document.getElementById('emptySchedule');
-  if (empty) empty.remove();
-  const opts = DAYS.map((d, i) =>
-    `<option value="${i}"${i === dayIndex ? ' selected' : ''}>${d}</option>`
-  ).join('');
-  const div = document.createElement('div');
-  div.className = 'd-flex align-items-center gap-2 mb-2 schedule-row';
-  div.style.flexWrap = 'wrap';
-  div.innerHTML = `
-    <select name="dow_${rowCount}" class="form-select form-select-sm flex-shrink-0" style="width:88px">${opts}</select>
-    <input type="time" name="start_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px" value="${start}" required>
-    <span class="text-secondary px-1">–</span>
-    <input type="time" name="end_${rowCount}" class="form-control form-control-sm flex-shrink-0" style="width:115px;min-width:130px" value="${end}" required>
-    <button type="button" class="btn remove-row border-0 text-secondary ms-auto" style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center" title="Remove">✕</button>
-  `;
-  list.appendChild(div);
-  rowCount++;
-}
-
-document.getElementById('quickAddBtn')?.addEventListener('click', function() {
-  const dow   = document.getElementById('quickDow').value;
-  const start = document.getElementById('quickStart').value;
-  const end   = document.getElementById('quickEnd').value;
-  if (!start || !end) return;
-
-  const days = dow === 'week'    ? [0,1,2,3,4,5,6]
-             : dow === 'weekday' ? [0,1,2,3,4]
-             : dow === 'weekend' ? [5,6]
-             : [parseInt(dow)];
-
-  days.forEach(d => addScheduleRow(d, start, end));
-});
-
-document.getElementById('scheduleList')?.addEventListener('click', function(e) {
-  if (e.target.classList.contains('remove-row')) {
-    e.target.closest('.schedule-row').remove();
-  }
-});
-
-// ── daily limit widgets ────────────────────────────────────────────────────
-(function() {
-  var STRINGS = {
-    block:        {{ t('profile.btn_block')        | tojson }},
-    clear:        {{ t('profile.btn_clear')        | tojson }},
-    noLimit:      {{ t('profile.badge_no_limit')   | tojson }},
-    blocked:      {{ t('profile.badge_blocked')    | tojson }}
-  };
-
-  function q(cls, dow) {
-    return document.querySelector('.' + cls + '[data-dow="' + dow + '"]');
-  }
-
-  var blockBtn  = '<button type="button" class="limit-block btn btn-sm" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px;border:1px solid rgba(220,38,38,.45);color:var(--er);background:rgba(220,38,38,.07)">' + STRINGS.block + '</button>';
-  var clearBtn  = '<button type="button" class="limit-clear btn btn-sm btn-outline-secondary" data-dow="__D__" style="font-size:12px;padding:5px 12px;border-radius:99px">' + STRINGS.clear + '</button>';
-  var noLimitBadge = '<span class="badge rounded-pill text-bg-secondary fw-normal align-self-center" style="font-size:11px;padding:5px 10px;opacity:.7">' + STRINGS.noLimit + '</span>';
-  var blockedBadge = '<span class="badge rounded-pill text-bg-danger fw-normal align-self-center" style="font-size:11px;padding:5px 10px">' + STRINGS.blocked + '</span>';
-
-  function tmpl(s, dow) { return s.replace(/__D__/g, dow); }
-
-  function updateState(dow) {
-    var hid = q('limit-hidden', dow);
-    var el  = q('limit-state',  dow);
-    if (!el) return;
-    var val = hid.value;
-    if (val === '') {
-      el.innerHTML = noLimitBadge + tmpl(blockBtn, dow);
-    } else if (parseInt(val) === 0) {
-      el.innerHTML = blockedBadge + tmpl(clearBtn, dow);
-    } else {
-      el.innerHTML = tmpl(clearBtn, dow) + tmpl(blockBtn, dow);
-    }
-  }
-
-  function setDisplay(dow, totalMins) {
-    if (totalMins < 0) totalMins = 0;
-    var h = Math.floor(totalMins / 60);
-    var m = totalMins % 60;
-    q('limit-hours',  dow).value = h;
-    q('limit-mins',   dow).value = String(m).padStart(2, '0');
-    q('limit-hidden', dow).value = totalMins;
-    updateState(dow);
-  }
-
-  function syncHidden(dow) {
-    var hEl  = q('limit-hours',  dow);
-    var mEl  = q('limit-mins',   dow);
-    var hidEl = q('limit-hidden', dow);
-    if (hEl.value.trim() === '' && mEl.value.trim() === '') {
-      hidEl.value = '';
-    } else {
-      hidEl.value = (parseInt(hEl.value) || 0) * 60 + (parseInt(mEl.value) || 0);
-    }
-    updateState(dow);
-  }
-
-  document.querySelectorAll('.limit-hours').forEach(function(el) {
-    el.addEventListener('keydown', function(e) {
-      if (e.key === ':') {
-        e.preventDefault();
-        q('limit-mins', el.dataset.dow).focus();
-      }
-    });
-    el.addEventListener('input', function() { syncHidden(el.dataset.dow); });
-  });
-
-  document.querySelectorAll('.limit-mins').forEach(function(el) {
-    el.addEventListener('input', function() { syncHidden(el.dataset.dow); });
-  });
-
-  document.querySelectorAll('.limit-inc').forEach(function(el) {
-    el.addEventListener('click', function() {
-      var dow = el.dataset.dow;
-      var cur = parseInt(q('limit-hidden', dow).value) || 0;
-      setDisplay(dow, cur + 15);
-    });
-  });
-
-  document.querySelectorAll('.limit-dec').forEach(function(el) {
-    el.addEventListener('click', function() {
-      var dow = el.dataset.dow;
-      var hid = q('limit-hidden', dow);
-      if (hid.value === '') return;
-      var cur = parseInt(hid.value) || 0;
-      if (cur === 0) return;
-      setDisplay(dow, cur - 15);
-    });
-  });
-
-  // delegated — clear/block buttons are dynamically injected by updateState
-  document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('limit-clear')) {
-      var dow = e.target.dataset.dow;
-      q('limit-hours',  dow).value = '';
-      q('limit-mins',   dow).value = '';
-      q('limit-hidden', dow).value = '';
-      updateState(dow);
-    }
-    if (e.target.classList.contains('limit-block')) {
-      var dow = e.target.dataset.dow;
-      setDisplay(dow, 0);
-    }
-  });
-})();
 </script>
 {% endblock %}

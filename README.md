@@ -219,7 +219,7 @@ sudo firewall-cmd --reload
 
 1. **Server**: after install, open the web UI. On first visit you will be prompted to create an admin account.
 
-2. **Create a profile**: in the web UI, go to Profiles → New profile. Set schedules and daily limits.
+2. **Create a profile**: in the web UI, go to Profiles → New profile. Set daily limits and allowed time windows: pick the days (every day, weekdays, weekend or any days) and type the time (`2:30`, `150` or `2h 30m`; window times are in the time zone from Settings). Days without a limit or window are not restricted.
 
 3. **Pair an agent**: the installer prints the agent's pairing code when it finishes. To show it again on the managed machine:
    ```
