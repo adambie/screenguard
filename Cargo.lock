@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agent"
-version = "0.10.17"
+version = "0.10.18"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2067,7 +2067,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.10.17"
+version = "0.10.18"
 dependencies = [
  "anyhow",
  "argon2",
