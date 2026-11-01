@@ -4,7 +4,10 @@ use axum::{
     Json,
 };
 use chrono::Local;
-use common::messages::{MSG_CONFIG_PUSH, MSG_NOTIFY_USER, MSG_REMAINING_UPDATE, NotifyUser, RemainingUpdate};
+use common::messages::{
+    MSG_CONFIG_PUSH, MSG_NOTIFY_USER, MSG_REMAINING_UPDATE, MSG_UNLOCK_NOW, NotifyUser,
+    RemainingUpdate, UnlockNow,
+};
 use common::protocol::WssMessage;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -209,6 +212,17 @@ pub async fn create_adjustment(
     ).await.map_err(internal)?;
 
     bump_and_propagate(&state, id).await.map_err(internal)?;
+
+    if body.reason.as_deref() == Some("unlock") {
+        let agent_users = db::get_agent_users_for_profile(&state.db, id).await.map_err(internal)?;
+        for agent_user in agent_users {
+            let msg = WssMessage::new(
+                MSG_UNLOCK_NOW,
+                &UnlockNow { local_uid: agent_user.local_uid as u32 },
+            ).map_err(internal)?;
+            state.send_to_agent_id(DEFAULT_TENANT, agent_user.agent_id, msg).await;
+        }
+    }
 
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": adj_id }))))
 }
