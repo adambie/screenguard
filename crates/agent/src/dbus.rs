@@ -51,6 +51,8 @@ trait Login1Manager {
         &self,
     ) -> zbus::Result<Vec<(String, u32, String, String, zbus::zvariant::OwnedObjectPath)>>;
 
+    fn get_session(&self, session_id: &str) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
+
     fn kill_session(&self, session_id: &str, who: &str, signal_number: i32) -> zbus::Result<()>;
 }
 
@@ -76,6 +78,12 @@ trait Login1Session {
 
     #[zbus(property)]
     fn desktop(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn leader(&self) -> zbus::Result<u32>;
+
+    #[zbus(property)]
+    fn scope(&self) -> zbus::Result<String>;
 
     fn lock(&self) -> zbus::Result<()>;
 
@@ -443,14 +451,32 @@ pub async fn unlock_sessions(session_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Terminate all sessions in the given list via DBus.
-/// Uses Manager.KillSession with SIGKILL so that lock-screen daemons (kscreenlocker,
-/// swaylock, etc.) that resist SIGTERM are forcefully removed.
+/// Terminate all sessions in the given list.
+///
+/// First SIGKILLs only the session user's processes, leaving the display manager's
+/// session leader alive so it sees a normal logout and brings the greeter back (see
+/// `session_kill`). If the session is still there after `LOGOUT_WAIT`, falls back to
+/// Manager.KillSession(..., "all", SIGKILL), which always ends it. SIGKILL either way, so
+/// lock-screen daemons (kscreenlocker, swaylock, etc.) that resist SIGTERM are removed.
 pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
 
     for sid in session_ids {
+        match logout_keeping_leader(&conn, &manager, sid).await {
+            Ok(true) => {
+                tracing::info!("Session {sid} ended; display manager's session leader kept alive");
+                continue;
+            }
+            Ok(false) => tracing::warn!(
+                "Session {sid} still present after killing its user processes, \
+                 falling back to KillSession(all, SIGKILL)"
+            ),
+            Err(e) => tracing::warn!(
+                "Cannot end session {sid} while keeping its leader ({e:#}), \
+                 falling back to KillSession(all, SIGKILL)"
+            ),
+        }
         match manager.kill_session(sid, "all", 9).await {
             Ok(()) => tracing::info!("Sent SIGKILL to session {sid}"),
             Err(e) => tracing::warn!("kill_session failed for {sid}: {e}"),
@@ -458,6 +484,50 @@ pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
     }
     tracing::info!("Terminated {} session(s): {:?}", session_ids.len(), session_ids);
     Ok(())
+}
+
+/// How long the display manager gets to close the session after its user processes die.
+const LOGOUT_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Ok(true) once the session is gone, Ok(false) if it outlived `LOGOUT_WAIT`.
+async fn logout_keeping_leader(
+    conn: &Connection,
+    manager: &Login1ManagerProxy<'_>,
+    sid: &str,
+) -> Result<bool> {
+    let path = manager.get_session(sid).await.context("GetSession")?;
+    let session = Login1SessionProxy::builder(conn).path(path)?.build().await?;
+    let (uid, _) = session.user().await.context("User")?;
+    let leader = session.leader().await.context("Leader")?;
+    let scope = session.scope().await.context("Scope")?;
+    if leader == 0 {
+        anyhow::bail!("session has no leader");
+    }
+    let dir = crate::session_kill::session_scope_dir(leader, &scope)
+        .with_context(|| format!("no cgroup matching scope {scope:?} for leader {leader}"))?;
+
+    let first = {
+        let dir = dir.clone();
+        tokio::task::spawn_blocking(move || crate::session_kill::kill_user_processes(&dir, uid, leader))
+            .await?
+    };
+    if first == 0 {
+        anyhow::bail!("no processes of uid {uid} in {}", dir.display());
+    }
+    tracing::info!("Sent SIGKILL to {first} process(es) of uid={uid} in session {sid} (leader {leader} spared)");
+
+    let deadline = tokio::time::Instant::now() + LOGOUT_WAIT;
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        if manager.get_session(sid).await.is_err() {
+            return Ok(true);
+        }
+        // Catch anything forked while we were killing (or respawned since).
+        let dir = dir.clone();
+        tokio::task::spawn_blocking(move || crate::session_kill::kill_user_processes(&dir, uid, leader))
+            .await?;
+    }
+    Ok(false)
 }
 
 /// Send a desktop notification to a user by spawning the agent binary as that user.
