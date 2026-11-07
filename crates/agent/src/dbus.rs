@@ -472,26 +472,31 @@ pub async fn send_desktop_notification(uid: u32, summary: &str, body: &str) -> R
 
     let exe = std::env::current_exe().context("Cannot determine agent executable path")?;
     let gid = lookup_gid_for_uid(uid).unwrap_or(uid);
-    let summary = summary.to_string();
-    let body = body.to_string();
 
-    tokio::task::spawn_blocking(move || {
-        use std::os::unix::process::CommandExt;
-        let result = std::process::Command::new(&exe)
-            .arg("--notify")
-            .arg(&summary)
-            .arg(&body)
-            .env_clear()
-            .env("DBUS_SESSION_BUS_ADDRESS", format!("unix:path=/run/user/{uid}/bus"))
-            .env("XDG_RUNTIME_DIR", format!("/run/user/{uid}"))
-            .uid(uid)
-            .gid(gid)
-            .spawn();
-        if let Err(e) = result {
-            tracing::warn!("Failed to spawn notification subprocess for uid={uid}: {e}");
+    let child = tokio::process::Command::new(&exe)
+        .arg("--notify")
+        .arg(summary)
+        .arg(body)
+        .env_clear()
+        .env("DBUS_SESSION_BUS_ADDRESS", format!("unix:path=/run/user/{uid}/bus"))
+        .env("XDG_RUNTIME_DIR", format!("/run/user/{uid}"))
+        .uid(uid)
+        .gid(gid)
+        .kill_on_drop(true)
+        .spawn();
+    match child {
+        // Reap it in the background: an un-waited child stays a <defunct> zombie under
+        // the agent for as long as the agent runs. Bounded so a hung session bus can't
+        // pile up helpers.
+        Ok(mut child) => {
+            tokio::spawn(async move {
+                if tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await.is_err() {
+                    let _ = child.kill().await;
+                }
+            });
         }
-    })
-    .await?;
+        Err(e) => tracing::warn!("Failed to spawn notification subprocess for uid={uid}: {e}"),
+    }
 
     Ok(())
 }
