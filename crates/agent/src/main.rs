@@ -14,6 +14,7 @@ mod heartbeat;
 mod i18n;
 mod nftables;
 mod pairing;
+mod session_kill;
 mod status_dbus;
 mod users;
 mod web_filter;
