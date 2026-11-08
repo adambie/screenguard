@@ -221,37 +221,56 @@ pub fn is_blocked(qname: &str, blocked: &[String]) -> bool {
     })
 }
 
-/// Read the first non-loopback nameserver from `/etc/resolv.conf`.
+/// Where to look for the network's real nameservers, in order. With systemd-resolved
+/// (Fedora, Ubuntu, ...) `/etc/resolv.conf` only lists the 127.0.0.53 stub, and the
+/// upstream servers it uses (e.g. from DHCP) are in `/run/systemd/resolve/resolv.conf`.
+const RESOLV_CONF_PATHS: &[&str] = &["/etc/resolv.conf", "/run/systemd/resolve/resolv.conf"];
+
+/// First non-loopback `nameserver` in resolv.conf-formatted text.
 ///
 /// Loopback addresses (e.g. 127.0.0.53 from systemd-resolved) are skipped:
 /// forwarding through the local stub could interfere with nftables redirect
-/// rules on some configurations. Falls back to 8.8.8.8 if none found.
+/// rules on some configurations.
+fn first_upstream_nameserver(content: &str) -> Option<IpAddr> {
+    content.lines().find_map(|line| {
+        let addr = line.trim().strip_prefix("nameserver")?.split_whitespace().next()?;
+        // Scoped IPv6 (fe80::1%eth0) can't be parsed into IpAddr; skip it.
+        let addr: IpAddr = addr.parse().ok()?;
+        (!addr.is_loopback()).then_some(addr)
+    })
+}
+
+/// The network's nameserver (see `RESOLV_CONF_PATHS`), falling back to 8.8.8.8.
 fn read_upstream_resolver() -> SocketAddr {
-    let content = std::fs::read_to_string("/etc/resolv.conf").unwrap_or_default();
-    for line in content.lines() {
-        let line = line.trim();
-        let Some(rest) = line.strip_prefix("nameserver") else {
-            continue;
-        };
-        let Some(addr_str) = rest.split_whitespace().next() else {
-            continue;
-        };
-        let Ok(addr) = addr_str.parse::<IpAddr>() else {
-            continue;
-        };
-        if addr.is_loopback() {
-            continue;
+    for path in RESOLV_CONF_PATHS {
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        if let Some(addr) = first_upstream_nameserver(&content) {
+            return SocketAddr::new(addr, 53);
         }
-        return SocketAddr::new(addr, 53);
     }
     let fallback: SocketAddr = "8.8.8.8:53".parse().unwrap();
-    tracing::warn!("No non-loopback nameserver in /etc/resolv.conf, using {fallback}");
+    tracing::warn!("No non-loopback nameserver in {RESOLV_CONF_PATHS:?}, using {fallback}");
     fallback
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_blocked, make_nxdomain, parse_qname};
+    use super::{first_upstream_nameserver, is_blocked, make_nxdomain, parse_qname};
+
+    #[test]
+    fn upstream_skips_the_resolved_stub() {
+        let stub = "# managed by systemd-resolved\nnameserver 127.0.0.53\noptions edns0 trust-ad\nsearch home.arpa\n";
+        assert_eq!(first_upstream_nameserver(stub), None);
+        let uplink = "nameserver 192.168.50.15\nnameserver 192.168.50.15\nsearch home.arpa\n";
+        assert_eq!(first_upstream_nameserver(uplink), Some("192.168.50.15".parse().unwrap()));
+    }
+
+    #[test]
+    fn upstream_takes_the_first_usable_entry() {
+        let conf = "nameserver ::1\nnameserver fe80::1%eth0\n  nameserver 2001:db8::53\nnameserver 10.0.0.1\n";
+        assert_eq!(first_upstream_nameserver(conf), Some("2001:db8::53".parse().unwrap()));
+        assert_eq!(first_upstream_nameserver(""), None);
+    }
 
     /// Build a minimal DNS A-record query for the given dotted domain name.
     fn make_query(domain: &str) -> Vec<u8> {
