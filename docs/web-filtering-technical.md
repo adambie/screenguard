@@ -91,7 +91,7 @@ Agent creates the table and chains on startup (idempotent `nft -f`), tears down 
 - Implemented as a tokio task inside the agent process — no separate binary.
 - Each managed UID with web filtering enabled gets one proxy instance (its own UDP + TCP listener on its assigned port).
 - Domain matching: strip trailing dot, check if queried name equals blocked domain OR ends with `.{blocked_domain}` (covers all subdomains).
-- Upstream resolver: read from `/etc/resolv.conf` at proxy startup, skip loopback addresses to avoid forwarding loops with systemd-resolved.
+- Upstream resolver: the first non-loopback `nameserver` in `/etc/resolv.conf`, then in `/run/systemd/resolve/resolv.conf` (systemd-resolved's uplink servers, since its `/etc/resolv.conf` lists only the 127.0.0.53 stub), else 8.8.8.8. Loopback addresses are skipped to avoid forwarding loops.
 - TCP DNS note: DNS falls back to TCP for responses over 512 bytes (EDNS0 can raise this). Both transports must be handled.
 - NXDOMAIN response: a well-formed DNS response packet with RCODE=3, no answers.
 
