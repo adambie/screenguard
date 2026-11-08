@@ -93,6 +93,25 @@ trait Login1Session {
 }
 
 #[proxy(
+    interface = "org.freedesktop.systemd1.Manager",
+    default_service = "org.freedesktop.systemd1",
+    default_path = "/org/freedesktop/systemd1"
+)]
+trait Systemd1Manager {
+    fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
+
+    fn kill_unit(&self, name: &str, who: &str, signal: i32) -> zbus::Result<()>;
+
+    fn get_unit(&self, name: &str) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
+}
+
+#[proxy(interface = "org.freedesktop.systemd1.Unit", default_service = "org.freedesktop.systemd1")]
+trait Systemd1Unit {
+    #[zbus(property)]
+    fn active_state(&self) -> zbus::Result<String>;
+}
+
+#[proxy(
     interface = "org.cinnamon.ScreenSaver",
     default_service = "org.cinnamon.ScreenSaver",
     default_path = "/org/cinnamon/ScreenSaver"
@@ -451,18 +470,88 @@ pub async fn unlock_sessions(session_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Whether a systemd unit is done stopping (inactive, failed, or already unloaded).
+async fn unit_stopped(conn: &Connection, systemd: &Systemd1ManagerProxy<'_>, unit: &str) -> bool {
+    let Ok(path) = systemd.get_unit(unit).await else { return true };
+    let state = async {
+        Systemd1UnitProxy::builder(conn).path(path)?.build().await?.active_state().await
+    }
+    .await;
+    matches!(state.as_deref(), Ok("inactive") | Ok("failed"))
+}
+
+/// How long stopping the user's services (compositor included) gets before SIGKILL.
+const USER_STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Stop `user@UID.service` for the session's user, so the compositor (which lives there on
+/// Plasma 6 and GNOME) releases the GPU and VT. Returns once the unit has stopped or the
+/// session is gone (SIGKILLing the unit after `USER_STOP_WAIT`); true if the session is gone.
+async fn stop_user_manager(conn: &Connection, manager: &Login1ManagerProxy<'_>, sid: &str) -> bool {
+    let uid = async {
+        let path = manager.get_session(sid).await?;
+        let session = Login1SessionProxy::builder(conn).path(path)?.build().await?;
+        let (uid, _) = session.user().await?;
+        anyhow::Ok(uid)
+    }
+    .await;
+    let Ok(uid) = uid else { return false };
+    if uid == 0 {
+        return false;
+    }
+    let unit = format!("user@{uid}.service");
+    let systemd = match Systemd1ManagerProxy::new(conn).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("Cannot reach systemd to stop {unit}: {e}");
+            return false;
+        }
+    };
+    match systemd.stop_unit(&unit, "replace").await {
+        Ok(_) => tracing::info!("Stopping {unit} (compositor and user services)"),
+        Err(e) => tracing::warn!("StopUnit {unit} failed: {e}"),
+    }
+    // Done when the session is gone, or as soon as the user manager has stopped (the
+    // compositor has then released the GPU and VT); the scope's leftovers are handled by
+    // the caller's next step.
+    let deadline = tokio::time::Instant::now() + USER_STOP_WAIT;
+    while tokio::time::Instant::now() < deadline {
+        if manager.get_session(sid).await.is_err() {
+            return true;
+        }
+        if unit_stopped(conn, &systemd, &unit).await {
+            return manager.get_session(sid).await.is_err();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    match systemd.kill_unit(&unit, "all", 9).await {
+        Ok(()) => tracing::warn!("{unit} still running after {USER_STOP_WAIT:?}, sent SIGKILL"),
+        Err(e) => tracing::debug!("KillUnit {unit}: {e}"),
+    }
+    manager.get_session(sid).await.is_err()
+}
+
 /// Terminate all sessions in the given list.
 ///
-/// First SIGKILLs only the session user's processes, leaving the display manager's
-/// session leader alive so it sees a normal logout and brings the greeter back (see
-/// `session_kill`). If the session is still there after `LOGOUT_WAIT`, falls back to
-/// Manager.KillSession(..., "all", SIGKILL), which always ends it. SIGKILL either way, so
-/// lock-screen daemons (kscreenlocker, swaylock, etc.) that resist SIGTERM are removed.
+/// 1. Stop the user's service manager (`user@UID.service`), which holds the compositor on
+///    Plasma 6 and GNOME. The compositor has to release the GPU and VT before the greeter
+///    starts, otherwise the greeter comes up without a display. SIGKILL it if it resists.
+/// 2. SIGKILL the session user's processes in the session scope, leaving the display
+///    manager's session leader alive so it sees a normal logout and brings the greeter
+///    back (see `session_kill`).
+/// 3. Last resort: Manager.KillSession(..., "all", SIGKILL), which always ends it.
+///
+/// SIGKILL is used so lock-screen daemons (kscreenlocker, swaylock, etc.) that resist
+/// SIGTERM are removed.
 pub async fn terminate_sessions(session_ids: &[String]) -> Result<()> {
     let conn = Connection::system().await?;
     let manager = Login1ManagerProxy::new(&conn).await?;
 
     for sid in session_ids {
+        if stop_user_manager(&conn, &manager, sid).await {
+            tracing::info!("Session {sid} ended after stopping the user's services");
+            continue;
+        }
+
         match logout_keeping_leader(&conn, &manager, sid).await {
             Ok(true) => {
                 tracing::info!("Session {sid} ended; display manager's session leader kept alive");
@@ -511,9 +600,9 @@ async fn logout_keeping_leader(
         tokio::task::spawn_blocking(move || crate::session_kill::kill_user_processes(&dir, uid, leader))
             .await?
     };
-    if first == 0 {
-        anyhow::bail!("no processes of uid {uid} in {}", dir.display());
-    }
+    // Zero is fine: after the earlier steps the session may only be waiting for its
+    // leader to close PAM. Waiting below then lets it finish on its own, instead of the
+    // KillSession fallback killing the leader.
     tracing::info!("Sent SIGKILL to {first} process(es) of uid={uid} in session {sid} (leader {leader} spared)");
 
     let deadline = tokio::time::Instant::now() + LOGOUT_WAIT;
