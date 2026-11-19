@@ -635,21 +635,20 @@ PAIRING_CODE=""
 if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     systemctl enable --now screenguard-agent
     info "screenguard-agent enabled and started"
-    if [[ -z $CLOUD_ACCOUNT ]]; then
-        # Wait for the agent to find the server and open a pairing request.
-        # Exit status 3 = already paired (e.g. reinstall over an existing pairing).
-        info "Waiting for the agent to contact the server..."
-        for _ in $(seq 30); do
-            if PAIRING_CODE=$("${INSTALL_DIR}/screenguard-agent" --show-pairing-code 2>/dev/null); then
-                break
-            elif [[ $? -eq 3 ]]; then
-                PAIRING_CODE="(already paired)"
-                break
-            fi
-            PAIRING_CODE=""
-            sleep 1
-        done
-    fi
+    # Wait for the agent to find the server and open a pairing request — local
+    # and cloud alike: both servers require the code to accept the machine.
+    # Exit status 3 = already paired (e.g. reinstall over an existing pairing).
+    info "Waiting for the agent to contact the server..."
+    for _ in $(seq 30); do
+        if PAIRING_CODE=$("${INSTALL_DIR}/screenguard-agent" --show-pairing-code 2>/dev/null); then
+            break
+        elif [[ $? -eq 3 ]]; then
+            PAIRING_CODE="(already paired)"
+            break
+        fi
+        PAIRING_CODE=""
+        sleep 1
+    done
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────────
@@ -684,8 +683,8 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
     if [[ -n $CLOUD_ACCOUNT ]]; then
         echo
         echo -e "  Cloud mode (experimental): account ${CLOUD_ACCOUNT}"
-        echo -e "  The machine will show as 'pending' in that account — approve it there to pair."
-    elif [[ $PAIRING_CODE == "(already paired)" ]]; then
+    fi
+    if [[ $PAIRING_CODE == "(already paired)" ]]; then
         echo -e "  Pairing: this machine is already paired with the server."
     elif [[ -n $PAIRING_CODE ]]; then
         echo
@@ -697,6 +696,9 @@ if [[ ${INSTALL_AGENT:-0} -eq 1 ]]; then
         echo -e "  Pairing: the agent hasn't reached the server yet. Once it does, show its code with:"
         echo -e "    sudo screenguard-agent --show-pairing-code"
         echo -e "  then enter it in the web UI (Agents → Accept)."
+        if [[ -n $CLOUD_ACCOUNT ]]; then
+            echo -e "  If no code ever appears, check that ${CLOUD_ACCOUNT} is your family's confirmed sign-up email."
+        fi
     fi
 fi
 

@@ -8,14 +8,15 @@ The agent is the same binary as for self-hosting and sends and accepts exactly t
 
 ## At install time
 
-Create an account at screenguard.cc, then on the child's computer:
+Create an account at screenguard.cc, then on the child's computer — always with the email the
+account was **signed up** with (parents added later under *Settings → Users* are for signing in only):
 
 ```bash
 curl -fsSL https://github.com/adambie/screenguard/releases/latest/download/install.sh \
   | sudo bash -s -- --cloud-account=you@example.com
 ```
 
-The interactive installer offers the same: choose **Agent only**, then **Cloud account** when it asks how to reach the server. Either way it writes `/etc/screenguard/agent.toml` with `cloud_account` set (an existing `agent.toml` is not modified — add the line by hand, see below). The computer shows up as *pending* under your account; approve it there and it is managed.
+The interactive installer offers the same: choose **Agent only**, then **Cloud account** when it asks how to reach the server. Either way it writes `/etc/screenguard/agent.toml` with `cloud_account` set (an existing `agent.toml` is not modified — add the line by hand, see below). The installer ends by printing the computer's **pairing code**. In your account open **Agents**, click **Accept** on the computer and enter that code — the server will not accept it without one. The code changes every 5 minutes until accepted; show the current one any time with `sudo screenguard-agent --show-pairing-code`.
 
 ## On an already-installed agent
 
