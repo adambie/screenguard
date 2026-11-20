@@ -249,6 +249,8 @@ impl HeartbeatLoop {
     /// Errors are logged and never stop the heartbeat loop.
     async fn track_app_usage(&mut self, session_states: &SessionStates) {
         let Some(tracker) = self.app_tracker.as_mut() else { return };
+        // Users this agent has locked (time is up) never count — see `send_heartbeat` (#30).
+        let locked = self.locked_uids.lock().await.clone();
         let users: Vec<TrackedUser> = {
             let db = self.db.lock().await;
             let homes = home_dirs();
@@ -260,7 +262,7 @@ impl HeartbeatLoop {
                         uid,
                         home: homes.get(&uid)?.clone(),
                         language: db.get_cached_enforcement(uid).map(|e| e.language).unwrap_or_else(|_| "en".into()),
-                        counting: uid_is_counting(session_states, uid),
+                        counting: uid_is_counting(session_states, uid) && !locked.contains(&uid),
                         groups: db.get_cached_app_groups(uid).unwrap_or_default(),
                         approval: db.get_cached_app_approval(uid).unwrap_or_default(),
                     })
@@ -977,6 +979,12 @@ impl HeartbeatLoop {
 
         let interval_secs = self.heartbeat_interval.as_secs();
         let mut hb_users = Vec::new();
+        // Users this agent has locked itself because their time is up. They must not
+        // count, whatever logind says: the counting rule trusts LockedHint, but only
+        // some screen lockers set it (GNOME and KDE do; hyprlock, swaylock,
+        // light-locker or Cinnamon on X11 typically don't). With "keep apps and tasks
+        // running" the locked session stays alive, so used time kept climbing (#30).
+        let locked = self.locked_uids.lock().await.clone();
 
         for uid in &managed_uids {
             let uid = *uid;
@@ -988,7 +996,9 @@ impl HeartbeatLoop {
                 continue;
             }
 
+            let locked_by_agent = locked.contains(&uid);
             let (active_secs, idle) = match active_since.get(&uid) {
+                Some(Some(_)) if locked_by_agent => (0, true),
                 Some(Some(since)) => (since.elapsed().as_secs().min(interval_secs) as u32, false),
                 Some(None) | None => (0, true),
             };
@@ -999,7 +1009,13 @@ impl HeartbeatLoop {
             }
 
             if let Some(Some(since)) = active_since.get_mut(&uid) {
-                *since = advance_usage_timer(*since, active_secs, self.heartbeat_interval);
+                // while locked, keep the timer at "now" so the locked minutes are never
+                // counted later, once more time is granted and the lock lifts
+                *since = if locked_by_agent {
+                    Instant::now()
+                } else {
+                    advance_usage_timer(*since, active_secs, self.heartbeat_interval)
+                };
             }
 
             hb_users.push(HeartbeatUser {
@@ -1451,6 +1467,34 @@ mod tests {
         hb.send_heartbeat(&session_states, &mut active_since, true, today).await.unwrap();
         assert_eq!(hb.db.lock().await.get_usage_seconds(1000, today).unwrap(), 29);
         assert!(active_since[&1000].unwrap().elapsed() < Duration::from_millis(100));
+    }
+
+    // Regression test for #30: a session the agent locked (time is up) must not
+    // count, even when logind still reports it unlocked and not idle — which is
+    // what happens under screen lockers that never set LockedHint. Once the lock
+    // lifts, counting resumes from that moment; the locked minutes never count.
+    #[tokio::test]
+    async fn no_time_counts_while_the_agent_has_locked_the_user() {
+        let (hb, _rx) = test_loop();
+        let mut session_states: SessionStates = HashMap::new();
+        // logind's view: active, not locked, not idle (the locker didn't say otherwise)
+        let unlocked = SessionUsageState { active: Some(true), locked: Some(false), idle: Some(false) };
+        session_states.insert(1000, HashMap::from([("1".to_string(), unlocked)]));
+        let today = "2026-11-20";
+
+        hb.locked_uids.lock().await.insert(1000);
+        let mut active_since = HashMap::from([(1000, Some(Instant::now() - Duration::from_secs(9)))]);
+        for _ in 0..3 {
+            hb.send_heartbeat(&session_states, &mut active_since, true, today).await.unwrap();
+        }
+        assert_eq!(hb.db.lock().await.get_usage_seconds(1000, today).unwrap(), 0, "nothing while locked");
+        assert!(active_since[&1000].unwrap().elapsed() < Duration::from_millis(100), "timer held at now");
+
+        // more time granted: the lock lifts and counting resumes from here
+        hb.locked_uids.lock().await.remove(&1000);
+        active_since.insert(1000, Some(Instant::now() - Duration::from_secs(5)));
+        hb.send_heartbeat(&session_states, &mut active_since, true, today).await.unwrap();
+        assert_eq!(hb.db.lock().await.get_usage_seconds(1000, today).unwrap(), 5);
     }
 
     // Regression test for #13: once a managed uid's session count drops to
