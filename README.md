@@ -25,7 +25,7 @@ A small server keeps the rules; an agent on each child's computer enforces them,
 
 - **Daily screen time and allowed hours** per child, e.g. 2 hours on weekdays, between 15:00 and 20:30.
 - **Hard enforcement** — when time is up, the child's desktop sessions are locked; optionally apps and unsaved work keep running behind the lock.
-- **Warnings and messages** on the child's desktop before time runs out, in English, Polish, German, Spanish, French or Portuguese.
+- **Warnings and messages** on the child's desktop before time runs out, in English, Polish, German, Spanish, French, Portuguese or Hungarian.
 - **Extra time, lock now, send a message** — from the dashboard, the profile page or the phone.
 - **Apps and games** — see which apps each child uses, group them, and give each group its own daily limit; ready-made *Games* and *Web browsers* groups fill themselves.
 - **Block new apps** — an app the child starts for the first time stays blocked until you allow it.

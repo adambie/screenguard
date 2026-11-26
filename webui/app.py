@@ -23,7 +23,7 @@ app.permanent_session_lifetime = timedelta(days=30)
 
 # ── i18n ───────────────────────────────────────────────────────────────────────
 
-SUPPORTED_LANGS = ['en', 'es', 'fr', 'de', 'pt', 'pl']
+SUPPORTED_LANGS = ['en', 'es', 'fr', 'de', 'pt', 'pl', 'hu']
 _TRANSLATIONS: dict = {}
 
 def _load_translations():

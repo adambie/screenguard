@@ -1,6 +1,7 @@
 pub fn tooltip_remaining(lang: &str, time: &str) -> String {
     match lang {
         "pl" => format!("{time} pozostało dziś"),
+        "hu" => format!("Ma még {time} maradt"),
         "de" => format!("Noch {time} heute"),
         "es" => format!("{time} restantes hoy"),
         "fr" => format!("{time} restantes aujourd'hui"),
@@ -12,6 +13,7 @@ pub fn tooltip_remaining(lang: &str, time: &str) -> String {
 pub fn tooltip_warning(lang: &str, time: &str) -> String {
     match lang {
         "pl" => format!("Uwaga — {time} pozostało"),
+        "hu" => format!("Figyelem — még {time} maradt"),
         "de" => format!("Warnung — noch {time}"),
         "es" => format!("Aviso — {time} restantes"),
         "fr" => format!("Attention — {time} restantes"),
@@ -23,6 +25,7 @@ pub fn tooltip_warning(lang: &str, time: &str) -> String {
 pub fn tooltip_locked(lang: &str) -> &'static str {
     match lang {
         "pl" => "Limit czasu ekranu osiągnięty",
+        "hu" => "Elérted a képernyőidő-korlátot",
         "de" => "Bildschirmzeit-Limit erreicht",
         "es" => "Límite de tiempo de pantalla alcanzado",
         "fr" => "Limite de temps d'écran atteinte",
@@ -34,6 +37,7 @@ pub fn tooltip_locked(lang: &str) -> &'static str {
 pub fn tooltip_unlimited(lang: &str) -> &'static str {
     match lang {
         "pl" => "Brak limitu czasu dziś",
+        "hu" => "Ma nincs időkorlát",
         "de" => "Kein Zeitlimit heute",
         "es" => "Sin límite de tiempo hoy",
         "fr" => "Pas de limite de temps aujourd'hui",
@@ -45,6 +49,7 @@ pub fn tooltip_unlimited(lang: &str) -> &'static str {
 pub fn tooltip_unavailable(lang: &str) -> &'static str {
     match lang {
         "pl" => "Status niedostępny",
+        "hu" => "Az állapot nem érhető el",
         "de" => "Status nicht verfügbar",
         "es" => "Estado no disponible",
         "fr" => "Statut indisponible",
