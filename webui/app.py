@@ -55,12 +55,14 @@ def t(key, **kwargs):
             pass
     return text
 
+def _tlist(key, default):
+    """Look up a list-valued translation key, with English fallback."""
+    trans = _TRANSLATIONS.get(_lang(), _TRANSLATIONS.get('en', {}))
+    return trans.get(key) or _TRANSLATIONS.get('en', {}).get(key, default)
+
 def days():
     """Return localized short day names Mon…Sun."""
-    lang = _lang()
-    trans = _TRANSLATIONS.get(lang, _TRANSLATIONS.get('en', {}))
-    return trans.get('days', _TRANSLATIONS.get('en', {}).get('days',
-           ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']))
+    return _tlist('days', ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
 
 app.jinja_env.globals['t'] = t
 app.jinja_env.globals['days'] = days
@@ -79,7 +81,7 @@ def ts_date(ts):
 
 @app.template_filter('time_ago')
 def time_ago(ts):
-    """Format a Unix timestamp as 'just now', '5m ago', '2h ago', or 'May 3'."""
+    """Format a Unix timestamp as 'now', '5m ago', '2h ago', or 'May 3', in the UI language."""
     if ts is None:
         return '—'
     try:
@@ -88,10 +90,12 @@ def time_ago(ts):
         if diff < 60:
             return t('agents.now')
         if diff < 3600:
-            return f'{diff // 60}m ago'
+            return t('ago.minutes', n=diff // 60)
         if diff < 86400:
-            return f'{diff // 3600}h ago'
-        return dt.strftime('%b %-d')
+            return t('ago.hours', n=diff // 3600)
+        months = _tlist('months', ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+        return t('ago.date', day=dt.day, month=months[dt.month - 1])
     except Exception:
         return str(ts)
 

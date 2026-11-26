@@ -1,5 +1,6 @@
 {
   "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
 
   "nav.dashboard": "Dashboard",
   "nav.agents": "Agents",
@@ -55,7 +56,7 @@
   "profile.message_placeholder": "Send a message to user…",
   "profile.btn_send": "Send",
   "profile.status_unavailable": "Status unavailable — no agent connected.",
-  "profile.stale_data_warning": "{agent} has been offline since {ago} — the numbers above may be stale.",
+  "profile.stale_data_warning": "{agent} is offline (last seen: {ago}) — the numbers above may be stale.",
   "profile.card_limits": "Daily limits",
   "profile.badge_blocked": "blocked",
   "profile.btn_save_limits": "Save limits",
@@ -83,6 +84,9 @@
   "agents.status_online": "online",
   "agents.status_offline": "offline",
   "agents.now": "now",
+  "ago.minutes": "{n}m ago",
+  "ago.hours": "{n}h ago",
+  "ago.date": "{month} {day}",
   "agents.btn_undo": "Undo",
   "agents.btn_force_remove": "Force remove",
   "agents.btn_accept": "Accept",

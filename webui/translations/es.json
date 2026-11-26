@@ -1,5 +1,6 @@
 {
   "days": ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"],
+  "months": ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sept", "oct", "nov", "dic"],
 
   "nav.dashboard": "Panel",
   "nav.agents": "Agentes",
@@ -55,7 +56,7 @@
   "profile.message_placeholder": "Enviar un mensaje al usuario…",
   "profile.btn_send": "Enviar",
   "profile.status_unavailable": "Estado no disponible — ningún agente conectado.",
-  "profile.stale_data_warning": "{agent} está desconectado desde {ago} — los números anteriores pueden estar desactualizados.",
+  "profile.stale_data_warning": "{agent} está desconectado (última conexión: {ago}) — los números anteriores pueden estar desactualizados.",
   "profile.card_limits": "Límites diarios",
   "profile.badge_blocked": "bloqueado",
   "profile.btn_save_limits": "Guardar límites",
@@ -83,6 +84,9 @@
   "agents.status_online": "en línea",
   "agents.status_offline": "desconectado",
   "agents.now": "ahora",
+  "ago.minutes": "hace {n} min",
+  "ago.hours": "hace {n} h",
+  "ago.date": "{day} {month}",
   "agents.btn_undo": "Deshacer",
   "agents.btn_force_remove": "Eliminar forzado",
   "agents.btn_accept": "Aceptar",
