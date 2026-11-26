@@ -5,6 +5,7 @@ pub fn notif_lock_title(lang: &str) -> &'static str {
         "de" => "Bildschirmzeit abgelaufen",
         "pt" => "Tempo de ecrã esgotado",
         "pl" => "Czas ekranu minął",
+        "hu" => "Lejárt a képernyőidő",
         _    => "Screen time ended",
     }
 }
@@ -16,6 +17,7 @@ pub fn notif_lock_body(lang: &str) -> &'static str {
         "de" => "Der Bildschirm wird in 4 Sekunden gesperrt.",
         "pt" => "O ecrã será bloqueado em 4 segundos.",
         "pl" => "Ekran zostanie zablokowany za 4 sekundy.",
+        "hu" => "A képernyő 4 másodperc múlva zárolódik.",
         _    => "Your screen will be locked in 4 seconds.",
     }
 }
@@ -27,6 +29,7 @@ pub fn notif_warning_title(lang: &str) -> &'static str {
         "de" => "Bildschirmzeit",
         "pt" => "Tempo de ecrã",
         "pl" => "Czas ekranu",
+        "hu" => "Képernyőidő",
         _    => "Screen time",
     }
 }
@@ -39,6 +42,7 @@ pub fn notif_warning_body(lang: &str, remaining: i32) -> String {
         "de" => format!("Noch {remaining} {mins} Bildschirmzeit."),
         "pt" => format!("Restam {remaining} {mins} de ecrã."),
         "pl" => format!("Pozostało {remaining} {mins} czasu ekranu."),
+        "hu" => format!("Még {remaining} {mins} képernyőidő maradt."),
         _    => format!("{remaining} {mins} of screen time remaining."),
     }
 }
@@ -50,6 +54,7 @@ pub fn notif_schedule_title(lang: &str) -> &'static str {
         "de" => "Bildschirmzeit",
         "pt" => "Tempo de ecrã",
         "pl" => "Czas ekranu",
+        "hu" => "Képernyőidő",
         _    => "Screen time",
     }
 }
@@ -61,6 +66,7 @@ pub fn notif_schedule_updated(lang: &str) -> &'static str {
         "de" => "Dein Bildschirmzeitplan wurde aktualisiert.",
         "pt" => "O horário de ecrã foi atualizado.",
         "pl" => "Harmonogram czasu ekranu został zaktualizowany.",
+        "hu" => "Módosult az engedélyezett képernyőidő-beosztásod.",
         _    => "Your allowed screen time schedule has been changed.",
     }
 }
@@ -73,6 +79,7 @@ pub fn notif_added_body(lang: &str, delta: i32, remaining: i32, reason: Option<&
         "de" => format!("+{delta} min. Noch {remaining} {mins}."),
         "pt" => format!("+{delta} min. Restam {remaining} {mins}."),
         "pl" => format!("+{delta} min. Pozostało {remaining} {mins}."),
+        "hu" => format!("+{delta} perc. Még {remaining} {mins} maradt."),
         _    => format!("+{delta} min added. {remaining} {mins} remaining."),
     };
     match reason {
@@ -89,6 +96,7 @@ pub fn notif_reduced_body(lang: &str, removed: i32, remaining: i32, reason: Opti
         "de" => format!("−{removed} min. Noch {remaining} {mins}."),
         "pt" => format!("−{removed} min. Restam {remaining} {mins}."),
         "pl" => format!("−{removed} min. Pozostało {remaining} {mins}."),
+        "hu" => format!("−{removed} perc. Még {remaining} {mins} maradt."),
         _    => format!("−{removed} min removed. {remaining} {mins} remaining."),
     };
     match reason {
@@ -105,12 +113,14 @@ pub fn notif_message_title(lang: &str) -> &'static str {
         "de" => "Nachricht vom Administrator",
         "pt" => "Mensagem do administrador",
         "pl" => "Wiadomość od administratora",
+        "hu" => "Üzenet a rendszergazdától",
         _    => "Message from administrator",
     }
 }
 
 fn plural_mins(lang: &str, n: i32) -> &'static str {
     match lang {
+        "hu" => "perc",
         "pl" => {
             if n == 1 { "minuta" }
             else if (2..=4).contains(&(n.abs() % 10)) && !(11..=14).contains(&(n.abs() % 100)) { "minuty" }
@@ -133,6 +143,7 @@ pub fn group_name(builtin: Option<&str>, name: &str, lang: &str) -> String {
             "de" => "Spiele",
             "pt" => "Jogos",
             "pl" => "Gry",
+            "hu" => "Játékok",
             _ => "Games",
         },
         (Some("browsers"), "Web browsers") => match lang {
@@ -141,6 +152,7 @@ pub fn group_name(builtin: Option<&str>, name: &str, lang: &str) -> String {
             "de" => "Webbrowser",
             "pt" => "Navegadores web",
             "pl" => "Przeglądarki",
+            "hu" => "Webböngészők",
             _ => "Web browsers",
         },
         _ => return name.to_string(),
@@ -157,6 +169,7 @@ pub fn notif_group_warning_body(lang: &str, remaining: i32) -> String {
         "de" => format!("Heute noch {remaining} {mins}."),
         "pt" => format!("Restam {remaining} {mins} por hoje."),
         "pl" => format!("Na dziś zostało {remaining} {mins}."),
+        "hu" => format!("Mára még {remaining} {mins} maradt."),
         _ => format!("{remaining} {mins} left today."),
     }
 }
@@ -169,6 +182,7 @@ pub fn notif_group_time_up_title(lang: &str, group: &str) -> String {
         "de" => format!("{group}: Zeit ist um"),
         "pt" => format!("{group}: o tempo acabou"),
         "pl" => format!("{group}: czas minął"),
+        "hu" => format!("{group}: lejárt az idő"),
         _ => format!("{group}: time is up"),
     }
 }
@@ -181,6 +195,7 @@ pub fn notif_app_closing_body(lang: &str, app: &str, secs: u64) -> String {
         "de" => format!("{app} wird in {secs} Sekunden geschlossen."),
         "pt" => format!("{app} vai fechar dentro de {secs} segundos."),
         "pl" => format!("{app} zostanie zamknięta za {secs} sekund."),
+        "hu" => format!("{app} {secs} másodperc múlva bezárul."),
         _ => format!("{app} will close in {secs} seconds."),
     }
 }
@@ -193,6 +208,7 @@ pub fn notif_group_blocked_title(lang: &str, group: &str) -> String {
         "de" => format!("{group}: heute nicht erlaubt"),
         "pt" => format!("{group}: não permitido hoje"),
         "pl" => format!("{group}: dziś niedozwolone"),
+        "hu" => format!("{group}: ma nem engedélyezett"),
         _ => format!("{group}: not allowed today"),
     }
 }
@@ -205,6 +221,7 @@ pub fn notif_app_closed_body(lang: &str, app: &str) -> String {
         "de" => format!("{app} wurde geschlossen."),
         "pt" => format!("{app} foi fechada."),
         "pl" => format!("{app} została zamknięta."),
+        "hu" => format!("{app} bezárult."),
         _ => format!("{app} was closed."),
     }
 }
@@ -224,6 +241,8 @@ pub fn notif_group_extra_body(lang: &str, delta: i32) -> String {
         ("pt", false) => format!("Menos {n} {mins} por hoje."),
         ("pl", true) => format!("Dodatkowe {n} {mins} na dziś."),
         ("pl", false) => format!("{n} {mins} mniej na dziś."),
+        ("hu", true) => format!("Mára {n} perccel több időd van."),
+        ("hu", false) => format!("Mára {n} perccel kevesebb időd van."),
         (_, true) => format!("{n} extra {mins} today."),
         (_, false) => format!("{n} {mins} less today."),
     }
@@ -237,6 +256,7 @@ pub fn notif_app_needs_approval_title(lang: &str) -> &'static str {
         "de" => "Erlaubnis nötig",
         "pt" => "É preciso autorização",
         "pl" => "Potrzebna zgoda",
+        "hu" => "Engedély szükséges",
         _ => "Permission needed",
     }
 }
@@ -249,6 +269,7 @@ pub fn notif_app_needs_approval_body(lang: &str, app: &str) -> String {
         "de" => format!("Deine Eltern wurden gefragt, ob du {app} benutzen darfst."),
         "pt" => format!("Foi pedido aos teus pais que permitam {app}."),
         "pl" => format!("Wysłano rodzicom prośbę o zgodę na {app}."),
+        "hu" => format!("Megkértük a szüleidet, hogy engedélyezzék ezt: {app}."),
         _ => format!("Your parents were asked to allow {app}."),
     }
 }
@@ -261,6 +282,7 @@ pub fn notif_app_denied_title(lang: &str) -> &'static str {
         "de" => "Nicht erlaubt",
         "pt" => "Não permitido",
         "pl" => "Niedozwolone",
+        "hu" => "Nem engedélyezett",
         _ => "Not allowed",
     }
 }
@@ -273,6 +295,7 @@ pub fn notif_app_approved_body(lang: &str, app: &str) -> String {
         "de" => format!("Du darfst {app} jetzt benutzen."),
         "pt" => format!("Já podes usar {app}."),
         "pl" => format!("Możesz już używać {app}."),
+        "hu" => format!("Most már használhatod: {app}."),
         _ => format!("You may use {app} now."),
     }
 }
@@ -285,6 +308,7 @@ pub fn notif_app_approved_title(lang: &str) -> &'static str {
         "de" => "Erlaubt",
         "pt" => "Permitido",
         "pl" => "Dozwolone",
+        "hu" => "Engedélyezve",
         _ => "Allowed",
     }
 }
