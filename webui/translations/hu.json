@@ -1,5 +1,6 @@
 {
   "days": ["H", "K", "Sze", "Cs", "P", "Szo", "V"],
+  "months": ["jan.", "febr.", "márc.", "ápr.", "máj.", "jún.", "júl.", "aug.", "szept.", "okt.", "nov.", "dec."],
 
   "nav.dashboard": "Áttekintés",
   "nav.agents": "Ügynökök",
@@ -83,6 +84,9 @@
   "agents.status_online": "elérhető",
   "agents.status_offline": "nem elérhető",
   "agents.now": "most",
+  "ago.minutes": "{n} perce",
+  "ago.hours": "{n} órája",
+  "ago.date": "{month} {day}.",
   "agents.btn_undo": "Visszavonás",
   "agents.btn_force_remove": "Kényszerített eltávolítás",
   "agents.btn_accept": "Elfogadás",
